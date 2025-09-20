@@ -49,19 +49,10 @@
                     </a>
                 </li>
 
-                <!-- Quản lý phim -->
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ route('admin.movies.index') }}">
-                        <div class="d-flex align-items-center">
-                            <span class="nav-link-icon"><i class="fas fa-film"></i></span>
-                            <span class="nav-link-text ps-1">Quản Lý Phim</span>
-                        </div>
-                    </a>
-                </li>
 
                 <!-- Quản lý rạp -->
                 <li class="nav-item">
-                    <a class="nav-link" href="{{ route('admin.cinemas.index') }}">
+                    <a class="nav-link" href="{{-- {{ route('admin.cinemas.index') }} --}}">
                         <div class="d-flex align-items-center">
                             <span class="nav-link-icon"><i class="fas fa-building"></i></span>
                             <span class="nav-link-text ps-1">Quản Lý Rạp</span>
@@ -80,61 +71,34 @@
                     </a>
                     <ul class="nav collapse" id="onemies">
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ route('admin.countries.index') }}">
+                            <a class="nav-link" href="{{-- {{ route('admin.countries.index') }} --}}">
                                 <div class="d-flex align-items-center">
                                     <span class="nav-link-text ps-1">Quốc Gia</span>
                                 </div>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ route('admin.actors.index') }}">
+                            <a class="nav-link" href="{{-- {{ route('admin.actors.index') }} --}}">
                                 <div class="d-flex align-items-center">
                                     <span class="nav-link-text ps-1">Diễn Viên</span>
                                 </div>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ route('admin.genres.index') }}">
+                            <a class="nav-link" href="{{-- {{ route('admin.genres.index') }} --}}">
                                 <div class="d-flex align-items-center">
                                     <span class="nav-link-text ps-1">Thể Loại</span>
                                 </div>
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ route('admin.directors.index') }}">
+                            <a class="nav-link" href="{{-- {{ route('admin.directors.index') }} --}}">
                                 <div class="d-flex align-items-center">
                                     <span class="nav-link-text ps-1">Đạo Diễn</span>
                                 </div>
                             </a>
                         </li>
                     </ul>
-                </li>
-
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ route('admin.promotions.index') }}">
-                        <div class="d-flex align-items-center">
-                            <span class="nav-link-icon"><i class="fas fa-tags"></i></span>
-                            <span class="nav-link-text ps-1">Quản Lý Mã Khuyến Mãi</span>
-                        </div>
-                    </a>
-                </li>
-
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ route('admin.foots.index') }}">
-                        <div class="d-flex align-items-center">
-                            <span class="nav-link-icon"><i class="fas fa-utensils"></i></span>
-                            <span class="nav-link-text ps-1">Quản Lý Thực Đơn</span>
-                        </div>
-                    </a>
-                </li>
-
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ route('admin.promotions.index') }}">
-                        <div class="d-flex align-items-center">
-                            <span class="nav-link-icon"><i class="fas fa-cogs"></i></span>
-                            <span class="nav-link-text ps-1">Quản Lý Dịch Vụ</span>
-                        </div>
-                    </a>
                 </li>
 
             </ul>
