@@ -16,7 +16,8 @@ Route::get('/', function () {
 Route::get('/home', [HomeController::class, 'index'])->name('home');
 
 
-Route::get('/admin', [AdminController::class, 'indexadmin'])->middleware(['auth', 'admin'])->name('admin.index');
+Route::get('/admin', [AdminController::class, 'index'])->middleware(['auth', 'admin'])->name('admin.index');
+
 Route::macro('adminResource', function ($prefix, $controller) {
     Route::prefix($prefix)->middleware(['auth', 'admin'])->name(str_replace('/', '.', $prefix) . '.')->group(function () use ($controller, $prefix) {
         Route::get('/trash', [$controller, 'trash'])->name('trash');
@@ -34,3 +35,7 @@ Route::macro('adminResource', function ($prefix, $controller) {
 
 Route::adminResource('admin/users', UserController::class);
 
+
+/* Route::prefix('admin/cinemas')->middleware(['auth', 'admin'])->name('admin.cinemas.')->group(function () {
+
+}); */
