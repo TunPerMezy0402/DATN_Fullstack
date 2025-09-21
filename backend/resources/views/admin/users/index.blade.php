@@ -10,39 +10,40 @@
     data-list='{"valueNames":["name","email","phone","address","joined","status"]} --}}'>
     <div class="card-header">
         <div class="row flex-between-center">
-          <div class="col-12 col-md-6 col-xl-5 d-flex align-items-center gap-3 flex-wrap">
-            <h5 class="fs-9 mb-0 text-nowrap py-2 py-xl-0">Customers</h5>
-            <form action="{{ route('admin.users.index') }}" method="GET" class="w-100 w-md-auto">
-              <div class="input-group input-group-sm">
-                <input type="text" class="form-control" name="search" placeholder="Search ..." value="{{ request('search') }}">
-                <button class="btn btn-primary" type="submit">Tìm</button>
-              </div>
-            </form>
-          </div>
-          <div class="col-8 col-sm-auto text-end ps-2">
-            <div id="table-customers-replace-element">
-                <!-- Nút New -->
-                <a href="{{ route('admin.users.create') }}" class="btn btn-falcon-default btn-sm me-2">
-                  <span class="fas fa-plus" data-fa-transform="shrink-3 down-2"></span>
-                  <span class="d-none d-sm-inline-block ms-1">New</span>
-                </a>
-              
-                <!-- Nút Filter -->
-                <button class="btn btn-falcon-default btn-sm me-2" type="button">
-                  <span class="fas fa-filter" data-fa-transform="shrink-3 down-2"></span>
-                  <span class="d-none d-sm-inline-block ms-1">Filter</span>
-                </button>
-              
-                <!-- Nút Export -->
-                <button class="btn btn-falcon-default btn-sm" type="button">
-                  <span class="fas fa-external-link-alt" data-fa-transform="shrink-3 down-2"></span>
-                  <span class="d-none d-sm-inline-block ms-1">Export</span>
-                </button>
-              </div>
-              
-          </div>
+            <div class="col-12 col-md-6 col-xl-5 d-flex align-items-center gap-3 flex-wrap">
+                <h5 class="fs-9 mb-0 text-nowrap py-2 py-xl-0">Customers</h5>
+                <form action="{{ route('admin.users.index') }}" method="GET" class="w-100 w-md-auto">
+                    <div class="input-group input-group-sm">
+                        <input type="text" class="form-control" name="search" placeholder="Search ..."
+                            value="{{ request('search') }}">
+                        <button class="btn btn-primary" type="submit">Tìm</button>
+                    </div>
+                </form>
+            </div>
+            <div class="col-8 col-sm-auto text-end ps-2">
+                <div id="table-customers-replace-element">
+                    <!-- Nút New -->
+                    <a href="{{ route('admin.users.create') }}" class="btn btn-falcon-default btn-sm me-2">
+                        <span class="fas fa-plus" data-fa-transform="shrink-3 down-2"></span>
+                        <span class="d-none d-sm-inline-block ms-1">New</span>
+                    </a>
+
+                    <!-- Nút Filter -->
+                    <button class="btn btn-falcon-default btn-sm me-2" type="button">
+                        <span class="fas fa-filter" data-fa-transform="shrink-3 down-2"></span>
+                        <span class="d-none d-sm-inline-block ms-1">Filter</span>
+                    </button>
+
+                    <!-- Nút Export -->
+                    <button class="btn btn-falcon-default btn-sm" type="button">
+                        <span class="fas fa-external-link-alt" data-fa-transform="shrink-3 down-2"></span>
+                        <span class="d-none d-sm-inline-block ms-1">Export</span>
+                    </button>
+                </div>
+
+            </div>
         </div>
-      </div>
+    </div>
     <div class="card-body p-0">
         <div class="table-responsive scrollbar">
             <table class="table table-sm table-striped fs-10 mb-0 overflow-hidden">
@@ -97,21 +98,15 @@
                             {{ optional($user->created_at)->format('d/m/Y') }}
                         </td>
                         <td class="status align-middle white-space-nowrap py-2">
-                            <label class="cosmic-toggle">
-                                <input class="toggle" type="checkbox" {{ $user->status == 0 ? 'checked' : 'disabled' }}
-                                disabled/>
-                                <div class="slider" style="cursor: default;">
-                                    <div class="cosmos"></div>
-                                    <div class="energy-line"></div>
-                                    <div class="energy-line"></div>
-                                    <div class="energy-line"></div>
-                                    <div class="toggle-orb">
-                                        <div class="inner-orb"></div>
-                                        <div class="ring"></div>
-                                    </div>
-                                </div>
-                            </label>
+                            @if ($user->status == 0)
+                            <span class="badge bg-success">Đang hoạt động</span>
+                            @elseif ($user->status == 1)
+                            <span class="badge bg-warning text-dark">Dừng hoạt động</span>
+                            @elseif ($user->status == 2)
+                            <span class="badge bg-danger">Đã khóa tài khoản</span>
+                            @endif
                         </td>
+
                     </tr>
                     @endforeach
                 </tbody>
