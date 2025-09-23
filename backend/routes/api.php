@@ -1,8 +1,15 @@
 <?php
 
-
-use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\admin\HomeController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\admin\AdminController;
+use App\Http\Controllers\Api\admin\UserController;
+use App\Http\Controllers\Api\admin\ProductController;
+use App\Http\Controllers\Api\admin\CategoryController;
+use App\Http\Controllers\Api\admin\AttributeController;
+
+// ----------------------
 
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
@@ -10,3 +17,37 @@ Route::prefix('auth')->group(function () {
     Route::get('me', [AuthController::class, 'me'])->middleware('auth:sanctum');
 });
 
+// Trang Home (API)
+Route::get('/', [HomeController::class, 'index']); // trả về JSON
+Route::get('/home', [HomeController::class, 'index'])->name('home');
+
+// ----------------------
+// Admin Dashboard (API)
+Route::middleware(['auth:sanctum', 'admin'])->group(function () {
+    Route::get('/admin', [AdminController::class, 'index']);
+});
+
+// ----------------------
+// Macro cho API Resource
+Route::macro('adminApiResource', function ($prefix, $controller) {
+    Route::prefix($prefix)->middleware(['auth:sanctum', 'admin'])->name(str_replace('/', '.', $prefix) . '.')->group(function () use ($controller) {
+
+        Route::get('/trash', [$controller, 'trash']);              // danh sách đã xóa
+        Route::get('/{id}', [$controller, 'show']);               // xem chi tiết
+        Route::post('/', [$controller, 'store']);                 // tạo mới
+        Route::put('/{id}', [$controller, 'update']);             // cập nhật
+        Route::delete('/{id}', [$controller, 'destroy']);         // xóa mềm
+        Route::post('/{id}/restore', [$controller, 'restore']);   // phục hồi
+        Route::delete('/{id}/force-delete', [$controller, 'forceDelete']); // xóa vĩnh viễn
+
+        // Tùy chọn: danh sách chính
+        Route::get('/', [$controller, 'index']);
+    });
+});
+
+// ----------------------
+// Các API Admin Resource
+Route::adminApiResource('admin/users', UserController::class);
+Route::adminApiResource('admin/products', ProductController::class);
+Route::adminApiResource('admin/categories', CategoryController::class);
+Route::adminApiResource('admin/attributes', AttributeController::class);

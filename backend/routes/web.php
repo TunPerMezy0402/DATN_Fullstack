@@ -1,11 +1,14 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+/* use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\HomeController;
 
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AttributeController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\CategoryController;
 
 Auth::routes();
 
@@ -34,8 +37,11 @@ Route::macro('adminResource', function ($prefix, $controller) {
 });
 
 Route::adminResource('admin/users', UserController::class);
+Route::adminResource('admin/products', ProductController::class);
+Route::adminResource('admin/categories', CategoryController::class);
+Route::adminResource('admin/attributes', AttributeController::class);
 
 
-/* Route::prefix('admin/cinemas')->middleware(['auth', 'admin'])->name('admin.cinemas.')->group(function () {
+Route::prefix('admin/cinemas')->middleware(['auth', 'admin'])->name('admin.cinemas.')->group(function () {
 
 }); */
