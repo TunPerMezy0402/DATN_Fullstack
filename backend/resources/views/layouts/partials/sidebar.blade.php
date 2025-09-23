@@ -50,12 +50,20 @@
                 </li>
 
 
-                <!-- Quản lý rạp -->
+                <!-- Quản lý Products -->
                 <li class="nav-item">
-                    <a class="nav-link" href="{{-- {{ route('admin.cinemas.index') }} --}}">
+                    <a class="nav-link" href="{{ route('admin.products.index') }}">
                         <div class="d-flex align-items-center">
                             <span class="nav-link-icon"><i class="fas fa-building"></i></span>
-                            <span class="nav-link-text ps-1">Quản Lý Rạp</span>
+                            <span class="nav-link-text ps-1">Quản Lý Sản Phẩm</span>
+                        </div>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ route('admin.attributes.index') }}">
+                        <div class="d-flex align-items-center">
+                            <span class="nav-link-icon"><i class="fas fa-building"></i></span>
+                            <span class="nav-link-text ps-1">Quản Lý Biến Thể</span>
                         </div>
                     </a>
                 </li>
@@ -66,21 +74,21 @@
                         aria-expanded="false" aria-controls="onemies">
                         <div class="d-flex align-items-center">
                             <span class="nav-link-icon"><i class="fas fa-tags"></i></span>
-                            <span class="nav-link-text ps-1">Quản Lý Biến Thể</span>
+                            <span class="nav-link-text ps-1">Quản Lý Biến Thể Products</span>
                         </div>
                     </a>
                     <ul class="nav collapse" id="onemies">
                         <li class="nav-item">
                             <a class="nav-link" href="{{-- {{ route('admin.countries.index') }} --}}">
                                 <div class="d-flex align-items-center">
-                                    <span class="nav-link-text ps-1">Quốc Gia</span>
+                                    <span class="nav-link-text ps-1">Màu</span>
                                 </div>
                             </a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{-- {{ route('admin.actors.index') }} --}}">
                                 <div class="d-flex align-items-center">
-                                    <span class="nav-link-text ps-1">Diễn Viên</span>
+                                    <span class="nav-link-text ps-1">Size</span>
                                 </div>
                             </a>
                         </li>
@@ -99,6 +107,16 @@
                             </a>
                         </li>
                     </ul>
+                </li>
+
+                <!-- Quản lý Categories -->
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ route('admin.categories.index') }}">
+                        <div class="d-flex align-items-center">
+                            <span class="nav-link-icon"><i class="fas fa-building"></i></span>
+                            <span class="nav-link-text ps-1">Quản Lý Danh Mục</span>
+                        </div>
+                    </a>
                 </li>
 
             </ul>
