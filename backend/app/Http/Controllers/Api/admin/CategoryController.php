@@ -26,24 +26,38 @@ class CategoryController extends Controller
      * Lưu danh mục mới
      */
     public function store(Request $request)
-    {
-        $request->validate([
-            'name'        => 'required|string|max:255',
-            'description' => 'nullable|string',
-        ]);
+{
+    $request->validate([
+        'name'        => 'required|string|max:255',
+        'description' => 'nullable|string',
+    ]);
 
-        $category = Category::create([
-            'name'        => $request->name,
-            'description' => $request->description,
-            'is_deleted'  => 0,
-        ]);
+    // Kiểm tra trùng name
+    $exists = Category::where('name', $request->name)
+        ->where('is_deleted', 0)
+        ->exists();
 
+    if ($exists) {
         return response()->json([
-            'status'  => true,
-            'message' => 'Thêm danh mục thành công',
-            'data'    => $category
-        ], 201);
+            'status'  => false,
+            'message' => 'Tên danh mục đã tồn tại',
+        ], 422);
     }
+
+    $category = Category::create([
+        'name'        => $request->name,
+        'description' => $request->description,
+        'is_deleted'  => 0,
+    ]);
+
+    return response()->json([
+        'status'  => true,
+        'message' => 'Thêm danh mục thành công',
+        'data'    => $category
+    ], 201);
+}
+
+
 
     /**
      * Xem chi tiết danh mục
@@ -62,21 +76,40 @@ class CategoryController extends Controller
      * Cập nhật danh mục
      */
     public function update(Request $request, $id)
-    {
-        $request->validate([
-            'name'        => 'required|string|max:255',
-            'description' => 'nullable|string',
-        ]);
+{
+    $request->validate([
+        'name'        => 'required|string|max:255',
+        'description' => 'nullable|string',
+    ]);
 
-        $category = Category::where('is_deleted', 0)->findOrFail($id);
-        $category->update($request->only(['name', 'description']));
+    $category = Category::where('is_deleted', 0)->findOrFail($id);
 
+    // Kiểm tra trùng name ở bản ghi khác
+    $exists = Category::where('id', '!=', $id)
+        ->where('name', $request->name)
+        ->where('is_deleted', 0)
+        ->exists();
+
+    if ($exists) {
         return response()->json([
-            'status'  => true,
-            'message' => 'Cập nhật danh mục thành công',
-            'data'    => $category
-        ]);
+            'status'  => false,
+            'message' => 'Tên danh mục đã tồn tại',
+        ], 422);
     }
+
+    $category->update([
+        'name'        => $request->name,
+        'description' => $request->description,
+    ]);
+
+    return response()->json([
+        'status'  => true,
+        'message' => 'Cập nhật danh mục thành công',
+        'data'    => $category
+    ]);
+}
+
+
 
     /**
      * Xóa mềm danh mục

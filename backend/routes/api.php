@@ -8,6 +8,13 @@ use App\Http\Controllers\Api\admin\UserController;
 use App\Http\Controllers\Api\admin\ProductController;
 use App\Http\Controllers\Api\admin\CategoryController;
 use App\Http\Controllers\Api\admin\AttributeController;
+use App\Http\Controllers\Api\admin\ProductVariantController;
+use App\Http\Controllers\Api\admin\ProductReviewController;
+use App\Http\Controllers\Api\admin\SupportTicketController;
+use App\Http\Controllers\Api\admin\WishlistController;
+use App\Http\Controllers\Api\admin\CartController;
+use App\Http\Controllers\Api\admin\AddressBookController;
+
 
 // ----------------------
 
@@ -50,4 +57,12 @@ Route::macro('adminApiResource', function ($prefix, $controller) {
 Route::adminApiResource('admin/users', UserController::class);
 Route::adminApiResource('admin/products', ProductController::class);
 Route::adminApiResource('admin/categories', CategoryController::class);
+Route::adminApiResource('admin/productreviews', ProductReviewController::class);
 Route::adminApiResource('admin/attributes', AttributeController::class);
+Route::adminApiResource('admin/productvariants', ProductVariantController::class);
+Route::adminApiResource('admin/support_tickets', SupportTicketController::class);
+Route::adminApiResource('admin/wishlists', WishlistController::class);
+Route::adminApiResource('admin/cart', CartController::class);
+Route::adminApiResource('admin/address_book', AddressBookController::class);
+
+
