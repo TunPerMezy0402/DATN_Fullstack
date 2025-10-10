@@ -4,21 +4,30 @@ import { useNavigate } from "react-router-dom";
 import userApi, { User } from "../../../api/userApi";
 import "../../../assets/admin/users/UserList.css";
 
-
 const UserList: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  // Filter states
+  const [searchName, setSearchName] = useState("");
+  const [searchEmail, setSearchEmail] = useState("");
+  const [searchPhone, setSearchPhone] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
 
   useEffect(() => {
     const fetchUsers = async () => {
       try {
         const data: any = await userApi.getAll();
-        setUsers(Array.isArray(data) ? data : data?.users || data?.data || []);
+        const userList = Array.isArray(data) ? data : data?.users || data?.data || [];
+        setUsers(userList);
+        setFilteredUsers(userList);
       } catch (err: any) {
         setError(err?.message || "Không thể tải danh sách người dùng");
         setUsers([]);
+        setFilteredUsers([]);
       } finally {
         setLoading(false);
       }
@@ -26,9 +35,47 @@ const UserList: React.FC = () => {
     fetchUsers();
   }, []);
 
-  const handleViewDetail = (userId: string) => {
-    navigate(`/admin/users/${userId}`);
+  useEffect(() => {
+    let result = [...users];
+
+    if (searchName.trim()) {
+      result = result.filter(user => 
+        user.name?.toLowerCase().includes(searchName.toLowerCase())
+      );
+    }
+
+    if (searchEmail.trim()) {
+      result = result.filter(user => 
+        user.email?.toLowerCase().includes(searchEmail.toLowerCase())
+      );
+    }
+
+    if (searchPhone.trim()) {
+      result = result.filter(user => 
+        user.phone?.includes(searchPhone)
+      );
+    }
+
+    if (filterStatus !== "all") {
+      result = result.filter(user => {
+        if (filterStatus === "active") return user.status == 0;
+        if (filterStatus === "inactive") return user.status != 0;
+        return true;
+      });
+    }
+
+    setFilteredUsers(result);
+  }, [searchName, searchEmail, searchPhone, filterStatus, users]);
+
+
+  const handleClearFilters = () => {
+    setSearchName("");
+    setSearchEmail("");
+    setSearchPhone("");
+    setFilterStatus("all");
   };
+
+  const hasActiveFilters = searchName || searchEmail || searchPhone || filterStatus !== "all";
 
   if (loading) return (
     <div className="loading-container">
@@ -66,19 +113,201 @@ const UserList: React.FC = () => {
           <div className="user-list-stats">
             <p>
               Tổng số: <span className="user-count">{users.length}</span> người dùng
+              {hasActiveFilters && (
+                <span className="text-sm text-gray-600 ml-2">
+                  (Hiển thị: {filteredUsers.length})
+                </span>
+              )}
             </p>
             <span className="divider" />
             <button className="add-user-btn">+ Thêm người dùng</button>
           </div>
         </div>
 
-        {users.length === 0 ? (
-          <div className="empty-state">
-            <svg className="empty-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+        {/* Enhanced Filter Section */}
+        <div className="search-filter-container">
+          <div className="search-header">
+            <div className="search-icon-wrapper">
+              <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <h3 className="search-title">Tìm kiếm & Lọc</h3>
+            {hasActiveFilters && (
+              <div className="active-filters-badge">
+                <span className="filter-count">{
+                  [searchName, searchEmail, searchPhone, filterStatus !== "all"].filter(Boolean).length
+                }</span>
+                bộ lọc đang áp dụng
+              </div>
+            )}
+          </div>
+
+          <div className="search-grid">
+            <div className="search-input-group">
+              <label className="search-label">
+                <svg className="label-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                Tên người dùng
+              </label>
+              <div className="input-wrapper">
+                <input
+                  type="text"
+                  placeholder="Tìm theo tên..."
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
+                  className="search-input"
+                />
+                {searchName && (
+                  <button 
+                    className="clear-input-btn"
+                    onClick={() => setSearchName("")}
+                    title="Xóa"
+                  >
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="search-input-group">
+              <label className="search-label">
+                <svg className="label-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Email
+              </label>
+              <div className="input-wrapper">
+                <input
+                  type="text"
+                  placeholder="Tìm theo email..."
+                  value={searchEmail}
+                  onChange={(e) => setSearchEmail(e.target.value)}
+                  className="search-input"
+                />
+                {searchEmail && (
+                  <button 
+                    className="clear-input-btn"
+                    onClick={() => setSearchEmail("")}
+                    title="Xóa"
+                  >
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="search-input-group">
+              <label className="search-label">
+                <svg className="label-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+                Số điện thoại
+              </label>
+              <div className="input-wrapper">
+                <input
+                  type="text"
+                  placeholder="Tìm theo SĐT..."
+                  value={searchPhone}
+                  onChange={(e) => setSearchPhone(e.target.value)}
+                  className="search-input"
+                />
+                {searchPhone && (
+                  <button 
+                    className="clear-input-btn"
+                    onClick={() => setSearchPhone("")}
+                    title="Xóa"
+                  >
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="search-input-group">
+              <label className="search-label">
+                <svg className="label-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Trạng thái
+              </label>
+              <div className="select-wrapper">
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="search-select"
+                >
+                  <option value="all">Tất cả trạng thái</option>
+                  <option value="active">✓ Hoạt động</option>
+                  <option value="inactive">✕ Tạm ngưng</option>
+                </select>
+                <svg className="select-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          {hasActiveFilters && (
+            <div className="search-actions">
+              <button
+                onClick={handleClearFilters}
+                className="clear-filters-btn"
+              >
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Xóa tất cả bộ lọc
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Search Results Info */}
+        {hasActiveFilters && (
+          <div className="search-results-info">
+            <svg className="results-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <p className="empty-title">Không có người dùng nào trong hệ thống</p>
-            <p className="empty-subtitle">Hãy thêm người dùng đầu tiên</p>
+            <span>
+              Tìm thấy <strong>{filteredUsers.length}</strong> kết quả trong tổng số <strong>{users.length}</strong> người dùng
+            </span>
+          </div>
+        )}
+
+        {filteredUsers.length === 0 ? (
+          <div className="empty-state-enhanced">
+            <div className="empty-icon-wrapper">
+              <svg className="empty-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+            <h3 className="empty-title">
+              {hasActiveFilters ? 'Không tìm thấy kết quả phù hợp' : 'Không có người dùng nào'}
+            </h3>
+            <p className="empty-subtitle">
+              {hasActiveFilters 
+                ? 'Hãy thử điều chỉnh tiêu chí tìm kiếm hoặc xóa bộ lọc' 
+                : 'Hệ thống chưa có người dùng nào. Hãy thêm người dùng đầu tiên!'}
+            </p>
+            {hasActiveFilters && (
+              <button
+                onClick={handleClearFilters}
+                className="empty-action-btn"
+              >
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Đặt lại bộ lọc
+              </button>
+            )}
           </div>
         ) : (
           <div className="table-container">
@@ -89,15 +318,15 @@ const UserList: React.FC = () => {
                     <th>STT</th>
                     <th>Tên</th>
                     <th>Email</th>
-                    <th>Địa chỉ</th>
+                    <th>Số Điện Thoại</th>
                     <th>Vai trò</th>
                     <th>Trạng thái</th>
                     <th>Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((user, index) => (
-                    <tr key={user._id || `user-${index}`}>
+                  {filteredUsers.map((user, index) => (
+                    <tr key={user.id || `user-${index}`}>
                       <td>
                         <span className="stt-badge">{index + 1}</span>
                       </td>
@@ -115,7 +344,7 @@ const UserList: React.FC = () => {
                         <div className="user-email">{user.email || "N/A"}</div>
                       </td>
                       <td>
-                        <div className="user-address">{user.address || "N/A"}</div>
+                        <div className="user-phone">{user.phone || "N/A"}</div>
                       </td>
                       <td>
                         <span className={`role-badge ${user.role || 'user'}`}>
@@ -123,14 +352,14 @@ const UserList: React.FC = () => {
                         </span>
                       </td>
                       <td>
-                        <span className={`status-badge ${user.status ? 'active' : 'inactive'}`}>
-                          <span className={`status-dot ${user.status ? 'active' : 'inactive'}`} />
-                          {user.status ? 'Hoạt động' : 'Tạm ngưng'}
+                        <span className={`status-badge ${user.status == 0 ? 'active' : 'inactive'}`}>
+                          <span className={`status-dot ${user.status == 0 ? 'active' : 'inactive'}`} />
+                          {user.status == 0 ? 'Hoạt động' : 'Tạm ngưng'}
                         </span>
                       </td>
                       <td>
                         <button 
-                          onClick={() => handleViewDetail(user._id)}
+                          onClick={() => navigate(`/admin/users/${user.id}`)}
                           className="action-btn view-btn"
                           title="Xem chi tiết"
                         >

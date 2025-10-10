@@ -1,9 +1,11 @@
 import axios from "axios";
 
 const axiosClient = axios.create({
-  baseURL: process.env.REACT_APP_API_URL, // 👈 sửa nếu backend khác
+  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000/api",
+  timeout: 10000,
   headers: {
     "Content-Type": "application/json",
+    Accept: "application/json",
   },
 });
 
@@ -23,7 +25,9 @@ axiosClient.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem("access_token");
       localStorage.removeItem("user_data");
-      window.location.href = "/login";
+      if (!window.location.pathname.includes("/login")) {
+        window.location.href = "/login";
+      }
     }
     return Promise.reject(error);
   }

@@ -8,7 +8,7 @@ const userService = {
    */
   async getActiveUsers(): Promise<User[]> {
     const users = await userApi.getAll();
-    return users.filter((user) => user.status !== false);
+    return users.filter((user) => user.status !== 1);
   },
 
   /**
@@ -37,12 +37,6 @@ const userService = {
     return userApi.update(id, data);
   },
 
-  /**
-   * 🗑️ Xóa người dùng
-   */
-  async deleteUser(id: string): Promise<void> {
-    return userApi.delete(id);
-  },
 };
 
 export default userService;

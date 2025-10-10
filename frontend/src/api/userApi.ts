@@ -3,12 +3,15 @@ import axiosClient from "./axiosClient";
 
 // Kiểu dữ liệu cho user
 export interface User {
-  _id: string;
+  id: string;
   name: string;
   email: string;
   address: string;
+  phone: string;
   role: string;
-  status: boolean;
+  created_at: string;
+  updated_at: string;
+  status: number | string; // 0: Hoạt động, 1: Tạm ngưng
 }
 
 const userApi = {
@@ -23,7 +26,7 @@ const userApi = {
   },
 
   // ➕ Tạo mới người dùng
-  create: (data: Omit<User, "_id">): Promise<User> => {
+  create: (data: Omit<User, "id">): Promise<User> => {
     return axiosClient.post("/admin/users", data);
   },
 
@@ -32,10 +35,6 @@ const userApi = {
     return axiosClient.put(`/admin/users/${id}`, data);
   },
 
-  // 🗑️ Xóa người dùng
-  delete: (id: string): Promise<void> => {
-    return axiosClient.delete(`/admin/users/${id}`);
-  },
 };
 
 export default userApi;
