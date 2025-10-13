@@ -7,6 +7,7 @@ import userApi from "../api/userApi";
 // 👉 Thêm các trang quản lý user
 import UserList from '../pages/admin/users/UserList';
 import UserDetail from '../pages/admin/users/UserDetail';
+import UserCreate from '../pages/admin/users/UserCreate';
 
 
 const AdminRoutes: React.FC = () => {
@@ -22,7 +23,8 @@ const AdminRoutes: React.FC = () => {
 
         {/* Quản lý user */}
         <Route path="users" element={<UserList />} />                 
-        <Route path="users/:id" element={<UserDetail />} />              
+        <Route path="users/:id" element={<UserDetail />} />   
+        <Route path="users/create" element={<UserCreate  />} />              
       </Route>
     </Routes>
   );

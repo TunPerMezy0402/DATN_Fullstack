@@ -85,3 +85,4 @@ SANCTUM_STATEFUL_DOMAINS=localhost:3000
 - Kiểm tra Network tab để xem API calls
 - Đảm bảo CORS được cấu hình đúng
 - Kiểm tra Sanctum configuration
+

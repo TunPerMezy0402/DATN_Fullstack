@@ -23,8 +23,7 @@ Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
     Route::get('me', [AuthController::class, 'me'])->middleware('auth:sanctum');
-    Route::post('googleLogin', [AuthController::class, 'googleLogin']);
-    Route::post('googleRegister', [AuthController::class, 'googleRegister']);
+    Route::post('google', [AuthController::class, 'googleLogin']);
 
 });
 

@@ -37,7 +37,7 @@ class AuthController extends Controller
             'name' => $name,
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
-        ]);
+        ]); 
 
         return response()->json([
             'status' => true,
