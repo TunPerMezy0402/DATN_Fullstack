@@ -8,6 +8,7 @@ import Login from './layouts/account/Login';
 import Register from './layouts/account/Register';
 import Unauthorized from './pages/Unauthorized';
 import authService from './services/authService';
+import CategoryList from './pages/admin/category/CategoryList';
 
 // Component wrapper để redirect nếu đã login
 const PublicRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
@@ -52,6 +53,7 @@ const App: React.FC = () => {
         {/* Admin Routes - BẮT BUỘC đăng nhập và role admin */}
         <Route element={<PrivateRoute requiredRole="admin" />}>
           <Route path="/admin/*" element={<AdminRoutes />} />
+          <Route path="/admin/categories" element={<CategoryList />} />
         </Route>
 
         {/* Client Routes - PUBLIC, không cần đăng nhập */}

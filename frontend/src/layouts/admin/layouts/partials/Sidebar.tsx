@@ -108,9 +108,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
               >
                 Danh mục
               </NavLink>
+              <NavLink
+  className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
+  to="/admin/attributes"
+>
+  Thuộc tính
+</NavLink>
+
             </div>
           </div>
         </li>
+       
 
         {/* Nav Item - Orders */}
         <li className="nav-item">
