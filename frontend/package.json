@@ -3,24 +3,34 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@ant-design/icons": "^5.3.7",
     "@react-oauth/google": "^0.12.2",
+    "antd": "^5.22.0",
+    "axios": "^1.12.2",
+    "bootstrap": "^5.3.8",
+    "chart.js": "^4.5.0",
+    "html-webpack-plugin": "^5.6.4",
+    "lucide-react": "^0.545.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.9.3",
+    "react-scripts": "^5.0.1",
+    "typescript": "^4.9.5",
+    "web-vitals": "^2.1.4"
+  },
+  "devDependencies": {
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
     "@types/jest": "^27.5.2",
     "@types/node": "^16.18.126",
-    "@types/react": "^19.2.0",
-    "@types/react-dom": "^19.2.0",
-    "bootstrap": "^5.3.8",
-    "chart.js": "^4.5.0",
-    "jest": "^30.2.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.3",
-    "react-scripts": "5.0.1",
-    "typescript": "^4.9.5",
-    "web-vitals": "^2.1.4"
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.21",
+    "eslint-config-react-app": "^7.0.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.14"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -45,20 +55,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "devDependencies": {
-    "@types/bonjour": "^3.5.13",
-    "@types/eslint": "^9.6.1",
-    "@types/eslint-scope": "^8.3.2",
-    "@types/estree": "^1.0.8",
-    "@types/q": "^1.5.8",
-    "@types/react-router-dom": "^5.3.3",
-    "@types/trusted-types": "^2.0.7",
-    "autoprefixer": "^10.4.21",
-    "axios": "^1.12.2",
-    "html-webpack-plugin": "^5.6.4",
-    "package-name": "^0.1.0",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.14"
   }
 }

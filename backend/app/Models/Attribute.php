@@ -11,6 +11,7 @@ class Attribute extends Model
 
     protected $table = 'attributes';
     protected $primaryKey = 'id';
+    public $timestamps = true; // Bảo đảm có created_at và updated_at
 
     protected $fillable = [
         'type',
@@ -23,7 +24,7 @@ class Attribute extends Model
     ];
 
     /**
-     * Scope: lấy dữ liệu chưa xóa mềm
+     * Scope: lấy các bản ghi chưa xóa mềm
      */
     public function scopeActive($query)
     {
@@ -31,10 +32,34 @@ class Attribute extends Model
     }
 
     /**
-     * Scope: lấy dữ liệu đã xóa mềm
+     * Scope: lấy các bản ghi đã xóa mềm
      */
-    public function scopeDeleted($query)
+    public function scopeTrashed($query)
     {
         return $query->where('is_deleted', 1);
+    }
+
+    /**
+     * Hàm tiện ích: xóa mềm
+     */
+    public function softDelete()
+    {
+        $this->update(['is_deleted' => 1]);
+    }
+
+    /**
+     * Hàm tiện ích: khôi phục dữ liệu đã xóa mềm
+     */
+    public function restoreData()
+    {
+        $this->update(['is_deleted' => 0]);
+    }
+
+    /**
+     * Hàm kiểm tra đã bị xóa mềm chưa
+     */
+    public function isDeleted()
+    {
+        return $this->is_deleted === 1;
     }
 }

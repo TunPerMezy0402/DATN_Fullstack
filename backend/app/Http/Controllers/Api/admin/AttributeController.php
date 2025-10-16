@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\admin;
 
-
 use App\Http\Controllers\Api\admin\Controller;
 use App\Models\Attribute;
 use Illuminate\Http\Request;
@@ -11,11 +10,11 @@ use Illuminate\Validation\Rule;
 class AttributeController extends Controller
 {
     /**
-     * Danh sách thuộc tính
+     * Danh sách thuộc tính (chưa bị xóa)
      */
     public function index()
     {
-        $attributes = Attribute::where('is_deleted', 0)->paginate(10);
+        $attributes = Attribute::whereNull('deleted_at')->paginate(10);
 
         return response()->json([
             'status' => true,
@@ -36,7 +35,7 @@ class AttributeController extends Controller
                 'max:255',
                 Rule::unique('attributes')->where(function ($query) use ($request) {
                     return $query->where('type', ucfirst(strtolower($request->type)))
-                                 ->where('is_deleted', 0);
+                                 ->whereNull('deleted_at');
                 }),
             ],
         ], [
@@ -44,9 +43,8 @@ class AttributeController extends Controller
         ]);
 
         $attribute = Attribute::create([
-            'type'       => ucfirst(strtolower($request->type)),
-            'value'      => $request->value,
-            'is_deleted' => 0,
+            'type'  => ucfirst(strtolower($request->type)),
+            'value' => $request->value,
         ]);
 
         return response()->json([
@@ -61,7 +59,7 @@ class AttributeController extends Controller
      */
     public function show($id)
     {
-        $attribute = Attribute::where('is_deleted', 0)->findOrFail($id);
+        $attribute = Attribute::whereNull('deleted_at')->findOrFail($id);
 
         return response()->json([
             'status' => true,
@@ -74,7 +72,7 @@ class AttributeController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $attribute = Attribute::where('is_deleted', 0)->findOrFail($id);
+        $attribute = Attribute::whereNull('deleted_at')->findOrFail($id);
 
         $request->validate([
             'type'  => 'required|string',
@@ -84,7 +82,7 @@ class AttributeController extends Controller
                 'max:255',
                 Rule::unique('attributes')->where(function ($query) use ($request) {
                     return $query->where('type', ucfirst(strtolower($request->type)))
-                                 ->where('is_deleted', 0);
+                                 ->whereNull('deleted_at');
                 })->ignore($id),
             ],
         ], [
@@ -108,8 +106,8 @@ class AttributeController extends Controller
      */
     public function destroy($id)
     {
-        $attribute = Attribute::where('is_deleted', 0)->findOrFail($id);
-        $attribute->update(['is_deleted' => 1]);
+        $attribute = Attribute::whereNull('deleted_at')->findOrFail($id);
+        $attribute->update(['deleted_at' => now()]);
 
         return response()->json([
             'status'  => true,
@@ -122,7 +120,7 @@ class AttributeController extends Controller
      */
     public function trash()
     {
-        $attributes = Attribute::where('is_deleted', 1)->paginate(10);
+        $attributes = Attribute::whereNotNull('deleted_at')->paginate(10);
 
         return response()->json([
             'status' => true,
@@ -135,8 +133,8 @@ class AttributeController extends Controller
      */
     public function restore($id)
     {
-        $attribute = Attribute::where('is_deleted', 1)->findOrFail($id);
-        $attribute->update(['is_deleted' => 0]);
+        $attribute = Attribute::whereNotNull('deleted_at')->findOrFail($id);
+        $attribute->update(['deleted_at' => null]);
 
         return response()->json([
             'status'  => true,
@@ -150,7 +148,7 @@ class AttributeController extends Controller
      */
     public function forceDelete($id)
     {
-        $attribute = Attribute::where('is_deleted', 1)->findOrFail($id);
+        $attribute = Attribute::whereNotNull('deleted_at')->findOrFail($id);
         $attribute->delete();
 
         return response()->json([

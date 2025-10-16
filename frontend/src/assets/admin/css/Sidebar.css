@@ -1,16 +1,18 @@
 /* src/layouts/partials/Sidebar.css */
 
-/* ===== SIDEBAR MAIN - BÊN TRÁI ===== */
+/* ===== SIDEBAR MAIN ===== */
 .sidebar {
-  width: 250px;
-  min-height: calc(100vh - 4.375rem);
-  background: linear-gradient(180deg, #4e73df 10%, #224abe 100%);
-  box-shadow: 0.15rem 0 1.75rem 0 rgba(58, 59, 69, 0.15);
+  width: 260px;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #4e73df 0%, #224abe 100%);
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
   position: fixed;
-  left: 0; /* Bên trái */
+  left: 0;
+  top: 0;
   z-index: 1000;
-  transition: all 0.3s ease-in-out;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar.toggled {
@@ -19,7 +21,7 @@
 
 /* ===== SIDEBAR BRAND ===== */
 .sidebar-brand {
-  height: 4rem;
+  height: 4.5rem;
   text-decoration: none;
   font-size: 1rem;
   font-weight: 800;
@@ -31,6 +33,9 @@
   transition: all 0.3s ease;
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .sidebar-brand:hover {
@@ -44,7 +49,7 @@
 }
 
 .sidebar-brand:hover .sidebar-brand-icon {
-  transform: rotate(0deg) scale(1.1);
+  transform: rotate(360deg) scale(1.1);
 }
 
 .sidebar-brand-icon.rotate-n-15 {
@@ -54,6 +59,7 @@
 .sidebar-brand-text {
   display: inline;
   transition: opacity 0.3s ease;
+  font-size: 1.1rem;
 }
 
 .sidebar.toggled .sidebar-brand-text {
@@ -82,7 +88,7 @@
   letter-spacing: 1px;
   margin-top: 1rem;
   margin-bottom: 0.5rem;
-  transition: opacity 0.3s ease;
+  transition: all 0.3s ease;
 }
 
 .sidebar.toggled .sidebar-heading {
@@ -108,7 +114,7 @@
   padding: 1rem;
   text-decoration: none;
   color: rgba(255, 255, 255, 0.8);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
@@ -125,11 +131,11 @@
   font-weight: 700;
 }
 
-/* Active indicator - BÊN TRÁI */
+/* Active indicator */
 .sidebar .nav-link.active::before {
   content: '';
   position: absolute;
-  left: 0; /* Bên trái */
+  left: 0;
   top: 0;
   height: 100%;
   width: 4px;
@@ -148,26 +154,35 @@
 
 /* ===== NAV ICONS ===== */
 .sidebar .nav-link i {
-  font-size: 0.85rem;
-  margin-right: 0.5rem;
+  font-size: 0.9rem;
+  margin-right: 0.75rem;
   min-width: 1.5rem;
   text-align: center;
   transition: all 0.3s ease;
 }
 
 .sidebar .nav-link:hover i {
-  transform: scale(1.1);
+  transform: scale(1.15);
 }
 
 .sidebar.toggled .nav-link i {
   margin-right: 0;
-  font-size: 1rem;
+  font-size: 1.1rem;
 }
 
 .sidebar.toggled .nav-link span {
   display: none;
 }
 
+/* ===== COLLAPSE ARROW ===== */
+.sidebar .nav-link[data-bs-toggle="collapse"]::after {
+  content: '\f107';
+  font-family: 'Font Awesome 5 Free';
+  font-weight: 900;
+  position: absolute;
+  right: 1rem;
+  transition: transform 0.3s ease;
+}
 
 .sidebar .nav-link[data-bs-toggle="collapse"]:not(.collapsed)::after {
   transform: rotate(180deg);
@@ -181,11 +196,22 @@
 .collapse-inner {
   padding: 0.5rem 0;
   margin: 0 1rem;
+  background-color: rgba(255, 255, 255, 0.95);
+  border-radius: 0.35rem;
   box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
   animation: slideDown 0.3s ease;
 }
 
-
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 .collapse-header {
   padding: 0.75rem 1rem;
@@ -205,12 +231,14 @@
   font-size: 0.85rem;
   transition: all 0.3s ease;
   position: relative;
+  border-radius: 0.25rem;
+  margin: 0.25rem 0.5rem;
 }
 
 .collapse-item:hover {
   color: #224abe;
   background-color: #f8f9fc;
-  padding-left: 1.5rem; /* Indent bên trái */
+  padding-left: 1.5rem;
 }
 
 .collapse-item.active {
@@ -222,29 +250,39 @@
 .collapse-item.active::before {
   content: '●';
   position: absolute;
-  left: 0.5rem; /* Bên trái */
+  left: 0.5rem;
   color: #4e73df;
 }
 
 /* ===== SIDEBAR TOGGLER BUTTON ===== */
+.sidebar .text-center {
+  padding: 1rem;
+}
+
 #sidebarToggle {
   cursor: pointer;
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-color: rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 1rem;
+  border-radius: 0.35rem;
 }
 
 #sidebarToggle:hover {
-  background-color: rgba(255, 255, 255, 0.3) !important;
-  transform: scale(1.1);
+  background-color: rgba(255, 255, 255, 0.2) !important;
+  transform: scale(1.05);
+  border-color: rgba(255, 255, 255, 0.3);
 }
 
 #sidebarToggle:active {
-  transform: scale(0.95);
+  transform: scale(0.98);
 }
 
 #sidebarToggle i {
   transition: transform 0.3s ease;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .sidebar.toggled #sidebarToggle i {
@@ -272,13 +310,13 @@
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .sidebar {
-    margin-left: -250px;
-    left: 0;
+    transform: translateX(-100%);
   }
 
-  .sidebar.toggled {
-    margin-left: 0;
-    width: 250px;
+  .sidebar.toggled,
+  .sidebar.show {
+    transform: translateX(0);
+    width: 260px;
   }
 
   .sidebar-brand-text {
@@ -300,8 +338,8 @@
   }
 
   .sidebar .nav-link i {
-    margin-right: 0.5rem !important;
-    font-size: 0.85rem !important;
+    margin-right: 0.75rem !important;
+    font-size: 0.9rem !important;
   }
 
   .sidebar .nav-link[data-bs-toggle="collapse"]::after {
@@ -317,14 +355,14 @@
 .sidebar .nav-item::before {
   content: '';
   position: absolute;
-  left: 0; /* Bên trái */
+  left: 0;
   top: 50%;
   transform: translateY(-50%);
   width: 0;
   height: 80%;
   background: rgba(255, 255, 255, 0.1);
   transition: width 0.3s ease;
-  border-radius: 0 4px 4px 0; /* Bo góc bên phải */
+  border-radius: 0 4px 4px 0;
 }
 
 .sidebar .nav-item:hover::before {
@@ -339,9 +377,10 @@
 /* ===== BADGE/NOTIFICATION ===== */
 .sidebar .nav-link .badge {
   position: absolute;
-  right: 1rem; /* Bên phải */
+  right: 1rem;
   font-size: 0.65rem;
   padding: 0.25rem 0.5rem;
+  border-radius: 10rem;
 }
 
 .sidebar.toggled .nav-link .badge {
@@ -379,9 +418,11 @@
     bottom: 0;
     background: rgba(0, 0, 0, 0.5);
     z-index: 999;
+    transition: opacity 0.3s ease;
   }
 
-  .sidebar.toggled ~ .sidebar-overlay {
+  .sidebar.toggled ~ .sidebar-overlay,
+  .sidebar.show ~ .sidebar-overlay {
     display: block;
   }
 }
@@ -394,8 +435,51 @@
 @keyframes slideInFromLeft {
   from {
     transform: translateX(-100%);
+    opacity: 0;
   }
   to {
     transform: translateX(0);
+    opacity: 1;
   }
+}
+
+/* ===== TOOLTIP FOR COLLAPSED SIDEBAR ===== */
+.sidebar.toggled .nav-link {
+  position: relative;
+}
+
+.sidebar.toggled .nav-link:hover::after {
+  content: attr(data-title);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.35rem;
+  white-space: nowrap;
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+  z-index: 1001;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.sidebar .nav-link.active {
+  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.1);
+}
+.sidebar {
+  scroll-behavior: smooth;
+}
+
+.transition-collapse {
+  transition: height 0.3s ease, opacity 0.3s ease;
 }

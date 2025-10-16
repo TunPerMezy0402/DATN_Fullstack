@@ -65,52 +65,97 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
           </NavLink>
         </li>
 
-        {/* Nav Item - Products Collapse Menu */}
-        <li className="nav-item">
-          <a
-            className={`nav-link ${expandedMenu === 'products' ? '' : 'collapsed'}`}
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              handleMenuToggle('products');
-            }}
-            data-bs-toggle="collapse"
-            data-bs-target="#collapseProducts"
-            aria-expanded={expandedMenu === 'products'}
-            aria-controls="collapseProducts"
-          >
-            <i className="fas fa-fw fa-box"></i>
-            <span>Sản phẩm</span>
-          </a>
-          <div
-            id="collapseProducts"
-            className={`collapse ${expandedMenu === 'products' ? 'show' : ''}`}
-            aria-labelledby="headingProducts"
-            data-bs-parent="#accordionSidebar"
-          >
-            <div className="bg-white py-2 collapse-inner rounded">
-              <h6 className="collapse-header">Quản lý sản phẩm:</h6>
-              <NavLink
-                className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
-                to="/admin/products"
-              >
-                Tất cả sản phẩm
-              </NavLink>
-              <NavLink
-                className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
-                to="/admin/products/add"
-              >
-                Thêm sản phẩm
-              </NavLink>
-              <NavLink
-                className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
-                to="/admin/categories"
-              >
-                Danh mục
-              </NavLink>
-            </div>
-          </div>
-        </li>
+
+
+
+
+
+{/* Nav Item - Category Collapse Menu */}
+<li className="nav-item">
+  <a
+    className={`nav-link ${expandedMenu === 'categories' ? '' : 'collapsed'}`}
+    href="#"
+    onClick={(e) => {
+      e.preventDefault();
+      handleMenuToggle('categories');
+    }}
+    aria-expanded={expandedMenu === 'categories'}
+  >
+    <i className="fas fa-fw fa-folder"></i>
+    <span>Danh mục</span>
+  </a>
+  <div
+    className={`collapse ${expandedMenu === 'categories' ? 'show' : ''} transition-collapse`}
+  >
+    <div className="bg-white py-2 collapse-inner rounded">
+      <h6 className="collapse-header">Quản lý danh mục:</h6>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/categories">Tất cả danh mục</NavLink>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/categories/create">Thêm danh mục</NavLink>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/categories/trash">Danh mục lưu trữ</NavLink>
+    </div>
+  </div>
+</li>
+
+{/* Nav Item - Attribute Collapse Menu */}
+<li className="nav-item">
+  <a
+    className={`nav-link ${expandedMenu === 'attributes' ? '' : 'collapsed'}`}
+    href="#"
+    onClick={(e) => {
+      e.preventDefault();
+      handleMenuToggle('attributes');
+    }}
+    aria-expanded={expandedMenu === 'attributes'}
+  >
+    <i className="fas fa-fw fa-list"></i>
+    <span>Thuộc tính</span>
+  </a>
+  <div
+    className={`collapse ${expandedMenu === 'attributes' ? 'show' : ''} transition-collapse`}
+  >
+    <div className="bg-white py-2 collapse-inner rounded">
+      <h6 className="collapse-header">Quản lý thuộc tính:</h6>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/attributes">Tất cả thuộc tính</NavLink>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/attributes/create">Thêm thuộc tính</NavLink>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/attributes/trash">Thuộc tính lưu trữ</NavLink>
+    </div>
+  </div>
+</li>
+
+{/* Nav Item - Product Collapse Menu */}
+<li className="nav-item">
+  <a
+    className={`nav-link ${expandedMenu === 'products' ? '' : 'collapsed'}`}
+    href="#"
+    onClick={(e) => {
+      e.preventDefault();
+      handleMenuToggle('products');
+    }}
+    aria-expanded={expandedMenu === 'products'}
+  >
+    <i className="fas fa-fw fa-box"></i>
+    <span>Sản phẩm</span>
+  </a>
+  <div
+    className={`collapse ${expandedMenu === 'products' ? 'show' : ''} transition-collapse`}
+  >
+    <div className="bg-white py-2 collapse-inner rounded">
+      <h6 className="collapse-header">Quản lý sản phẩm:</h6>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/products">Tất cả sản phẩm</NavLink>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/products/add">Thêm sản phẩm</NavLink>
+      <NavLink className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`} to="/admin/categories">Danh mục</NavLink>
+    </div>
+  </div>
+</li>
+
+
+
+
+
+
+
+
+
 
         {/* Nav Item - Orders */}
         <li className="nav-item">
