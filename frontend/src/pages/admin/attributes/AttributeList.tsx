@@ -1,31 +1,23 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Table,
-  Tag,
-  message,
-  Input,
-  Card,
-  Typography,
-  Spin,
   Button,
   Space,
+  Popconfirm,
+  message,
   Modal,
   Form,
+  Input,
+  Descriptions,
+  Tooltip,
 } from "antd";
-import {
-  SearchOutlined,
-  ReloadOutlined,
-  PlusOutlined,
-} from "@ant-design/icons";
 import axios from "axios";
 import dayjs from "dayjs";
-import { useNavigate } from "react-router-dom";
-
-const { Title } = Typography;
+import { SortDescendingOutlined } from "@ant-design/icons";
 
 interface Attribute {
   id: number;
-  type: string;
+  type: string;        // tên thuộc tính
   value: string;
   created_at: string;
   updated_at: string;
@@ -34,29 +26,37 @@ interface Attribute {
 const AttributeList: React.FC = () => {
   const [attributes, setAttributes] = useState<Attribute[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchText, setSearchText] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingAttribute, setEditingAttribute] = useState<Attribute | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
-  const [selectedAttribute, setSelectedAttribute] = useState<Attribute | null>(null);
+  const [editingAttr, setEditingAttr] = useState<Attribute | null>(null);
+  const [selectedAttr, setSelectedAttr] = useState<Attribute | null>(null);
+
+  // 🔎 tìm kiếm + ⏱️ sắp xếp mới nhất
+  const [searchText, setSearchText] = useState("");
+  const [sortNewest, setSortNewest] = useState(true);
+
   const [form] = Form.useForm();
 
-  const navigate = useNavigate();
-  const API_URL = "http://127.0.0.1:8000/api";
   const token = localStorage.getItem("access_token");
+  const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
+  const headers = { Authorization: `Bearer ${token}` };
 
   // ✅ Lấy danh sách thuộc tính
   const fetchAttributes = async () => {
-    setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/admin/attributes`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = res?.data?.data?.data || res?.data?.data || [];
+      setLoading(true);
+      const res = await axios.get(`${API_URL}/admin/attributes`, { headers });
+      const data =
+        Array.isArray(res.data) ? res.data :
+        Array.isArray(res.data.data) ? res.data.data :
+        res.data.data?.data || [];
       setAttributes(data);
     } catch (err) {
-      console.error(err);
-      message.error("Không thể tải danh sách thuộc tính!");
+      console.error("❌ Lỗi tải thuộc tính:", err);
+      message.error("Không thể tải thuộc tính!");
     } finally {
       setLoading(false);
     }
@@ -64,50 +64,42 @@ const AttributeList: React.FC = () => {
 
   useEffect(() => {
     fetchAttributes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filteredData = attributes.filter(
-    (item) =>
-      item.type.toLowerCase().includes(searchText.toLowerCase()) ||
-      item.value.toLowerCase().includes(searchText.toLowerCase())
-  );
+  // ✅ Lọc theo type + sắp xếp updated_at DESC khi bật "mới nhất"
+  const dataView = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
+    let list = attributes.filter((a) => a.type.toLowerCase().includes(q));
+    if (sortNewest) {
+      list = [...list].sort(
+        (a, b) => dayjs(b.updated_at).valueOf() - dayjs(a.updated_at).valueOf()
+      );
+    }
+    return list;
+  }, [attributes, searchText, sortNewest]);
 
   // ✅ Mở modal thêm/sửa
-  const openModal = (attribute?: Attribute) => {
-    if (attribute) {
-      setEditingAttribute(attribute);
-      form.setFieldsValue({
-        type: attribute.type,
-        value: attribute.value,
-      });
+  const openModal = (attr?: Attribute) => {
+    if (attr) {
+      setEditingAttr(attr);
+      form.setFieldsValue({ type: attr.type, value: attr.value });
     } else {
-      setEditingAttribute(null);
+      setEditingAttr(null);
       form.resetFields();
     }
     setModalVisible(true);
   };
 
-  // ✅ Mở modal chi tiết
-  const openDetailModal = (attribute: Attribute) => {
-    setSelectedAttribute(attribute);
-    setDetailVisible(true);
-  };
-
-  // ✅ Lưu thuộc tính (Thêm/Sửa)
+  // ✅ Lưu (Thêm / Sửa)
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
-      if (editingAttribute) {
-        // Sửa
-        await axios.put(`${API_URL}/admin/attributes/${editingAttribute.id}`, values, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+      if (editingAttr) {
+        await axios.put(`${API_URL}/admin/attributes/${editingAttr.id}`, values, { headers });
         message.success("✅ Cập nhật thuộc tính thành công!");
       } else {
-        // Thêm
-        await axios.post(`${API_URL}/admin/attributes`, values, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        await axios.post(`${API_URL}/admin/attributes`, values, { headers });
         message.success("✅ Thêm thuộc tính thành công!");
       }
       setModalVisible(false);
@@ -118,13 +110,11 @@ const AttributeList: React.FC = () => {
     }
   };
 
-  // ✅ Xóa thuộc tính
-  const handleDelete = async (id: number) => {
+  // ✅ Xóa mềm
+  const handleSoftDelete = async (id: number) => {
     try {
-      await axios.delete(`${API_URL}/admin/attributes/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      message.success("🗑️ Xóa thuộc tính thành công!");
+      await axios.delete(`${API_URL}/admin/attributes/${id}`, { headers });
+      message.success("🗑️ Đã xóa mềm thuộc tính!");
       fetchAttributes();
     } catch (err) {
       console.error(err);
@@ -132,76 +122,137 @@ const AttributeList: React.FC = () => {
     }
   };
 
-  // ✅ Cột Table
+  const openDetailModal = (attr: Attribute) => {
+    setSelectedAttr(attr);
+    setDetailVisible(true);
+  };
+
   const columns = [
-    { title: "ID", dataIndex: "id", width: 70, align: "center" as const },
-    { title: "Loại thuộc tính", dataIndex: "type", render: (type: string) => <Tag color="blue">{type}</Tag>, align: "center" as const },
-    { title: "Giá trị", dataIndex: "value", align: "center" as const },
-    { title: "Ngày tạo", dataIndex: "created_at", render: (date: string) => dayjs(date).format("HH:mm DD/MM/YYYY"), align: "center" as const },
-    { title: "Ngày cập nhật", dataIndex: "updated_at", render: (date: string) => dayjs(date).format("HH:mm DD/MM/YYYY"), align: "center" as const },
+    {
+      title: "STT",
+      render: (_: any, __: any, index: number) =>
+        (currentPage - 1) * pageSize + index + 1,
+      width: 80,
+      align: "center" as const,
+    },
+    { title: "Tên thuộc tính", dataIndex: "type", key: "type" },
+    { title: "Giá trị", dataIndex: "value", key: "value" },
+    {
+      title: "Cập nhật",
+      dataIndex: "updated_at",
+      render: (text: string) => dayjs(text).format("HH:mm - DD/MM/YYYY"),
+      width: 180,
+    },
     {
       title: "Hành động",
+      key: "actions",
       render: (_: any, record: Attribute) => (
         <Space>
-          <Button type="link" onClick={() => openDetailModal(record)}>Chi tiết</Button>
-          <Button type="link" onClick={() => openModal(record)}>Sửa</Button>
-          <Button type="link" danger onClick={() => handleDelete(record.id)}>Xóa</Button>
+          <Button type="link" onClick={() => openDetailModal(record)}>
+            Chi tiết
+          </Button>
+          <Button type="link" onClick={() => openModal(record)}>
+            Sửa
+          </Button>
+          <Popconfirm
+            title="Xóa thuộc tính"
+            description="Bản ghi sẽ chuyển vào Thùng rác."
+            okText="Xóa"
+            cancelText="Hủy"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleSoftDelete(record.id)}
+          >
+            <Button danger type="link">
+              Xóa
+            </Button>
+          </Popconfirm>
         </Space>
       ),
-      align: "center" as const,
     },
   ];
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
-      <Card className="shadow-md rounded-2xl bg-white">
-        {/* Header */}
-        <div className="flex flex-wrap items-center justify-between mb-6" style={{ gap: 20 }}>
-          <div className="flex items-center gap-4">
-            <Title level={4} style={{ margin: 0 }}>🧩 Danh sách thuộc tính</Title>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>Thêm thuộc tính</Button>
-          </div>
-          <div className="flex items-center gap-3">
-            <Input
-              placeholder="Tìm theo loại hoặc giá trị..."
-              prefix={<SearchOutlined />}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              allowClear
-              style={{ width: 260 }}
-            />
-            <Button icon={<ReloadOutlined />} onClick={fetchAttributes}>Làm mới</Button>
-          </div>
-        </div>
-
-        {/* Table */}
-        <Spin spinning={loading} tip="Đang tải dữ liệu...">
-          <Table
-            bordered
-            dataSource={filteredData}
-            columns={columns}
-            rowKey="id"
-            pagination={{ pageSize: 5, showTotal: total => `Tổng ${total} thuộc tính` }}
+    <div style={{ padding: 24, background: "#f5f7fa", minHeight: "100vh" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          marginBottom: 16,
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        {/* Trái: Tìm kiếm + icon sắp xếp mới nhất */}
+        <Space>
+          <Input
+            placeholder="Tìm theo tên thuộc tính..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onPressEnter={(e) =>
+              setSearchText((e.target as HTMLInputElement).value)
+            }
+            allowClear
+            style={{ width: 320 }}
           />
-        </Spin>
-      </Card>
+          <Tooltip
+            title={
+              sortNewest ? "Đang sắp xếp: Mới nhất" : "Bật sắp xếp theo Mới nhất"
+            }
+          >
+            <Button
+              size="small"
+              shape="circle"
+              type={sortNewest ? "primary" : "default"}
+              icon={<SortDescendingOutlined />}
+              aria-label="Sắp xếp theo mới nhất"
+              onClick={() => setSortNewest((v) => !v)}
+            />
+          </Tooltip>
+        </Space>
 
-      {/* Modal Thêm/Sửa */}
+        {/* Phải: nút Thêm */}
+        <Button type="primary" onClick={() => openModal()}>
+          + Thêm thuộc tính
+        </Button>
+      </div>
+
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={dataView}
+        loading={loading}
+        pagination={{
+          pageSize,
+          current: currentPage,
+          onChange: (page: number) => setCurrentPage(page),
+          showTotal: (t) => `Tổng ${t} thuộc tính`,
+        }}
+      />
+
+      {/* Modal Thêm / Sửa */}
       <Modal
-        title={editingAttribute ? "📝 Chỉnh sửa thuộc tính" : "➕ Thêm thuộc tính"}
+        title={editingAttr ? "📝 Chỉnh sửa thuộc tính" : "➕ Thêm thuộc tính"}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={handleSave}
         okText="Lưu"
-        cancelText="Hủy"
-        destroyOnClose
       >
         <Form form={form} layout="vertical">
-          <Form.Item label="Loại thuộc tính" name="type" rules={[{ required: true, message: "Vui lòng nhập loại thuộc tính!" }]}>
-            <Input placeholder="Nhập loại thuộc tính" />
+          <Form.Item
+            label="Tên thuộc tính (type)"
+            name="type"
+            rules={[{ required: true, message: "Nhập tên thuộc tính!" }]}
+          >
+            <Input placeholder="Ví dụ: color, size..." />
           </Form.Item>
-          <Form.Item label="Giá trị" name="value" rules={[{ required: true, message: "Vui lòng nhập giá trị!" }]}>
-            <Input placeholder="Nhập giá trị" />
+          <Form.Item
+            label="Giá trị"
+            name="value"
+            rules={[{ required: true, message: "Nhập giá trị!" }]}
+          >
+            <Input placeholder="Ví dụ: Red, XL..." />
           </Form.Item>
         </Form>
       </Modal>
@@ -213,15 +264,22 @@ const AttributeList: React.FC = () => {
         onCancel={() => setDetailVisible(false)}
         footer={null}
       >
-        {selectedAttribute ? (
-          <div>
-            <p><strong>ID:</strong> {selectedAttribute.id}</p>
-            <p><strong>Loại thuộc tính:</strong> {selectedAttribute.type}</p>
-            <p><strong>Giá trị:</strong> {selectedAttribute.value}</p>
-            <p><strong>Ngày tạo:</strong> {dayjs(selectedAttribute.created_at).format("HH:mm DD/MM/YYYY")}</p>
-            <p><strong>Ngày cập nhật:</strong> {dayjs(selectedAttribute.updated_at).format("HH:mm DD/MM/YYYY")}</p>
-          </div>
-        ) : <p>Không có dữ liệu!</p>}
+        {selectedAttr && (
+          <Descriptions bordered column={1}>
+            <Descriptions.Item label="Tên thuộc tính">
+              {selectedAttr.type}
+            </Descriptions.Item>
+            <Descriptions.Item label="Giá trị">
+              {selectedAttr.value}
+            </Descriptions.Item>
+            <Descriptions.Item label="Ngày tạo">
+              {dayjs(selectedAttr.created_at).format("HH:mm - DD/MM/YYYY")}
+            </Descriptions.Item>
+            <Descriptions.Item label="Ngày cập nhật">
+              {dayjs(selectedAttr.updated_at).format("HH:mm - DD/MM/YYYY")}
+            </Descriptions.Item>
+          </Descriptions>
+        )}
       </Modal>
     </div>
   );

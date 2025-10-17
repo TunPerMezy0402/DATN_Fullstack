@@ -16,21 +16,17 @@ class Product extends Model
 
     protected $fillable = [
         'name',
+        'sku',
         'category_id',
         'description',
         'origin',
         'brand',
-        'price',
-        'stock_quantity',
         'images',
-        'discount_price',
         'variation_status',
         'deleted_at',
     ];
 
     protected $casts = [
-        'price' => 'decimal:2',
-        'discount_price' => 'decimal:2',
         'deleted_at' => 'datetime',
     ];
 

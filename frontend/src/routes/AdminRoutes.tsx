@@ -9,10 +9,14 @@ import CategoryTrash  from '../pages/admin/category/CategoryTrash';
 
 import AttributeList from '../pages/admin/attributes/AttributeList';
 import AttributeCreate from '../pages/admin/attributes/AttributeCreate';
+import AttributeTrash from '../pages/admin/attributes/AttributeTrash';
 
 import UserList from '../pages/admin/users/UserList';
 import UserDetail from '../pages/admin/users/UserDetail';
 import UserCreate from '../pages/admin/users/UserCreate'; 
+
+import ProductList from '../pages/admin/products/ProductList';
+
 
 const AdminRoutes: React.FC = () => {
   return (
@@ -33,7 +37,11 @@ const AdminRoutes: React.FC = () => {
 
         {/* ✅ Quản lý thuộc tính */}
         <Route path="attributes" element={<AttributeList />} />
-        <Route path="attributes/create" element={<AttributeCreate />} />           
+        <Route path="attributes/create" element={<AttributeCreate />} /> 
+        <Route path="attributes/trash" element={<AttributeTrash />} />   
+
+        <Route path="products" element={<ProductList />} />           
+
       </Route>
     </Routes>
   );

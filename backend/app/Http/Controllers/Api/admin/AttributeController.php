@@ -14,11 +14,12 @@ class AttributeController extends Controller
      */
     public function index()
     {
-        $attributes = Attribute::whereNull('deleted_at')->paginate(10);
+        // Mặc định Eloquent sẽ chỉ lấy bản ghi chưa xóa, không cần whereNull
+        $attributes = Attribute::paginate(10);
 
         return response()->json([
             'status' => true,
-            'data'   => $attributes
+            'data' => $attributes
         ]);
     }
 
@@ -28,14 +29,13 @@ class AttributeController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'type'  => 'required|string',
+            'type' => 'required|string',
             'value' => [
                 'required',
                 'string',
                 'max:255',
                 Rule::unique('attributes')->where(function ($query) use ($request) {
-                    return $query->where('type', ucfirst(strtolower($request->type)))
-                                 ->whereNull('deleted_at');
+                    return $query->where('type', ucfirst(strtolower($request->type)));
                 }),
             ],
         ], [
@@ -43,14 +43,14 @@ class AttributeController extends Controller
         ]);
 
         $attribute = Attribute::create([
-            'type'  => ucfirst(strtolower($request->type)),
+            'type' => ucfirst(strtolower($request->type)),
             'value' => $request->value,
         ]);
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Thêm thuộc tính thành công',
-            'data'    => $attribute
+            'data' => $attribute
         ], 201);
     }
 
@@ -59,11 +59,11 @@ class AttributeController extends Controller
      */
     public function show($id)
     {
-        $attribute = Attribute::whereNull('deleted_at')->findOrFail($id);
+        $attribute = Attribute::findOrFail($id);
 
         return response()->json([
             'status' => true,
-            'data'   => $attribute
+            'data' => $attribute
         ]);
     }
 
@@ -72,32 +72,29 @@ class AttributeController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $attribute = Attribute::whereNull('deleted_at')->findOrFail($id);
+        $attribute = Attribute::findOrFail($id);
 
         $request->validate([
-            'type'  => 'required|string',
+            'type' => 'required|string',
             'value' => [
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('attributes')->where(function ($query) use ($request) {
-                    return $query->where('type', ucfirst(strtolower($request->type)))
-                                 ->whereNull('deleted_at');
-                })->ignore($id),
+                Rule::unique('attributes')
+                    ->where(fn($query) => $query->where('type', ucfirst(strtolower($request->type))))
+                    ->ignore($id),
             ],
-        ], [
-            'value.unique' => 'Giá trị "' . $request->value . '" đã tồn tại cho loại ' . ucfirst(strtolower($request->type)),
         ]);
 
         $attribute->update([
-            'type'  => ucfirst(strtolower($request->type)),
+            'type' => ucfirst(strtolower($request->type)),
             'value' => $request->value,
         ]);
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Cập nhật thuộc tính thành công',
-            'data'    => $attribute
+            'data' => $attribute
         ]);
     }
 
@@ -106,11 +103,11 @@ class AttributeController extends Controller
      */
     public function destroy($id)
     {
-        $attribute = Attribute::whereNull('deleted_at')->findOrFail($id);
-        $attribute->update(['deleted_at' => now()]);
+        $attribute = Attribute::findOrFail($id);
+        $attribute->delete(); // Soft delete tự động set deleted_at = now()
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Xóa thuộc tính thành công'
         ]);
     }
@@ -120,11 +117,11 @@ class AttributeController extends Controller
      */
     public function trash()
     {
-        $attributes = Attribute::whereNotNull('deleted_at')->paginate(10);
+        $attributes = Attribute::onlyTrashed()->paginate(10);
 
         return response()->json([
             'status' => true,
-            'data'   => $attributes
+            'data' => $attributes
         ]);
     }
 
@@ -133,13 +130,13 @@ class AttributeController extends Controller
      */
     public function restore($id)
     {
-        $attribute = Attribute::whereNotNull('deleted_at')->findOrFail($id);
-        $attribute->update(['deleted_at' => null]);
+        $attribute = Attribute::onlyTrashed()->findOrFail($id);
+        $attribute->restore();
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Khôi phục thuộc tính thành công',
-            'data'    => $attribute
+            'data' => $attribute
         ]);
     }
 
@@ -148,11 +145,11 @@ class AttributeController extends Controller
      */
     public function forceDelete($id)
     {
-        $attribute = Attribute::whereNotNull('deleted_at')->findOrFail($id);
-        $attribute->delete();
+        $attribute = Attribute::onlyTrashed()->findOrFail($id);
+        $attribute->forceDelete();
 
         return response()->json([
-            'status'  => true,
+            'status' => true,
             'message' => 'Đã xóa vĩnh viễn thuộc tính'
         ]);
     }
