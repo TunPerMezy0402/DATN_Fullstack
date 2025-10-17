@@ -34,11 +34,6 @@ const CategoryCreate: React.FC = () => {
           >
             <Input placeholder="Nhập tên danh mục" />
           </Form.Item>
-
-          <Form.Item label="Mô tả" name="description">
-            <Input.TextArea rows={4} placeholder="Mô tả (tùy chọn)" />
-          </Form.Item>
-
           <Form.Item>
             <Button type="primary" htmlType="submit">
               Lưu danh mục

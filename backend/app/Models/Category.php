@@ -4,11 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes; // ✅ thêm dòng này
 use Carbon\Carbon;
 
 class Category extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes; // ✅ kích hoạt soft delete
 
     protected $table = 'categories';
     protected $primaryKey = 'id';
@@ -16,7 +17,6 @@ class Category extends Model
 
     protected $fillable = [
         'name',
-        'description',
         'deleted_at',
     ];
 
@@ -24,51 +24,13 @@ class Category extends Model
         'deleted_at' => 'datetime',
     ];
 
-    /**
-     * Scope: lấy danh mục chưa bị xóa mềm
-     */
-    public function scopeActive($query)
-    {
-        return $query->whereNull('deleted_at');
-    }
-
-    /**
-     * Scope: lấy danh mục đã xóa mềm
-     */
-    public function scopeTrashed($query)
-    {
-        return $query->whereNotNull('deleted_at');
-    }
-
-    /**
-     * Xóa mềm danh mục
-     */
-    public function softDelete()
-    {
-        $this->update(['deleted_at' => Carbon::now()]);
-    }
-
-    /**
-     * Khôi phục danh mục đã xóa mềm
-     */
-    public function restoreData()
-    {
-        $this->update(['deleted_at' => null]);
-    }
-
-    /**
-     * Kiểm tra danh mục đã bị xóa mềm chưa
-     */
-    public function isDeleted()
-    {
-        return !is_null($this->deleted_at);
-    }
-
-    /**
-     * Quan hệ: 1 danh mục có nhiều sản phẩm
-     */
     public function products()
     {
         return $this->hasMany(Product::class, 'category_id', 'id');
+    }
+
+    public function isDeleted()
+    {
+        return $this->trashed();
     }
 }

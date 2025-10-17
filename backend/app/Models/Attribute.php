@@ -4,62 +4,49 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Attribute extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     protected $table = 'attributes';
     protected $primaryKey = 'id';
-    public $timestamps = true; // Bảo đảm có created_at và updated_at
+    public $timestamps = true;
 
     protected $fillable = [
         'type',
         'value',
-        'is_deleted',
+        'deleted_at',
     ];
 
     protected $casts = [
-        'is_deleted' => 'boolean',
+        'deleted_at' => 'datetime',
     ];
 
-    /**
-     * Scope: lấy các bản ghi chưa xóa mềm
-     */
+
     public function scopeActive($query)
     {
-        return $query->where('is_deleted', 0);
+        return $query->whereNull('deleted_at');
     }
 
-    /**
-     * Scope: lấy các bản ghi đã xóa mềm
-     */
     public function scopeTrashed($query)
     {
-        return $query->where('is_deleted', 1);
+        return $query->whereNotNull('deleted_at');
     }
 
-    /**
-     * Hàm tiện ích: xóa mềm
-     */
     public function softDelete()
     {
-        $this->update(['is_deleted' => 1]);
+        $this->delete();
     }
 
-    /**
-     * Hàm tiện ích: khôi phục dữ liệu đã xóa mềm
-     */
     public function restoreData()
     {
-        $this->update(['is_deleted' => 0]);
+        $this->restore();
     }
 
-    /**
-     * Hàm kiểm tra đã bị xóa mềm chưa
-     */
     public function isDeleted()
     {
-        return $this->is_deleted === 1;
+        return $this->trashed();
     }
 }
