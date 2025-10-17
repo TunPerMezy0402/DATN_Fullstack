@@ -1,8 +1,10 @@
 <?php
 namespace App\Http\Controllers\Api\admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
@@ -19,9 +21,14 @@ class UserController extends Controller
             });
         }
 
+        // Lọc theo trạng thái nếu có
+        if ($request->has('status') && in_array($request->status, ['active', 'inactive'])) {
+            $query->where('status', $request->status);
+        }
+
         $users = $query->orderBy('created_at', 'desc')->paginate(15);
 
-        return response()->json($users); // Trả về JSON
+        return response()->json($users);
     }
 
     // Lưu người dùng mới
@@ -29,26 +36,28 @@ class UserController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'address' => 'required|string|max:255',
+            'address' => 'nullable|string|max:255',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
             'role' => 'required|in:user,admin',
             'phone' => 'required|string|max:15|unique:users,phone',
+            'status' => 'in:active,inactive',
         ]);
 
         $user = new User();
         $user->name = $validated['name'];
-        $user->address = $validated['address'];
+        $user->address = $validated['address'] ?? null;
         $user->email = $validated['email'];
-        $user->password = bcrypt($validated['password']); // Mã hóa mật khẩu
+        $user->password = Hash::make($validated['password']); // ✅ hash password
         $user->role = $validated['role'];
         $user->phone = $validated['phone'];
+        $user->status = $validated['status'] ?? 'active';
         $user->save();
 
         return response()->json([
             'message' => 'Người dùng mới đã được thêm!',
             'user' => $user
-        ], 201); // 201 = Created
+        ], 201);
     }
 
     // Hiển thị chi tiết người dùng
@@ -58,62 +67,33 @@ class UserController extends Controller
         return response()->json($user);
     }
 
-    // Cập nhật người dùng (chỉ status trong ví dụ này)
+    // Cập nhật người dùng (bao gồm cả status và password)
     public function update(Request $request, $id)
     {
         $user = User::findOrFail($id);
 
         $validated = $request->validate([
-            'status' => 'required|boolean',
+            'name' => 'sometimes|string|max:255',
+            'address' => 'sometimes|string|max:255',
+            'phone' => 'sometimes|string|max:15|unique:users,phone,' . $user->id,
+            'role' => 'sometimes|in:user,admin',
+            'status' => 'sometimes|in:active,inactive',
+            'password' => 'sometimes|string|min:8', // ✅ cho phép cập nhật mật khẩu
         ]);
 
-        $user->status = $validated['status'];
+        // Gán dữ liệu mới
+        $user->fill($validated);
+
+        // ✅ Nếu có mật khẩu mới thì hash lại
+        if ($request->filled('password')) {
+            $user->password = Hash::make($request->password);
+        }
+
         $user->save();
 
         return response()->json([
             'message' => 'Cập nhật người dùng thành công!',
             'user' => $user
-        ]);
-    }
-
-    // Xóa người dùng
-    public function destroy($id)
-    {
-        $user = User::findOrFail($id);
-        $user->delete();
-
-        return response()->json([
-            'message' => 'Đã xóa người dùng thành công'
-        ]);
-    }
-
-    // Danh sách người dùng đã xóa (thùng rác)
-    public function trash()
-    {
-        $users = User::onlyTrashed()->paginate(15);
-        return response()->json($users);
-    }
-
-    // Khôi phục người dùng đã xóa
-    public function restore($id)
-    {
-        $user = User::onlyTrashed()->findOrFail($id);
-        $user->restore();
-
-        return response()->json([
-            'message' => 'Người dùng đã được khôi phục',
-            'user' => $user
-        ]);
-    }
-
-    // Xóa vĩnh viễn người dùng
-    public function forceDelete($id)
-    {
-        $user = User::onlyTrashed()->findOrFail($id);
-        $user->forceDelete();
-
-        return response()->json([
-            'message' => 'Người dùng đã bị xóa vĩnh viễn'
         ]);
     }
 }

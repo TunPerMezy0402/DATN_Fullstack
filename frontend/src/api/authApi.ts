@@ -1,50 +1,5 @@
-import axios, { AxiosError } from "axios";
-
-// ======================= CONFIG =======================
-
-// URL API backend
-const API_BASE_URL =
-  process.env.REACT_APP_API_URL || "http://localhost:8000/api";
-
-// Tạo axios instance
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-  headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  },
-});
-
-// ======================= INTERCEPTORS =======================
-
-// ✅ Thêm token vào header trước khi gửi request
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("access_token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// ✅ Xử lý lỗi response chung (ví dụ 401 → redirect login)
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_data");
-
-      if (!window.location.pathname.includes("/login")) {
-        window.location.href = "/login";
-      }
-    }
-    return Promise.reject(error);
-  }
-);
+import axiosClient from "./axiosClient";
+import { AxiosError } from "axios";
 
 // ======================= TYPES =======================
 
@@ -76,6 +31,10 @@ export interface RegisterData {
   password_confirmation: string;
 }
 
+export interface GoogleAuthData {
+  credential: string;
+}
+
 interface ApiResponse<T> {
   status: boolean;
   message: string;
@@ -84,84 +43,63 @@ interface ApiResponse<T> {
   data?: T;
 }
 
+// ======================= HELPER FUNCTIONS =======================
+
+const handleApiError = (error: unknown, defaultMessage: string): Error => {
+  if (error instanceof AxiosError) {
+    const message = error.response?.data?.message || defaultMessage;
+    return new Error(message);
+  }
+  return new Error(defaultMessage);
+};
+
+const validateAuthResponse = (
+  response: ApiResponse<AuthResponse>,
+  errorMessage: string
+): AuthResponse => {
+  if (response.status && response.token && response.user) {
+    return {
+      token: response.token,
+      user: response.user,
+    };
+  }
+  throw new Error(response.message || errorMessage);
+};
+
 // ======================= API METHODS =======================
 
 const authApi = {
   /**
-   * Đăng nhập
+   * Đăng nhập thông thường
    */
   async login(data: LoginData): Promise<AuthResponse> {
     try {
-      const response = await apiClient.post<ApiResponse<AuthResponse>>(
+      const response = await axiosClient.post<ApiResponse<AuthResponse>>(
         "/auth/login",
         data
       );
-
-      if (response.data.status && response.data.token && response.data.user) {
-        return {
-          token: response.data.token,
-          user: response.data.user,
-        };
-      }
-
-      throw new Error(response.data.message || "Đăng nhập thất bại");
+      return validateAuthResponse(response as unknown as ApiResponse<AuthResponse>, "Đăng nhập thất bại");
     } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || "Đăng nhập thất bại"
-        : "Có lỗi xảy ra khi đăng nhập";
-      throw new Error(message);
+      throw handleApiError(error, "Đăng nhập thất bại");
     }
   },
 
   /**
-   * Đăng ký
+   * Đăng ký thông thường
    */
-  async register(data: RegisterData): Promise<AuthResponse> {
+  async register(data: RegisterData): Promise<{ message: string }> {
     try {
-      const response = await apiClient.post<ApiResponse<AuthResponse>>(
+      const response = await axiosClient.post<ApiResponse<any>>(
         "/auth/register",
         data
-      );
-
-      if (response.data.status && response.data.token && response.data.user) {
-        return {
-          token: response.data.token,
-          user: response.data.user,
-        };
+      ) as unknown as ApiResponse<any>;
+      
+      if (response.status) {
+        return { message: response.message };
       }
-
-      throw new Error(response.data.message || "Đăng ký thất bại");
+      throw new Error(response.message || "Đăng ký thất bại");
     } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || "Đăng ký thất bại"
-        : "Có lỗi xảy ra khi đăng ký";
-      throw new Error(message);
-    }
-  },
-
-  /**
-   * Đăng nhập Google (token từ @react-oauth/google)
-   */
-  async loginWithGoogle(googleToken: string): Promise<AuthResponse> {
-    try {
-      const response = await apiClient.post<ApiResponse<AuthResponse>>(
-        "/auth/google/callback",
-        { token: googleToken }
-      );
-
-      if (response.data.status && response.data.token && response.data.user) {
-        return {
-          token: response.data.token,
-          user: response.data.user,
-        };
-      }
-
-      throw new Error(response.data.message || "Đăng nhập Google thất bại");
-    } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || "Đăng nhập Google thất bại"
-        : "Có lỗi xảy ra khi đăng nhập Google";
-      throw new Error(message);
+      throw handleApiError(error, "Đăng ký thất bại");
     }
   },
 
@@ -170,7 +108,7 @@ const authApi = {
    */
   async logout(): Promise<void> {
     try {
-      await apiClient.post("/auth/logout");
+      await axiosClient.post("/auth/logout");
     } catch (error) {
       console.error("Logout API error:", error);
     }
@@ -181,15 +119,15 @@ const authApi = {
    */
   async getCurrentUser(): Promise<AuthUser> {
     try {
-      const response = await apiClient.get<ApiResponse<AuthUser>>("/auth/me");
+      const response = await axiosClient.get<ApiResponse<AuthUser>>("/auth/me") as unknown as ApiResponse<AuthUser>;
 
-      if (response.data.status && response.data.user) {
-        return response.data.user;
+      if (response.status && response.user) {
+        return response.user;
       }
 
       throw new Error("Không thể lấy thông tin user");
     } catch (error) {
-      throw new Error("Không thể lấy thông tin user");
+      throw handleApiError(error, "Không thể lấy thông tin user");
     }
   },
 
@@ -198,16 +136,13 @@ const authApi = {
    */
   async forgotPassword(email: string): Promise<{ message: string }> {
     try {
-      const response = await apiClient.post<ApiResponse<any>>(
+      const response = await axiosClient.post<ApiResponse<any>>(
         "/forgot-password",
         { email }
-      );
-      return { message: response.data.message };
+      ) as unknown as ApiResponse<any>;
+      return { message: response.message };
     } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || "Không thể gửi email reset password"
-        : "Không thể gửi email reset password";
-      throw new Error(message);
+      throw handleApiError(error, "Không thể gửi email reset password");
     }
   },
 
@@ -219,34 +154,24 @@ const authApi = {
     password: string
   ): Promise<{ message: string }> {
     try {
-      const response = await apiClient.post<ApiResponse<any>>("/reset-password", {
+      const response = await axiosClient.post<ApiResponse<any>>("/reset-password", {
         token,
         password,
         password_confirmation: password,
-      });
-      return { message: response.data.message };
+      }) as unknown as ApiResponse<any>;
+      return { message: response.message };
     } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || "Không thể reset password"
-        : "Không thể reset password";
-      throw new Error(message);
+      throw handleApiError(error, "Không thể reset password");
     }
   },
 
   /**
-   * Refresh token (nếu backend hỗ trợ)
+   * Refresh token
    */
   async refreshToken(): Promise<AuthResponse | null> {
     try {
-      const response = await apiClient.post<ApiResponse<AuthResponse>>("/refresh");
-
-      if (response.data.status && response.data.token && response.data.user) {
-        return {
-          token: response.data.token,
-          user: response.data.user,
-        };
-      }
-      return null;
+      const response = await axiosClient.post<ApiResponse<AuthResponse>>("/refresh");
+      return validateAuthResponse(response as unknown as ApiResponse<AuthResponse>, "Refresh token thất bại");
     } catch (error) {
       console.error("Refresh token error:", error);
       return null;
@@ -258,16 +183,13 @@ const authApi = {
    */
   async updateProfile(data: Partial<AuthUser>): Promise<AuthUser> {
     try {
-      const response = await apiClient.put<ApiResponse<AuthUser>>("/profile", data);
-      if (response.data.status && response.data.user) {
-        return response.data.user;
+      const response = await axiosClient.put<ApiResponse<AuthUser>>("/profile", data) as unknown as ApiResponse<AuthUser>;
+      if (response.status && response.user) {
+        return response.user;
       }
       throw new Error("Không thể cập nhật thông tin");
     } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || "Không thể cập nhật thông tin"
-        : "Không thể cập nhật thông tin";
-      throw new Error(message);
+      throw handleApiError(error, "Không thể cập nhật thông tin");
     }
   },
 
@@ -279,17 +201,52 @@ const authApi = {
     newPassword: string
   ): Promise<{ message: string }> {
     try {
-      const response = await apiClient.put<ApiResponse<any>>("/change-password", {
+      const response = await axiosClient.put<ApiResponse<any>>("/change-password", {
         current_password: currentPassword,
         new_password: newPassword,
         new_password_confirmation: newPassword,
-      });
-      return { message: response.data.message };
+      }) as unknown as ApiResponse<any>;
+      return { message: response.message };
     } catch (error) {
-      const message = axios.isAxiosError(error)
-        ? error.response?.data?.message || "Không thể đổi mật khẩu"
-        : "Không thể đổi mật khẩu";
-      throw new Error(message);
+      throw handleApiError(error, "Không thể đổi mật khẩu");
+    }
+  },
+};
+
+// ======================= GOOGLE AUTH API =======================
+
+export const googleAuthApi = {
+  /**
+   * Đăng nhập bằng Google
+   */
+  async login(credential: string): Promise<AuthResponse> {
+    try {
+      const response = await axiosClient.post<ApiResponse<AuthResponse>>(
+        "/auth/google",
+        { token: credential }
+      );
+      return validateAuthResponse(response as unknown as ApiResponse<AuthResponse>, "Đăng nhập Googsle thất bại");
+    } catch (error) {
+      throw handleApiError(error, "Đăng nhập Goosgle thất bại");
+    }
+  },
+
+  /**
+   * Đăng ký bằng Google
+   */
+  async register(credential: string): Promise<{ message: string }> {
+    try {
+      const response = await axiosClient.post<ApiResponse<any>>(
+        "/auth/google",
+        { token: credential }
+      ) as unknown as ApiResponse<any>;
+      
+      if (response.status) {
+        return { message: response.message };
+      }
+      throw new Error(response.message || "Đăng ký Google thất bại");
+    } catch (error) {
+      throw handleApiError(error, "Đăng ký Google thất bại");
     }
   },
 };

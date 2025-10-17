@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\admin;
 
-
 use App\Http\Controllers\Api\admin\Controller;
 use App\Models\Category;
 use Illuminate\Http\Request;
@@ -10,11 +9,11 @@ use Illuminate\Http\Request;
 class CategoryController extends Controller
 {
     /**
-     * Danh sách danh mục
+     * Danh sách danh mục (chưa bị xóa)
      */
     public function index()
     {
-        $categories = Category::where('is_deleted', 0)->paginate(10);
+        $categories = Category::whereNull('deleted_at')->paginate(10);
 
         return response()->json([
             'status' => true,
@@ -26,45 +25,42 @@ class CategoryController extends Controller
      * Lưu danh mục mới
      */
     public function store(Request $request)
-{
-    $request->validate([
-        'name'        => 'required|string|max:255',
-        'description' => 'nullable|string',
-    ]);
+    {
+        $request->validate([
+            'name'        => 'required|string|max:255',
+            'description' => 'nullable|string',
+        ]);
 
-    // Kiểm tra trùng name
-    $exists = Category::where('name', $request->name)
-        ->where('is_deleted', 0)
-        ->exists();
+        // Kiểm tra trùng tên (chưa bị xóa)
+        $exists = Category::where('name', $request->name)
+            ->whereNull('deleted_at')
+            ->exists();
 
-    if ($exists) {
+        if ($exists) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Tên danh mục đã tồn tại',
+            ], 422);
+        }
+
+        $category = Category::create([
+            'name'        => $request->name,
+            'description' => $request->description,
+        ]);
+
         return response()->json([
-            'status'  => false,
-            'message' => 'Tên danh mục đã tồn tại',
-        ], 422);
+            'status'  => true,
+            'message' => 'Thêm danh mục thành công',
+            'data'    => $category
+        ], 201);
     }
-
-    $category = Category::create([
-        'name'        => $request->name,
-        'description' => $request->description,
-        'is_deleted'  => 0,
-    ]);
-
-    return response()->json([
-        'status'  => true,
-        'message' => 'Thêm danh mục thành công',
-        'data'    => $category
-    ], 201);
-}
-
-
 
     /**
      * Xem chi tiết danh mục
      */
     public function show($id)
     {
-        $category = Category::where('is_deleted', 0)->findOrFail($id);
+        $category = Category::whereNull('deleted_at')->findOrFail($id);
 
         return response()->json([
             'status' => true,
@@ -76,48 +72,46 @@ class CategoryController extends Controller
      * Cập nhật danh mục
      */
     public function update(Request $request, $id)
-{
-    $request->validate([
-        'name'        => 'required|string|max:255',
-        'description' => 'nullable|string',
-    ]);
+    {
+        $request->validate([
+            'name'        => 'required|string|max:255',
+            'description' => 'nullable|string',
+        ]);
 
-    $category = Category::where('is_deleted', 0)->findOrFail($id);
+        $category = Category::whereNull('deleted_at')->findOrFail($id);
 
-    // Kiểm tra trùng name ở bản ghi khác
-    $exists = Category::where('id', '!=', $id)
-        ->where('name', $request->name)
-        ->where('is_deleted', 0)
-        ->exists();
+        // Kiểm tra trùng tên ở bản ghi khác (chưa bị xóa)
+        $exists = Category::where('id', '!=', $id)
+            ->where('name', $request->name)
+            ->whereNull('deleted_at')
+            ->exists();
 
-    if ($exists) {
+        if ($exists) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Tên danh mục đã tồn tại',
+            ], 422);
+        }
+
+        $category->update([
+            'name'        => $request->name,
+            'description' => $request->description,
+        ]);
+
         return response()->json([
-            'status'  => false,
-            'message' => 'Tên danh mục đã tồn tại',
-        ], 422);
+            'status'  => true,
+            'message' => 'Cập nhật danh mục thành công',
+            'data'    => $category
+        ]);
     }
-
-    $category->update([
-        'name'        => $request->name,
-        'description' => $request->description,
-    ]);
-
-    return response()->json([
-        'status'  => true,
-        'message' => 'Cập nhật danh mục thành công',
-        'data'    => $category
-    ]);
-}
-
-
 
     /**
      * Xóa mềm danh mục
      */
     public function destroy($id)
     {
-        $category = Category::where('is_deleted', 0)->findOrFail($id);
-        $category->update(['is_deleted' => 1]);
+        $category = Category::whereNull('deleted_at')->findOrFail($id);
+        $category->update(['deleted_at' => now()]);
 
         return response()->json([
             'status'  => true,
@@ -130,7 +124,7 @@ class CategoryController extends Controller
      */
     public function trash()
     {
-        $categories = Category::where('is_deleted', 1)->paginate(10);
+        $categories = Category::whereNotNull('deleted_at')->paginate(10);
 
         return response()->json([
             'status' => true,
@@ -143,8 +137,8 @@ class CategoryController extends Controller
      */
     public function restore($id)
     {
-        $category = Category::where('is_deleted', 1)->findOrFail($id);
-        $category->update(['is_deleted' => 0]);
+        $category = Category::whereNotNull('deleted_at')->findOrFail($id);
+        $category->update(['deleted_at' => null]);
 
         return response()->json([
             'status'  => true,
@@ -158,7 +152,7 @@ class CategoryController extends Controller
      */
     public function forceDelete($id)
     {
-        $category = Category::where('is_deleted', 1)->findOrFail($id);
+        $category = Category::whereNotNull('deleted_at')->findOrFail($id);
         $category->delete();
 
         return response()->json([

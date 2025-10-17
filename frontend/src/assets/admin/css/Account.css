@@ -320,6 +320,48 @@
   75% { transform: translateX(5px); }
 }
 
+/* Success Message */
+.alert {
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  animation: slideDown 0.3s ease;
+}
+
+.alert-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #dc2626;
+}
+
+.alert-success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: #16a34a;
+}
+
+.alert-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .input-error {
   border-color: #ef4444 !important;
 }
@@ -463,15 +505,17 @@
 /* Google Button */
 .btn-google {
   width: 100%;
+  max-width: 380px; /* larger width */
+  margin: 0 auto; /* center horizontally */
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
-  padding: 0.875rem 1rem;
+  gap: 0.9rem; /* larger spacing */
+  padding: 1rem 1.25rem; /* larger height */
   background: white;
   border: 2px solid #e5e7eb;
-  border-radius: 12px;
-  font-size: 0.95rem;
+  border-radius: 14px; /* slightly rounder */
+  font-size: 1.05rem; /* bigger text */
   font-weight: 600;
   color: #374151;
   cursor: pointer;
@@ -501,8 +545,8 @@
 }
 
 .btn-google svg {
-  width: 20px;
-  height: 20px;
+  width: 24px; /* bigger icon */
+  height: 24px;
   position: relative;
   z-index: 1;
 }
@@ -510,6 +554,12 @@
 .btn-google span {
   position: relative;
   z-index: 1;
+}
+
+/* Center SDK button if used */
+#google-login-button {
+  display: flex;
+  justify-content: center;
 }
 
 /* Footer Link */

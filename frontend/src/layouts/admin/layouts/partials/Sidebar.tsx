@@ -1,12 +1,18 @@
 // src/layouts/partials/Sidebar.tsx
 import { NavLink } from 'react-router-dom';
 import { useState } from 'react';
-import '../../../../assets/admin/css/Sidebar.css'; // CSS tùy chỉnh
-
+import '../../../../assets/admin/css/Sidebar.css';
 
 interface SidebarProps {
   isToggled: boolean;
   onToggle: () => void;
+}
+
+interface MenuItem {
+  id: string;
+  title: string;
+  icon: string;
+  items: { label: string; path: string }[];
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
@@ -16,246 +22,206 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
     setExpandedMenu(expandedMenu === menu ? null : menu);
   };
 
+  const menuGroups: MenuItem[] = [
+    {
+      id: 'categories',
+      title: 'Danh mục',
+      icon: 'fa-folder',
+      items: [
+        { label: 'Tất cả danh mục', path: '/admin/categories' },
+        { label: 'Thêm danh mục', path: '/admin/categories/create' },
+        { label: 'Danh mục lưu trữ', path: '/admin/categories/trash' },
+      ],
+    },
+    {
+      id: 'attributes',
+      title: 'Thuộc tính',
+      icon: 'fa-list',
+      items: [
+        { label: 'Tất cả thuộc tính', path: '/admin/attributes' },
+        { label: 'Thêm thuộc tính', path: '/admin/attributes/create' },
+        { label: 'Thuộc tính lưu trữ', path: '/admin/attributes/trash' },
+      ],
+    },
+    {
+      id: 'products',
+      title: 'Sản phẩm',
+      icon: 'fa-box',
+      items: [
+        { label: 'Tất cả sản phẩm', path: '/admin/products' },
+        { label: 'Thêm sản phẩm', path: '/admin/products/add' },
+        { label: 'Danh mục', path: '/admin/categories' },
+      ],
+    },
+    {
+      id: 'pages',
+      title: 'Trang',
+      icon: 'fa-file-alt',
+      items: [
+        { label: 'Tất cả trang', path: '/admin/pages' },
+        { label: 'Thêm trang mới', path: '/admin/pages/add' },
+      ],
+    },
+  ];
+
   return (
     <>
-      <ul
-        className={`navbar-nav bg-gradient-primary sidebar sidebar-dark accordion ${isToggled ? 'toggled' : ''
-          }`}
+      <aside
+        className={`sidebar ${isToggled ? 'sidebar--collapsed' : ''}`}
         id="accordionSidebar"
       >
-        {/* Sidebar - Brand */}
-        <a
-          className="sidebar-brand d-flex align-items-center justify-content-center"
-          href="/admin"
-        >
-          <div className="sidebar-brand-icon rotate-n-15">
-            <i className="fas fa-laugh-wink"></i>
-          </div>
-          <div className="sidebar-brand-text mx-3">Admin Panel</div>
-        </a>
-
-        {/* Divider */}
-        <hr className="sidebar-divider my-0" />
-
-        {/* Nav Item - Dashboard */}
-        <li className="nav-item">
-          <NavLink
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            to="/admin/dashboard"
-          >
-            <i className="fas fa-fw fa-tachometer-alt"></i>
-            <span>Dashboard</span>
-          </NavLink>
-        </li>
-
-        {/* Divider */}
-        <hr className="sidebar-divider" />
-
-        {/* Heading */}
-        <div className="sidebar-heading">Quản lý</div>
-
-        {/* Nav Item - Users */}
-        <li className="nav-item">
-          <NavLink
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            to="/admin/users"
-          >
-            <i className="fas fa-fw fa-users"></i>
-            <span>Người dùng</span>
-          </NavLink>
-        </li>
-
-        {/* Nav Item - Products Collapse Menu */}
-        <li className="nav-item">
-          <a
-            className={`nav-link ${expandedMenu === 'products' ? '' : 'collapsed'}`}
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              handleMenuToggle('products');
-            }}
-            data-bs-toggle="collapse"
-            data-bs-target="#collapseProducts"
-            aria-expanded={expandedMenu === 'products'}
-            aria-controls="collapseProducts"
-          >
-            <i className="fas fa-fw fa-box"></i>
-            <span>Sản phẩm</span>
-          </a>
-          <div
-            id="collapseProducts"
-            className={`collapse ${expandedMenu === 'products' ? 'show' : ''}`}
-            aria-labelledby="headingProducts"
-            data-bs-parent="#accordionSidebar"
-          >
-            <div className="bg-white py-2 collapse-inner rounded">
-              <h6 className="collapse-header">Quản lý sản phẩm:</h6>
-              <NavLink
-                className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
-                to="/admin/products"
-              >
-                Tất cả sản phẩm
-              </NavLink>
-              <NavLink
-                className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
-                to="/admin/products/add"
-              >
-                Thêm sản phẩm
-              </NavLink>
-              <NavLink
-                className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
-                to="/admin/categories"
-              >
-                Danh mục
-              </NavLink>
+        {/* Sidebar Brand */}
+        <div className="sidebar__brand">
+          <NavLink to="/admin" className="sidebar__brand-link">
+            <div className="sidebar__brand-icon">
+              <i className="fas fa-cube"></i>
             </div>
+            <span className="sidebar__brand-text">Admin Panel</span>
+          </NavLink>
+        </div>
+
+        {/* Navigation */}
+        <nav className="sidebar__nav">
+          {/* Dashboard */}
+          <div className="sidebar__section">
+            <NavLink to="/admin/dashboard" className="sidebar__link">
+              <i className="sidebar__icon fas fa-tachometer-alt"></i>
+              <span className="sidebar__text">Dashboard</span>
+            </NavLink>
           </div>
-        </li>
 
-        {/* Nav Item - Orders */}
-        <li className="nav-item">
-          <NavLink
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            to="/admin/orders"
-          >
-            <i className="fas fa-fw fa-shopping-cart"></i>
-            <span>Đơn hàng</span>
-          </NavLink>
-        </li>
+          {/* Management Section */}
+          <div className="sidebar__section">
+            <div className="sidebar__heading">Quản lý</div>
+            
+            <NavLink to="/admin/users" className="sidebar__link">
+              <i className="sidebar__icon fas fa-users"></i>
+              <span className="sidebar__text">Người dùng</span>
+            </NavLink>
 
-        {/* Nav Item - Customers */}
-        <li className="nav-item">
-          <NavLink
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            to="/admin/customers"
-          >
-            <i className="fas fa-fw fa-user-friends"></i>
-            <span>Khách hàng</span>
-          </NavLink>
-        </li>
+            {/* Collapsible Menus */}
+            {menuGroups.slice(0, 3).map((menu) => (
+              <div key={menu.id} className="sidebar__dropdown">
+                <button
+                  className={`sidebar__link sidebar__link--dropdown ${
+                    expandedMenu === menu.id ? 'sidebar__link--active' : ''
+                  }`}
+                  onClick={() => handleMenuToggle(menu.id)}
+                  aria-expanded={expandedMenu === menu.id}
+                >
+                  <i className={`sidebar__icon fas ${menu.icon}`}></i>
+                  <span className="sidebar__text">{menu.title}</span>
+                  <i
+                    className={`sidebar__arrow fas fa-chevron-down ${
+                      expandedMenu === menu.id ? 'sidebar__arrow--rotated' : ''
+                    }`}
+                  ></i>
+                </button>
+                <div
+                  className={`sidebar__submenu ${
+                    expandedMenu === menu.id ? 'sidebar__submenu--open' : ''
+                  }`}
+                >
+                  {menu.items.map((item, idx) => (
+                    <NavLink
+                      key={idx}
+                      to={item.path}
+                      className="sidebar__sublink"
+                    >
+                      <span className="sidebar__sublink-dot"></span>
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ))}
 
-        {/* Divider */}
-        <hr className="sidebar-divider" />
+            <NavLink to="/admin/orders" className="sidebar__link">
+              <i className="sidebar__icon fas fa-shopping-cart"></i>
+              <span className="sidebar__text">Đơn hàng</span>
+            </NavLink>
 
-        {/* Heading */}
-        <div className="sidebar-heading">Nội dung</div>
+            <NavLink to="/admin/customers" className="sidebar__link">
+              <i className="sidebar__icon fas fa-user-friends"></i>
+              <span className="sidebar__text">Khách hàng</span>
+            </NavLink>
+          </div>
 
-        {/* Nav Item - Pages Collapse Menu */}
-        <li className="nav-item">
-          <a
-            className={`nav-link ${expandedMenu === 'pages' ? '' : 'collapsed'}`}
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              handleMenuToggle('pages');
-            }}
-            data-bs-toggle="collapse"
-            data-bs-target="#collapsePages"
-            aria-expanded={expandedMenu === 'pages'}
-            aria-controls="collapsePages"
-          >
-            <i className="fas fa-fw fa-file-alt"></i>
-            <span>Trang</span>
-          </a>
-          <div
-            id="collapsePages"
-            className={`collapse ${expandedMenu === 'pages' ? 'show' : ''}`}
-          >
-            <div className="bg-white py-2 collapse-inner rounded">
-              <h6 className="collapse-header">Quản lý trang:</h6>
-              <NavLink
-                className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
-                to="/admin/pages"
+          {/* Content Section */}
+          <div className="sidebar__section">
+            <div className="sidebar__heading">Nội dung</div>
+            
+            {/* Pages Dropdown */}
+            <div className="sidebar__dropdown">
+              <button
+                className={`sidebar__link sidebar__link--dropdown ${
+                  expandedMenu === 'pages' ? 'sidebar__link--active' : ''
+                }`}
+                onClick={() => handleMenuToggle('pages')}
+                aria-expanded={expandedMenu === 'pages'}
               >
-                Tất cả trang
-              </NavLink>
-              <NavLink
-                className={({ isActive }) => `collapse-item ${isActive ? 'active' : ''}`}
-                to="/admin/pages/add"
+                <i className="sidebar__icon fas fa-file-alt"></i>
+                <span className="sidebar__text">Trang</span>
+                <i
+                  className={`sidebar__arrow fas fa-chevron-down ${
+                    expandedMenu === 'pages' ? 'sidebar__arrow--rotated' : ''
+                  }`}
+                ></i>
+              </button>
+              <div
+                className={`sidebar__submenu ${
+                  expandedMenu === 'pages' ? 'sidebar__submenu--open' : ''
+                }`}
               >
-                Thêm trang mới
-              </NavLink>
+                {menuGroups[3].items.map((item, idx) => (
+                  <NavLink
+                    key={idx}
+                    to={item.path}
+                    className="sidebar__sublink"
+                  >
+                    <span className="sidebar__sublink-dot"></span>
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
             </div>
+
+            <NavLink to="/admin/blog" className="sidebar__link">
+              <i className="sidebar__icon fas fa-blog"></i>
+              <span className="sidebar__text">Blog</span>
+            </NavLink>
           </div>
-        </li>
 
-        {/* Nav Item - Blog */}
-        <li className="nav-item">
-          <NavLink
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            to="/admin/blog"
-          >
-            <i className="fas fa-fw fa-blog"></i>
-            <span>Blog</span>
-          </NavLink>
-        </li>
+          {/* Reports Section */}
+          <div className="sidebar__section">
+            <div className="sidebar__heading">Báo cáo</div>
+            
+            <NavLink to="/admin/charts" className="sidebar__link">
+              <i className="sidebar__icon fas fa-chart-area"></i>
+              <span className="sidebar__text">Biểu đồ</span>
+            </NavLink>
 
-        {/* Divider */}
-        <hr className="sidebar-divider" />
+            <NavLink to="/admin/tables" className="sidebar__link">
+              <i className="sidebar__icon fas fa-table"></i>
+              <span className="sidebar__text">Bảng dữ liệu</span>
+            </NavLink>
+          </div>
 
-        {/* Heading */}
-        <div className="sidebar-heading">Báo cáo</div>
-
-        {/* Nav Item - Charts */}
-        <li className="nav-item">
-          <NavLink
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            to="/admin/charts"
-          >
-            <i className="fas fa-fw fa-chart-area"></i>
-            <span>Biểu đồ</span>
-          </NavLink>
-        </li>
-
-        {/* Nav Item - Tables */}
-        <li className="nav-item">
-          <NavLink
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            to="/admin/tables"
-          >
-            <i className="fas fa-fw fa-table"></i>
-            <span>Bảng dữ liệu</span>
-          </NavLink>
-        </li>
-
-        {/* Divider */}
-        <hr className="sidebar-divider" />
-
-        {/* Heading */}
-        <div className="sidebar-heading">Hệ thống</div>
-
-        {/* Nav Item - Settings */}
-        <li className="nav-item">
-          <NavLink
-            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-            to="/admin/settings"
-          >
-            <i className="fas fa-fw fa-cog"></i>
-            <span>Cài đặt</span>
-          </NavLink>
-        </li>
-
-        {/* Divider */}
-        <hr className="sidebar-divider d-none d-md-block" />
-
-        {/* Sidebar Toggler (Sidebar) */}
-      </ul>
+          {/* System Section */}
+          <div className="sidebar__section">
+            <div className="sidebar__heading">Hệ thống</div>
+            
+            <NavLink to="/admin/settings" className="sidebar__link">
+              <i className="sidebar__icon fas fa-cog"></i>
+              <span className="sidebar__text">Cài đặt</span>
+            </NavLink>
+          </div>
+        </nav>
+      </aside>
 
       {/* Mobile Overlay */}
       {isToggled && (
-        <div
-          className="sidebar-overlay d-md-none"
-          onClick={onToggle}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            zIndex: 999,
-          }}
-        />
+        <div className="sidebar__overlay" onClick={onToggle} />
       )}
     </>
   );

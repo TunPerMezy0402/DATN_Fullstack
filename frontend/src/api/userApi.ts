@@ -1,40 +1,42 @@
 // src/api/userApi.ts
 import axiosClient from "./axiosClient";
 
-// Kiểu dữ liệu cho user
+// 🧩 Kiểu dữ liệu người dùng (đã cập nhật ENUM)
 export interface User {
-  _id: string;
+  id: string;
   name: string;
   email: string;
-  address: string;
+  password?: string; // không bắt buộc khi hiển thị
+  address?: string;
+  phone?: string;
   role: string;
-  status: boolean;
+  created_at: string;
+  updated_at: string;
+  status: "active" | "inactive"; 
 }
 
 const userApi = {
-  // 🧭 Lấy danh sách người dùng
+
   getAll: (params?: Record<string, any>): Promise<User[]> => {
     return axiosClient.get("/admin/users", { params });
   },
 
-  // 🔍 Lấy chi tiết người dùng
   getById: (id: string): Promise<User> => {
     return axiosClient.get(`/admin/users/${id}`);
   },
 
-  // ➕ Tạo mới người dùng
-  create: (data: Omit<User, "_id">): Promise<User> => {
+  create: (data: Omit<User, "id" | "created_at" | "updated_at">): Promise<User> => {
     return axiosClient.post("/admin/users", data);
   },
 
-  // ✏️ Cập nhật người dùng
+
   update: (id: string, data: Partial<User>): Promise<User> => {
     return axiosClient.put(`/admin/users/${id}`, data);
   },
 
-  // 🗑️ Xóa người dùng
-  delete: (id: string): Promise<void> => {
-    return axiosClient.delete(`/admin/users/${id}`);
+
+  toggleStatus: (id: string, status: "active" | "inactive"): Promise<User> => {
+    return axiosClient.put(`/admin/users/${id}`, { status });
   },
 };
 

@@ -1,4 +1,3 @@
-// src/layouts/AdminLayout.tsx
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 import '../../../assets/admin/css/AdminLayout.css';
@@ -19,31 +18,24 @@ const AdminLayout: React.FC = () => {
   };
 
   return (
-    <div id="page-top" className="admin-layout">
-      <div id="wrapper">
-        {/* Sidebar cố định bên trái */}
-        <Sidebar isToggled={sidebarToggled} onToggle={toggleSidebar} />
-        
-        {/* Content wrapper bên phải */}
-        <div 
-          id="content-wrapper" 
-          className={`content-wrapper ${sidebarToggled ? 'sidebar-toggled' : ''}`}
-        >
-          {/* Header */}
-          <Header onToggleSidebar={toggleSidebar} />
-          
-          {/* Main Content */}
-          <main className="main-content">
-            <div className="container-fluid">
-              <Outlet />
-            </div>
-          </main>
-          
-          {/* Footer */}
-          <Footer />
-        </div>
+    <div id="admin-layout">
+      {/* Sidebar cố định bên trái */}
+      <Sidebar isToggled={sidebarToggled} onToggle={toggleSidebar} />
+
+      {/* Khu vực bên phải */}
+      <div className={`admin-main ${sidebarToggled ? 'sidebar-collapsed' : ''}`}>
+        {/* Header cố định trên */}
+        <Header onToggleSidebar={toggleSidebar} />
+
+        {/* Nội dung chính cuộn được */}
+        <main className="admin-content">
+          <Outlet />
+        </main>
+
+        {/* Footer cố định dưới (hoặc để tự động nếu muốn) */}
+        <Footer />
       </div>
-      
+
       <ScrollToTop />
       <LogoutModal />
     </div>
