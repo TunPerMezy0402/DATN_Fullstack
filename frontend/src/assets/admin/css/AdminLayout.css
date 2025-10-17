@@ -63,7 +63,7 @@
 .admin-content {
   flex: 1;
   overflow-y: auto;
-  padding: 30px 20px 80px 20px; /* tránh header & footer */
+  padding: 100px 20px 80px 20px; /* tránh header & footer */
   background-color: #f8f9fc;
 }
 
