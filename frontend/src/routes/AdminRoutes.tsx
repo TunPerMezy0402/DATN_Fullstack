@@ -10,6 +10,9 @@ import AttributeCreate from '../pages/admin/attributes/AttributeCreate';
 import UserList from '../pages/admin/users/UserList';
 import UserEdit from '../pages/admin/users/UserEdit';
 import UserDetail from '../pages/admin/users/UserDetail';
+import ProductsList from '../pages/admin/products/ProductsList';
+ import ProductAdd from '../pages/admin/products/ProductAdd';
+import ProductsEdit from '../pages/admin/products/ProductsEdit';
 
 const AdminRoutes: React.FC = () => {
   return (
@@ -31,6 +34,12 @@ const AdminRoutes: React.FC = () => {
         <Route path="categories" element={<CategoryList />} />
         <Route path="categories/create" element={<CategoryCreate />} />
         <Route path="categories/:id" element={<CategoryDetail />} />
+
+        {/* Products */}
+        <Route path="products" element={<ProductsList />} />
+        <Route path="products/add" element={<ProductAdd />} />
+        <Route path="products/edit/:id" element={<ProductsEdit />} />
+
 
         {/* ✅ Quản lý thuộc tính */}
         <Route path="attributes" element={<AttributeList />} />
