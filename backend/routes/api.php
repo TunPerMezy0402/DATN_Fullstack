@@ -16,6 +16,9 @@ use App\Http\Controllers\Api\admin\CartController;
 use App\Http\Controllers\Api\admin\AddressBookController;
 
 
+
+
+
 // ----------------------
 
 Route::prefix('auth')->group(function () {
@@ -28,8 +31,36 @@ Route::prefix('auth')->group(function () {
 });
 
 // Trang Home (API)
-Route::get('/', [HomeController::class, 'index']); // trả về JSON
-Route::get('/home', [HomeController::class, 'index'])->name('home');
+Route::get('/', [HomeController::class, 'index']);
+ // trả về JSON
+
+
+
+
+// Quân
+
+
+
+
+
+
+
+
+
+//Nam
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ----------------------
 // Admin Dashboard (API)
@@ -37,8 +68,7 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('/admin', [AdminController::class, 'index']);
 });
 
-// ----------------------
-// Macro cho API Resource
+
 Route::macro('adminApiResource', function ($prefix, $controller) {
     Route::prefix($prefix)->middleware(['auth:sanctum', 'admin'])->name(str_replace('/', '.', $prefix) . '.')->group(function () use ($controller) {
 
@@ -60,7 +90,6 @@ Route::macro('adminApiResource', function ($prefix, $controller) {
 Route::adminApiResource('admin/users', UserController::class);
 Route::adminApiResource('admin/products', ProductController::class);
 Route::adminApiResource('admin/categories', CategoryController::class);
-Route::adminApiResource('admin/productreviews', ProductReviewController::class);
 Route::adminApiResource('admin/attributes', AttributeController::class);
 Route::adminApiResource('admin/productvariants', ProductVariantController::class);
 Route::adminApiResource('admin/support_tickets', SupportTicketController::class);

@@ -1,108 +1,154 @@
 <?php
 
-namespace App\Http\Controllers\Api\admin;
+namespace App\Http\Controllers\Api\Admin;
 
-use App\Http\Controllers\Api\admin\Controller;
+use App\Http\Controllers\Controller;
 use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
 
 class CategoryController extends Controller
 {
-    public function index()
+    /** GET /api/admin/categories */
+    public function index(Request $r)
     {
-        // Chỉ lấy danh mục chưa xóa mềm (Laravel tự làm)
-        $categories = Category::paginate(10);
+        $per = $r->integer('per_page', 20);
+        $q   = Category::query()->latest('updated_at');
 
-        return response()->json([
-            'status' => true,
-            'data' => $categories
-        ]);
+        if ($s = $r->query('search')) {
+            $q->where('name', 'like', "%{$s}%");
+        }
+
+        $page = $q->paginate($per);
+        $page->getCollection()->transform(function ($c) {
+            $c->image_url = $c->image ? asset($c->image) : null; // 'storage/img/category/...'
+            return $c;
+        });
+
+        return response()->json(['data' => $page]);
     }
 
-    public function store(Request $request)
+    /** GET /api/admin/categories/trash */
+    public function trash(Request $r)
     {
-        $request->validate([
-            'name' => 'required|string|max:255|unique:categories,name,NULL,id,deleted_at,NULL',
-        ]);
+        $per = $r->integer('per_page', 20);
+        $q   = Category::onlyTrashed()->latest('deleted_at');
 
-        $category = Category::create($request->only('name', 'description'));
+        if ($s = $r->query('search')) {
+            $q->where('name', 'like', "%{$s}%");
+        }
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Thêm danh mục thành công',
-            'data' => $category
-        ], 201);
+        $page = $q->paginate($per);
+        $page->getCollection()->transform(function ($c) {
+            $c->image_url = $c->image ? asset($c->image) : null;
+            return $c;
+        });
+
+        return response()->json(['data' => $page]);
     }
 
+    /** GET /api/admin/categories/{id} */
     public function show($id)
     {
-        $category = Category::findOrFail($id);
-
-        return response()->json([
-            'status' => true,
-            'data' => $category
-        ]);
+        $c = Category::withTrashed()->findOrFail($id);
+        $c->image_url = $c->image ? asset($c->image) : null;
+        return response()->json($c);
     }
 
-    public function update(Request $request, $id)
+    /** POST /api/admin/categories  (multipart: name, image?) */
+    public function store(Request $r)
     {
-        $category = Category::findOrFail($id);
-
-        $request->validate([
-            'name' => 'required|string|max:255|unique:categories,name,' . $id . ',id,deleted_at,NULL',
+        $data = $r->validate([
+            'name'  => 'required|string|max:255',
+            'image' => 'nullable|image|max:4096',
         ]);
 
-        $category->update($request->only('name', 'description'));
+        $pathForDb = null;
+        if ($r->hasFile('image')) {
+            $dest = public_path('storage/img/category');                // thư mục đích trong public/
+            if (!File::exists($dest)) File::makeDirectory($dest, 0775, true);
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Cập nhật danh mục thành công',
-            'data' => $category
+            $f = $r->file('image');
+            $filename = time().'_'.uniqid().'.'.$f->getClientOriginalExtension();
+            $f->move($dest, $filename);
+
+            $pathForDb = 'storage/img/category/'.$filename;            // chuỗi lưu DB
+        }
+
+        $cat = Category::create([
+            'name'  => $data['name'],
+            'image' => $pathForDb,
         ]);
+
+        $cat->image_url = $cat->image ? asset($cat->image) : null;
+        return response()->json(['data' => $cat], 201);
     }
 
+    /** PUT /api/admin/categories/{id}  (multipart: name?, image? | image=null => xoá ảnh) */
+    public function update(Request $r, $id)
+    {
+        $cat  = Category::withTrashed()->findOrFail($id);
+        $data = $r->validate([
+            'name'  => 'sometimes|required|string|max:255',
+            'image' => 'sometimes|nullable|image|max:4096',
+        ]);
+
+        if (array_key_exists('name', $data)) $cat->name = $data['name'];
+
+        if ($r->has('image')) {
+            if ($r->hasFile('image')) {
+                // xóa ảnh cũ nếu có
+                if ($cat->image && File::exists(public_path($cat->image))) {
+                    File::delete(public_path($cat->image));
+                }
+                $dest = public_path('storage/img/category');
+                if (!File::exists($dest)) File::makeDirectory($dest, 0775, true);
+
+                $f = $r->file('image');
+                $filename = time().'_'.uniqid().'.'.$f->getClientOriginalExtension();
+                $f->move($dest, $filename);
+
+                $cat->image = 'storage/img/category/'.$filename;
+            } else {
+                // client gửi image=null => xoá ảnh hiện tại
+                if ($cat->image && File::exists(public_path($cat->image))) {
+                    File::delete(public_path($cat->image));
+                }
+                $cat->image = null;
+            }
+        }
+
+        $cat->save();
+        $cat->image_url = $cat->image ? asset($cat->image) : null;
+        return response()->json(['data' => $cat]);
+    }
+
+    /** DELETE /api/admin/categories/{id} — xóa mềm */
     public function destroy($id)
     {
-        $category = Category::findOrFail($id);
-        $category->delete(); // Soft delete (tự set deleted_at)
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Xóa mềm danh mục thành công'
-        ]);
+        $cat = Category::findOrFail($id);
+        $cat->delete();
+        return response()->json(['message' => 'deleted']);
     }
 
-    public function trash()
-    {
-        // 👉 chỉ lấy bản ghi đã bị xóa mềm
-        $categories = Category::onlyTrashed()->paginate(10);
-
-        return response()->json([
-            'status' => true,
-            'data' => $categories
-        ]);
-    }
-
+    /** POST /api/admin/categories/{id}/restore — phục hồi */
     public function restore($id)
     {
-        $category = Category::onlyTrashed()->findOrFail($id);
-        $category->restore(); // khôi phục
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Khôi phục danh mục thành công',
-            'data' => $category
-        ]);
+        $cat = Category::withTrashed()->findOrFail($id);
+        $cat->restore();
+        return response()->json(['message' => 'restored']);
     }
 
+    /** DELETE /api/admin/categories/{id}/force-delete — xóa vĩnh viễn + dọn file */
     public function forceDelete($id)
     {
-        $category = Category::onlyTrashed()->findOrFail($id);
-        $category->forceDelete(); // Xóa vĩnh viễn
+        $cat = Category::withTrashed()->findOrFail($id);
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Đã xóa vĩnh viễn danh mục'
-        ]);
+        if ($cat->image && File::exists(public_path($cat->image))) {
+            File::delete(public_path($cat->image));
+        }
+
+        $cat->forceDelete();
+        return response()->json(['message' => 'force-deleted']);
     }
 }

@@ -152,7 +152,6 @@ const Header = () => {
           <div className="flex gap-x-8 text-sm font-normal font-sans">
             {[
               { path: "/", label: "Trang chủ" },
-              { path: "/categories", label: "Danh Mục" },
               { path: "/products", label: "Sản phẩm" },
               { path: "/blog", label: "Tin tức" },
               { path: "/compare", label: "So sánh" },
