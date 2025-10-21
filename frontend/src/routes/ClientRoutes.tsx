@@ -8,7 +8,7 @@ import Menu from '../layouts/client/component/Menu';
 import OutstandingProducts from '../layouts/client/component/OutstandingProducts';
 import ServicesRow from '../layouts/client/component//ServicesRow';
 import Trending from '../layouts/client/component/Trending';
-
+import ProductsPage from '../layouts/client/component/ProductsPage';
 // 👉 Import thêm các trang client khác nếu có
 
 const ClientRoutes = () => {
@@ -25,6 +25,7 @@ const ClientRoutes = () => {
         <Route path="outstandingproducts" element={<OutstandingProducts />} />
         <Route path="servicesrow" element={<ServicesRow />} />
         <Route path="trending" element={<Trending />} />
+        <Route path="/products" element={<ProductsPage />} />
 
         {/* <Route path="contact" element={<Contact />} /> */}
       </Route>
