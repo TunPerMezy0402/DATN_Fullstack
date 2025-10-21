@@ -854,21 +854,16 @@ export default function ProductDetail() {
       })),
     };
 
-    // Add the new variant and immediately enter edit mode
     setVariants((prev) => {
       const newVariants = [...prev, clone];
       const newIndex = newVariants.length - 1;
       
-      // Enter edit mode immediately (this will show all input fields)
       setTimeout(() => {
-        // Add to editing set - this makes isEditing = true
         setEditingIdxSet((prevSet) => {
           const next = new Set(prevSet);
           next.add(newIndex);
           return next;
         });
-        
-        // Create snapshot for cancel functionality
         if (newVariants[newIndex]) {
           try {
             const snapshot = JSON.parse(JSON.stringify(newVariants[newIndex]));
@@ -877,15 +872,12 @@ export default function ProductDetail() {
             console.error('Failed to create variant snapshot:', error);
           }
         }
-        
-        // Scroll to the new variant card
         setTimeout(() => {
           const variantCards = document.querySelectorAll('.variant-card');
           const newCard = variantCards[newIndex];
           if (newCard) {
             newCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
             
-            // Add a subtle flash effect
             newCard.classList.add('variant-card-flash');
             setTimeout(() => {
               newCard.classList.remove('variant-card-flash');
@@ -925,17 +917,13 @@ export default function ProductDetail() {
     setVariants((prev) => {
       const newVariants = [...prev, newVariant];
       const newIndex = newVariants.length - 1;
-      
-      // Enter edit mode immediately (this will show all input fields)
       setTimeout(() => {
-        // Add to editing set - this makes isEditing = true
         setEditingIdxSet((prevSet) => {
           const next = new Set(prevSet);
           next.add(newIndex);
           return next;
         });
         
-        // Create snapshot for cancel functionality
         if (newVariants[newIndex]) {
           try {
             const snapshot = JSON.parse(JSON.stringify(newVariants[newIndex]));

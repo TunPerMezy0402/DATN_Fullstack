@@ -18,6 +18,14 @@ use App\Http\Controllers\Api\admin\AddressBookController;
 
 
 
+use App\Http\Controllers\Api\client\HomeClientController;
+
+
+
+
+
+
+
 
 // ----------------------
 
@@ -31,8 +39,12 @@ Route::prefix('auth')->group(function () {
 });
 
 // Trang Home (API)
-Route::get('/', [HomeController::class, 'index']);
- // trả về JSON
+Route::get('/', [HomeClientController::class, 'index']);
+Route::get('products', [HomeClientController::class, 'index']);
+
+
+
+
 
 
 
