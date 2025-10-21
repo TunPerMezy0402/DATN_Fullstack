@@ -130,5 +130,12 @@ class AddressBookController extends Controller
             'status' => true,
             'message' => 'Address deleted successfully'
         ]);
+
+        //  $address->delete();
+
+        // return response()->json([
+        //     'status' => true,
+        //     'message' => 'Address deleted successfully'
+        // ]);
     }
 }

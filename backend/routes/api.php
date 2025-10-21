@@ -38,6 +38,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 
 // Banner routes - Client (không cần auth)
 Route::get('banners/active', [HomeBannerController::class, 'active']);
+Route::get('banners', [HomeBannerController::class, 'index']);
 
 
 // ----------------------
