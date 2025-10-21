@@ -1,0 +1,238 @@
+/* src/layouts/partials/Header.css */
+
+/* ==================== TOPBAR MAIN ==================== */
+.admin-header-topbar {
+  height: 4.375rem;
+  transition: all 0.3s ease;
+}
+
+/* Sidebar Toggle Button */
+.admin-header-sidebar-toggle {
+  height: 2.5rem;
+  width: 2.5rem;
+}
+
+.admin-header-sidebar-toggle:hover {
+  background-color: #eaecf4;
+}
+
+/* ==================== SEARCH FORM ==================== */
+.admin-header-search-form {
+  max-width: 25rem;
+  width: 100%;
+}
+
+.admin-header-search-form-mobile {
+  width: 100%;
+}
+
+.admin-header-search-group {
+  display: flex;
+  align-items: stretch;
+  position: relative;
+  width: 100%;
+}
+
+.admin-header-search-input {
+  font-size: 0.85rem;
+  height: calc(1.5em + 0.75rem + 2px);
+  padding: 0.375rem 0.75rem;
+  flex: 1;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.admin-header-search-btn {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  padding: 0.375rem 0.75rem;
+  border-left: 0;
+}
+
+/* ==================== TOPBAR NAVIGATION ==================== */
+.admin-header-nav {
+  display: flex;
+  align-items: center;
+}
+
+.admin-header-nav-item {
+  list-style: none;
+}
+
+/* ==================== TOPBAR DIVIDER ==================== */
+.admin-header-divider {
+  width: 0;
+  border-right: 1px solid #e3e6f0;
+  height: calc(4.375rem - 2rem);
+  margin: auto 1rem;
+}
+
+/* ==================== BADGE COUNTER ==================== */
+.admin-header-badge {
+  position: absolute;
+  transform: scale(0.7);
+  transform-origin: top right;
+  right: 0.25rem;
+  margin-top: -0.25rem;
+  font-size: 0.65rem;
+  padding: 0.25rem 0.4rem;
+}
+
+/* ==================== DROPDOWN ==================== */
+.admin-header-dropdown {
+  font-size: 0.85rem;
+  min-width: 20rem;
+  border: none;
+  animation: adminHeaderGrowIn 200ms ease-out;
+}
+
+@keyframes adminHeaderGrowIn {
+  0% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Dropdown Header/Title */
+.admin-header-dropdown-title {
+  font-weight: 800;
+  font-size: 0.65rem;
+  color: #b7b9cc;
+  padding: 0.5rem 1.5rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid #e3e6f0;
+  margin-bottom: 0;
+}
+
+/* Dropdown Items */
+.admin-header-dropdown-item {
+  padding: 1rem 1.5rem;
+  transition: all 0.2s;
+  border-bottom: 1px solid #f8f9fc;
+}
+
+.admin-header-dropdown-item:hover {
+  background-color: #f8f9fc;
+}
+
+.admin-header-dropdown-item:last-child {
+  border-bottom: none;
+}
+
+/* Dropdown Link (View All) */
+.admin-header-dropdown-link {
+  padding: 0.75rem 1.5rem !important;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* ==================== ICON CIRCLE ==================== */
+.admin-header-icon-circle {
+  height: 2.5rem;
+  width: 2.5rem;
+  border-radius: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==================== USER IMAGE ==================== */
+.admin-header-user-image {
+  position: relative;
+  height: 2.5rem;
+  width: 2.5rem;
+  flex-shrink: 0;
+}
+
+.admin-header-user-image img {
+  height: 2.5rem;
+  width: 2.5rem;
+  object-fit: cover;
+}
+
+/* ==================== STATUS INDICATOR ==================== */
+.admin-header-status-indicator {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 0.75rem;
+  height: 0.75rem;
+  background-color: #d1d3e2;
+  border: 2px solid #fff;
+  border-radius: 100%;
+}
+
+.admin-header-status-indicator.bg-success {
+  background-color: #1cc88a !important;
+}
+
+.admin-header-status-indicator.bg-warning {
+  background-color: #f6c23e !important;
+}
+
+/* ==================== PROFILE IMAGE ==================== */
+.admin-header-profile-img {
+  height: 2rem;
+  width: 2rem;
+  object-fit: cover;
+}
+
+/* ==================== USERNAME ==================== */
+.admin-header-username {
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+/* ==================== TEXT UTILITIES ==================== */
+.admin-header-text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+}
+
+.admin-header-text-small {
+  font-size: 0.75rem;
+  font-weight: 400;
+  margin-top: 0.25rem;
+}
+
+/* ==================== RESPONSIVE ==================== */
+@media (max-width: 768px) {
+  .admin-header-topbar {
+    height: auto;
+    min-height: 4.375rem;
+  }
+  
+  .admin-header-search-form {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 576px) {
+  .admin-header-dropdown {
+    min-width: 15rem;
+    max-width: calc(100vw - 2rem);
+  }
+  
+  .admin-header-text-truncate {
+    max-width: 180px;
+  }
+}
+
+/* ==================== TEXT GRAY COLORS ==================== */
+.text-gray-400 {
+  color: #d1d3e2 !important;
+}
+
+.text-gray-500 {
+  color: #b7b9cc !important;
+}
+
+.text-gray-600 {
+  color: #858796 !important;
+}

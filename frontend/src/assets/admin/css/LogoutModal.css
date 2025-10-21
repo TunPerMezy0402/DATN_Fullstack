@@ -1,0 +1,93 @@
+/* assets/admin/css/LogoutModal.css */
+
+/* Modal backdrop */
+#logoutModal .modal-content {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Header */
+#logoutModal .modal-header {
+  background-color: #f8f9fc;
+  padding: 1.25rem 1.5rem;
+}
+
+#logoutModal .modal-title {
+  color: #5a5c69;
+  font-size: 1.1rem;
+}
+
+/* Body */
+#logoutModal .modal-body {
+  padding: 1.5rem;
+}
+
+#logoutModal .modal-body i {
+  display: block;
+  opacity: 0.8;
+}
+
+#logoutModal .modal-body p {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* Footer */
+#logoutModal .modal-footer {
+  padding: 1rem 1.5rem 1.5rem;
+  gap: 0.5rem;
+}
+
+#logoutModal .btn {
+  padding: 0.5rem 1.5rem;
+  font-size: 0.9rem;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+#logoutModal .btn-secondary {
+  background-color: #6c757d;
+  border: none;
+}
+
+#logoutModal .btn-secondary:hover {
+  background-color: #5a6268;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+#logoutModal .btn-danger {
+  background-color: #e74a3b;
+  border: none;
+}
+
+#logoutModal .btn-danger:hover {
+  background-color: #d63929;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(231, 74, 59, 0.4);
+}
+
+#logoutModal .btn:active {
+  transform: translateY(0);
+}
+
+/* Close button */
+#logoutModal .btn-close {
+  opacity: 0.5;
+}
+
+#logoutModal .btn-close:hover {
+  opacity: 1;
+}
+
+/* Responsive */
+@media (max-width: 576px) {
+  #logoutModal .modal-footer {
+    flex-direction: column;
+  }
+  
+  #logoutModal .btn {
+    width: 100%;
+  }
+}

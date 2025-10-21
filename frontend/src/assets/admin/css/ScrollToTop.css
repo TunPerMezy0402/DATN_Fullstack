@@ -1,0 +1,158 @@
+/* src/layouts/partials/ScrollToTop.css */
+
+.scroll-to-top-btn {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  z-index: 1000;
+  box-shadow: 0 4px 15px rgba(78, 115, 223, 0.4);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(20px) scale(0.8);
+}
+
+/* Hiển thị button khi scroll */
+.scroll-to-top-btn.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+}
+
+/* Hover effect */
+.scroll-to-top-btn:hover {
+  background: linear-gradient(135deg, #224abe 0%, #1a3a9e 100%);
+  transform: translateY(-5px) scale(1.05);
+  box-shadow: 0 8px 25px rgba(78, 115, 223, 0.5);
+}
+
+/* Active effect */
+.scroll-to-top-btn:active {
+  transform: translateY(-2px) scale(1);
+}
+
+/* Icon animation */
+.scroll-to-top-btn i {
+  animation: arrowBounce 2s ease-in-out infinite;
+}
+
+@keyframes arrowBounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+/* Focus visible (accessibility) */
+.scroll-to-top-btn:focus-visible {
+  outline: 3px solid rgba(78, 115, 223, 0.5);
+  outline-offset: 3px;
+}
+
+/* Responsive - Mobile */
+@media (max-width: 768px) {
+  .scroll-to-top-btn {
+    width: 45px;
+    height: 45px;
+    bottom: 20px;
+    right: 20px;
+    font-size: 1.1rem;
+  }
+}
+
+/* Alternative styles - Uncomment để dùng */
+
+/* Style 2: Square with rounded corners */
+/*
+.scroll-to-top-btn {
+  border-radius: 12px;
+  width: 48px;
+  height: 48px;
+}
+*/
+
+/* Style 3: Gradient border */
+/*
+.scroll-to-top-btn {
+  background: white;
+  color: #4e73df;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+}
+
+.scroll-to-top-btn::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+  border-radius: inherit;
+  z-index: -1;
+}
+*/
+
+/* Style 4: Glow effect */
+/*
+.scroll-to-top-btn:hover {
+  box-shadow: 
+    0 0 20px rgba(78, 115, 223, 0.6),
+    0 0 40px rgba(78, 115, 223, 0.4),
+    0 0 60px rgba(78, 115, 223, 0.2);
+}
+*/
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .scroll-to-top-btn {
+    background: linear-gradient(135deg, #5a8dee 0%, #4e73df 100%);
+    box-shadow: 0 4px 15px rgba(90, 141, 238, 0.4);
+  }
+
+  .scroll-to-top-btn:hover {
+    background: linear-gradient(135deg, #4e73df 0%, #3d5fd8 100%);
+    box-shadow: 0 8px 25px rgba(90, 141, 238, 0.5);
+  }
+}
+
+/* Progress indicator style (advanced) */
+.scroll-to-top-btn.progress-style {
+  background: conic-gradient(
+    #4e73df 0deg,
+    #4e73df var(--scroll-progress, 0deg),
+    #e9ecef var(--scroll-progress, 0deg),
+    #e9ecef 360deg
+  );
+}
+
+.scroll-to-top-btn.progress-style::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scroll-to-top-btn.progress-style i {
+  position: relative;
+  z-index: 1;
+  color: #4e73df;
+}
