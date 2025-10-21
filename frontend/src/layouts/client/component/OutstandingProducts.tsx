@@ -44,7 +44,7 @@ const NewestProducts = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-gray-800 text-2xl font-extrabold">
-            Sản phẩm <span className="text-green-500 font-normal">mới nhất</span>
+            Top 5 sản phẩm <span className="text-green-500 font-normal">mới nhất</span>
           </h1>
           <p className="text-gray-500 text-sm mt-1">
             Khám phá sản phẩm vừa ra mắt
