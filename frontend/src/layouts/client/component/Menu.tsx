@@ -34,6 +34,22 @@ const brands = [
     items: 70,
     image: 'reebok-logo.png',
   },
+    {
+    name: 'Converse',
+    items: 60,
+    image: 'converse-logo.png',
+  },
+  {
+    name: 'Vans',
+    items: 90,
+    discount: 10,
+    image: 'vans-logo.png',
+  },
+  {
+    name: 'Reebok',
+    items: 70,
+    image: 'reebok-logo.png',
+  },
 ];
 
 const Menu = () => {

@@ -2,17 +2,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Carbon\Carbon;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Product extends Model
 {
-    use HasFactory;
-
-    protected $table = 'products';
-    protected $primaryKey = 'id';
-    public $timestamps = true;
+    use SoftDeletes;
 
     protected $fillable = [
         'name',
@@ -21,68 +16,99 @@ class Product extends Model
         'description',
         'origin',
         'brand',
-        'images',
+        'image',             // 👈 chỉ 1 ảnh
         'variation_status',
-        'deleted_at',
     ];
 
     protected $casts = [
-        'deleted_at' => 'datetime',
+        'variation_status' => 'boolean',
+        'created_at'       => 'datetime',
+        'updated_at'       => 'datetime',
+        'deleted_at'       => 'datetime',
     ];
 
-    /**
-     * Scope: chỉ lấy sản phẩm chưa xóa mềm
-     */
-    public function scopeActive($query)
-    {
-        return $query->whereNull('deleted_at');
-    }
+    /* ==================== Relations ==================== */
 
-    /**
-     * Scope: chỉ lấy sản phẩm đã xóa mềm
-     */
-    public function scopeTrashed($query)
-    {
-        return $query->whereNotNull('deleted_at');
-    }
-
-    /**
-     * Xóa mềm sản phẩm
-     */
-    public function softDelete()
-    {
-        $this->update(['deleted_at' => Carbon::now()]);
-    }
-
-    /**
-     * Khôi phục sản phẩm đã xóa mềm
-     */
-    public function restoreData()
-    {
-        $this->update(['deleted_at' => null]);
-    }
-
-    /**
-     * Kiểm tra sản phẩm đã bị xóa mềm chưa
-     */
-    public function isDeleted()
-    {
-        return !is_null($this->deleted_at);
-    }
-
-    /**
-     * Quan hệ: 1 sản phẩm thuộc về 1 danh mục
-     */
     public function category()
     {
-        return $this->belongsTo(Category::class, 'category_id', 'id');
+        // withDefault để tránh $product->category->name gây lỗi khi category null
+        return $this->belongsTo(Category::class)->withDefault([
+            'id'   => null,
+            'name' => null,
+        ]);
+    }
+
+    public function variants()
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
+    public function reviews()
+    {
+        return $this->hasMany(ProductReview::class);
+    }
+
+    /* ==================== Scopes ==================== */
+
+    /**
+     * Tìm theo tên/sku sản phẩm hoặc sku biến thể (giống Controller@index)
+     */
+    public function scopeSearch($q, ?string $term)
+    {
+        $s = trim((string) $term);
+        if ($s === '') return $q;
+
+        return $q->where(function ($w) use ($s) {
+            $w->where('name', 'like', "%{$s}%")
+              ->orWhere('sku', 'like', "%{$s}%")
+              ->orWhereHas('variants', function ($v) use ($s) {
+                  $v->where('sku', 'like', "%{$s}%");
+              });
+        });
     }
 
     /**
-     * Quan hệ: 1 sản phẩm có nhiều biến thể (variants)
+     * Lọc theo category (nullable)
      */
-    public function variants()
+    public function scopeByCategory($q, $categoryId)
     {
-        return $this->hasMany(ProductVariant::class, 'product_id', 'id');
+        if ($categoryId === null || $categoryId === '') return $q;
+        return $q->where('category_id', $categoryId);
+    }
+
+    /* ==================== Accessors / Mutators ==================== */
+
+    /**
+     * SKU luôn là CHUỖI (không ép số) và in hoa
+     */
+    public function setSkuAttribute($value): void
+    {
+        if ($value === null || $value === '') {
+            $this->attributes['sku'] = null;
+            return;
+        }
+        $sku = strtoupper(trim((string) $value));
+        $this->attributes['sku'] = $sku;
+    }
+
+    /**
+     * Chuẩn hoá khi set image: nhận string|null -> trim, rỗng thì null
+     */
+    public function setImageAttribute($value): void
+    {
+        if ($value === null) {
+            $this->attributes['image'] = null;
+            return;
+        }
+        $v = trim((string) $value);
+        $this->attributes['image'] = $v !== '' ? $v : null;
+    }
+
+    /**
+     * Lấy ảnh đầu tiên nhanh gọn (để tương thích chỗ code cũ có thể dùng firstImage)
+     */
+    public function getFirstImageAttribute(): ?string
+    {
+        return $this->image ?: null;
     }
 }
