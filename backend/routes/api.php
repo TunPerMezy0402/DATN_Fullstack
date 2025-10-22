@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\admin\SupportTicketController;
 use App\Http\Controllers\Api\admin\WishlistController;
 use App\Http\Controllers\Api\admin\CartController;
 use App\Http\Controllers\Api\admin\AddressBookController;
+use App\Http\Controllers\Api\UploadController;
 
 
 
@@ -41,6 +42,11 @@ Route::prefix('auth')->group(function () {
 // Trang Home (API)
 Route::get('/', [HomeClientController::class, 'index']);
 Route::get('products', [HomeClientController::class, 'index']);
+
+// Upload routes
+Route::post('uploads', [UploadController::class, 'upload'])->middleware('auth:sanctum');
+Route::post('uploads/multiple', [UploadController::class, 'uploadMultiple'])->middleware('auth:sanctum');
+Route::delete('uploads', [UploadController::class, 'delete'])->middleware('auth:sanctum');
 
 
 

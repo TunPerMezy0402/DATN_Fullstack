@@ -16,7 +16,7 @@ class Product extends Model
         'description',
         'origin',
         'brand',
-        'image',             // 👈 chỉ 1 ảnh
+        'image',         
         'variation_status',
     ];
 
@@ -29,14 +29,14 @@ class Product extends Model
 
     /* ==================== Relations ==================== */
 
-    public function category()
-    {
-        // withDefault để tránh $product->category->name gây lỗi khi category null
-        return $this->belongsTo(Category::class)->withDefault([
-            'id'   => null,
-            'name' => null,
-        ]);
-    }
+    // App/Models/Product.php
+public function category()
+{
+    return $this->belongsTo(Category::class)
+        ->withDefault(['id' => null, 'name' => null])
+        ->withTrashed(); // 👈 quan trọng
+}
+
 
     public function variants()
     {

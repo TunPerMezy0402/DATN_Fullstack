@@ -12,15 +12,23 @@ class HomeClientController extends Controller
     public function index()
     {
         $categories = Category::select('id', 'name', 'image')
-            ->whereNull('deleted_at')
-            ->orderBy('name')
-            ->get()
-            ->map(function ($category) {
-                $category->image_url = $category->image
-                    ? asset('storage/' . $category->image)
-                    : null;
-                return $category;
-            });
+    ->whereNull('deleted_at') // nếu bạn dùng datetime cho soft delete
+    ->orderBy('name')
+    ->get()
+    ->map(function ($category) {
+        // Kiểm tra xem image đã có 'storage/' chưa
+        if ($category->image) {
+            if (str_starts_with($category->image, 'storage/')) {
+                $category->image_url = asset($category->image);
+            } else {
+                $category->image_url = asset('storage/' . $category->image);
+            }
+        } else {
+            $category->image_url = null;
+        }
+        return $category;
+    });
+
 
         $products = Product::query()
             ->with([
