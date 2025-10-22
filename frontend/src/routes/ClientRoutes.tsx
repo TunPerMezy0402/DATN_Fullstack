@@ -14,9 +14,7 @@ import ProductsPage from '../layouts/client/component/ProductsPage';
 const ClientRoutes = () => {
   return (
     <Routes>
-      {/* Bọc toàn bộ route client bằng layout MainLayout */}
       <Route path="/" element={<MainLayout />}>
-        {/* Trang chủ */}
         <Route index element={<Home />} />
 
         {/* Các route khác */}
