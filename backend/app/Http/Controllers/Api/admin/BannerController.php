@@ -101,7 +101,7 @@ class BannerController extends Controller
 		$banner->restore();
 		return $banner;
 	}
-
+	// public function delete()
 	public function forceDelete($id)
 	{
 		$banner = Banner::onlyTrashed()->findOrFail($id);
