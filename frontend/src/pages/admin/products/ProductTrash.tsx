@@ -209,10 +209,19 @@ const ProductTrash: React.FC = () => {
     {
       title: "Biến thể",
       dataIndex: "variation_status",
-      width: 120,
+      width: 140,
       align: "center",
-      render: (val: number, r: ProdRow) =>
-        val ? <Tag color="green">Có ({r.variants?.length ?? 0})</Tag> : <Tag>Không</Tag>,
+      render: (val: number, r: ProdRow) => {
+        const variantCount = r.variants?.length ?? 0;
+        if (variantCount > 0) {
+          return (
+            <Tag color="blue" style={{ fontSize: '12px', padding: '4px 8px' }}>
+              {variantCount} biến thể
+            </Tag>
+          );
+        }
+        return <Tag color="default">Không có</Tag>;
+      },
     },
     {
       title: "Hành động",
@@ -257,6 +266,24 @@ const ProductTrash: React.FC = () => {
             />
           </Tooltip>
         </Space>
+        
+        {/* Thống kê biến thể */}
+        <div style={{ 
+          display: 'flex', 
+          gap: 16, 
+          alignItems: 'center',
+          background: '#f0f7ff',
+          padding: '8px 16px',
+          borderRadius: '8px',
+          border: '1px solid #d6e4ff'
+        }}>
+          <div style={{ fontSize: '14px', color: '#1890ff' }}>
+            📦 <strong>{products.reduce((sum, p) => sum + (p.variants?.length || 0), 0)}</strong> biến thể
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            trong {products.length} sản phẩm
+          </div>
+        </div>
       </div>
 
       <Table<ProdRow>
@@ -285,6 +312,47 @@ const ProductTrash: React.FC = () => {
                   {(r as any).deleted_at ? dayjs((r as any).deleted_at).format("HH:mm - DD/MM/YYYY") : "—"}
                 </Descriptions.Item>
               </Descriptions>
+
+              {/* Thông tin biến thể */}
+              {r.variants && r.variants.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <h4 style={{ marginBottom: 12, color: '#1890ff' }}>
+                    📦 Biến thể ({r.variants.length})
+                  </h4>
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', 
+                    gap: 12 
+                  }}>
+                    {r.variants.map((variant, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          border: '1px solid #f0f0f0',
+                          borderRadius: 8,
+                          padding: 12,
+                          background: '#fafafa'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <strong>Biến thể #{idx + 1}</strong>
+                          <Tag color={variant.is_available ? 'green' : 'red'}>
+                            {variant.is_available ? 'Đang bán' : 'Ngừng bán'}
+                          </Tag>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#666' }}>
+                          <div><strong>SKU:</strong> {variant.sku || '—'}</div>
+                          <div><strong>Giá:</strong> {variant.price ? `${Number(variant.price).toLocaleString()}đ` : '—'}</div>
+                          {variant.discount_price && (
+                            <div><strong>Giá KM:</strong> {Number(variant.discount_price).toLocaleString()}đ</div>
+                          )}
+                          <div><strong>Tồn kho:</strong> {variant.stock_quantity || 0}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div
                 style={{

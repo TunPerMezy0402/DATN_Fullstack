@@ -3,46 +3,13 @@ import { Link } from "react-router-dom";
 import Banner from "./component/Banner";
 import OutstandingProducts from "./component/OutstandingProducts";
 import Menu from "./component/Menu";
-import ServicesRow from "./component/ServicesRow";
 import Trending from "./component/Trending";
+import ServicesRow from "./component/ServicesRow";
+
 import { FaArrowUp } from "react-icons/fa";
 
 function Home() {
   // Dữ liệu sản phẩm mẫu
-  const mockProducts = [
-    {
-      _id: "1",
-      name: "Giày Sneaker Nam Trắng",
-      origin: "Việt Nam",
-      discount_price: 650000,
-      price: 850000,
-      images: ["https://via.placeholder.com/400x300?text=Giay+1"],
-    },
-    {
-      _id: "2",
-      name: "Giày Thể Thao Nike Air",
-      origin: "Mỹ",
-      discount_price: 1200000,
-      price: 1500000,
-      images: ["https://via.placeholder.com/400x300?text=Giay+2"],
-    },
-    {
-      _id: "3",
-      name: "Giày Adidas Classic",
-      origin: "Đức",
-      discount_price: 990000,
-      price: 1250000,
-      images: ["https://via.placeholder.com/400x300?text=Giay+3"],
-    },
-    {
-      _id: "4",
-      name: "Giày Vans Checkerboard",
-      origin: "Mỹ",
-      discount_price: 890000,
-      price: 1090000,
-      images: ["https://via.placeholder.com/400x300?text=Giay+4"],
-    },
-  ];
 
   const [visibleCount, setVisibleCount] = useState(4);
   const [showScrollTop, setShowScrollTop] = useState(false);
