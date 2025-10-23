@@ -18,7 +18,7 @@ export const updateProduct = (id: number, form: FormData) => {
 
   });
 
- 
+  
 };
 
 export const deleteProduct = (id: number) =>

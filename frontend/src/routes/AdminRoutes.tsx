@@ -19,6 +19,7 @@ import UserCreate from '../pages/admin/users/UserCreate';
 import ProductList from '../pages/admin/products/ProductList';
 import ProductTrash from '../pages/admin/products/ProductTrash';
 import ProductDetail from '../pages/admin/products/ProductDetail';
+import ProductEdit from '../pages/admin/products/ProductEdit';
 import ProductCreate from '../pages/admin/products/ProductCreate';
 
 
@@ -50,6 +51,7 @@ const AdminRoutes: React.FC = () => {
         <Route path="products/create" element={<ProductCreate />} />
         <Route path="products/trash" element={<ProductTrash />} />
         <Route path="products/:id" element={<ProductDetail />} />
+        <Route path="products/:id/edit" element={<ProductEdit />} />
 
       </Route>
     </Routes>

@@ -9,7 +9,6 @@ import OutstandingProducts from '../layouts/client/component/OutstandingProducts
 import ServicesRow from '../layouts/client/component//ServicesRow';
 import Trending from '../layouts/client/component/Trending';
 import ProductsPage from '../layouts/client/component/ProductsPage';
-// 👉 Import thêm các trang client khác nếu có
 
 const ClientRoutes = () => {
   return (

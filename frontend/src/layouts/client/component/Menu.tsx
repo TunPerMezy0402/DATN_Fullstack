@@ -1,6 +1,6 @@
 import React, { memo, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../../../../api/api";
+import api from "../../../api/api";
 
 interface Category {
   id: number;

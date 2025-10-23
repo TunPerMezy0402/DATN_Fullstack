@@ -44,7 +44,7 @@ type VariantForm = {
 
 /* ============================== Axios ============================== */
 const API_URL =
-  (import.meta as any).env?.VITE_API_URL ||
+  (import.meta as any).env?.VITE_API_URL || 
   (import.meta as any).env?.REACT_APP_API_URL ||
   (process as any).env?.REACT_APP_API_URL ||
   "http://127.0.0.1:8000/api";
