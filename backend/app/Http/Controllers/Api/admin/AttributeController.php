@@ -1,156 +1,95 @@
 <?php
 
-namespace App\Http\Controllers\Api\admin;
+namespace App\Http\Controllers\Api\Admin;
 
-use App\Http\Controllers\Api\admin\Controller;
+use App\Http\Controllers\Controller;
 use App\Models\Attribute;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class AttributeController extends Controller
 {
-    /**
-     * Danh sách thuộc tính (chưa bị xóa)
-     */
-    public function index()
+    // GET /admin/attributes
+    public function index(Request $req)
     {
-        // Mặc định Eloquent sẽ chỉ lấy bản ghi chưa xóa, không cần whereNull
-        $attributes = Attribute::paginate(10);
+        $q = Attribute::query();
 
-        return response()->json([
-            'status' => true,
-            'data' => $attributes
-        ]);
+        if ($type = $req->query('type')) {
+            $q->where('type', $type); // size | color
+        }
+
+        return response()->json(
+            $q->orderBy('value')->paginate($req->integer('per_page', 20))
+        );
     }
 
-    /**
-     * Lưu thuộc tính mới
-     */
-    public function store(Request $request)
+    // GET /admin/attributes/trash
+    public function trash(Request $req)
     {
-        $request->validate([
-            'type' => 'required|string',
-            'value' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('attributes')->where(function ($query) use ($request) {
-                    return $query->where('type', ucfirst(strtolower($request->type)));
-                }),
-            ],
-        ], [
-            'value.unique' => 'Giá trị "' . $request->value . '" đã tồn tại cho loại ' . ucfirst(strtolower($request->type)),
-        ]);
+        $q = Attribute::onlyTrashed();
 
-        $attribute = Attribute::create([
-            'type' => ucfirst(strtolower($request->type)),
-            'value' => $request->value,
-        ]);
+        if ($type = $req->query('type')) {
+            $q->where('type', $type);
+        }
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Thêm thuộc tính thành công',
-            'data' => $attribute
-        ], 201);
+        return response()->json(
+            $q->orderBy('deleted_at', 'desc')->paginate($req->integer('per_page', 20))
+        );
     }
 
-    /**
-     * Xem chi tiết thuộc tính
-     */
+    // GET /admin/attributes/{id}
     public function show($id)
     {
-        $attribute = Attribute::findOrFail($id);
-
-        return response()->json([
-            'status' => true,
-            'data' => $attribute
-        ]);
+        $attr = Attribute::withTrashed()->findOrFail($id);
+        return response()->json($attr);
     }
 
-    /**
-     * Cập nhật thuộc tính
-     */
-    public function update(Request $request, $id)
+    // POST /admin/attributes
+    public function store(Request $req)
     {
-        $attribute = Attribute::findOrFail($id);
-
-        $request->validate([
-            'type' => 'required|string',
-            'value' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('attributes')
-                    ->where(fn($query) => $query->where('type', ucfirst(strtolower($request->type))))
-                    ->ignore($id),
-            ],
+        $data = $req->validate([
+            'type'  => 'required|string|in:size,color',
+            'value' => 'required|string|max:100',
         ]);
 
-        $attribute->update([
-            'type' => ucfirst(strtolower($request->type)),
-            'value' => $request->value,
-        ]);
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Cập nhật thuộc tính thành công',
-            'data' => $attribute
-        ]);
+        $attr = Attribute::create($data);
+        return response()->json($attr, 201);
     }
 
-    /**
-     * Xóa mềm thuộc tính
-     */
+    // PUT /admin/attributes/{id}
+    public function update(Request $req, $id)
+    {
+        $attr = Attribute::withTrashed()->findOrFail($id);
+
+        $data = $req->validate([
+            'type'  => 'sometimes|string|in:size,color',
+            'value' => 'sometimes|string|max:100',
+        ]);
+
+        $attr->update($data);
+        return response()->json($attr);
+    }
+
+    // DELETE /admin/attributes/{id}
     public function destroy($id)
     {
-        $attribute = Attribute::findOrFail($id);
-        $attribute->delete(); // Soft delete tự động set deleted_at = now()
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Xóa thuộc tính thành công'
-        ]);
+        $attr = Attribute::findOrFail($id);
+        $attr->delete();
+        return response()->json(['message' => 'deleted']);
     }
 
-    /**
-     * Danh sách các thuộc tính đã xóa mềm
-     */
-    public function trash()
-    {
-        $attributes = Attribute::onlyTrashed()->paginate(10);
-
-        return response()->json([
-            'status' => true,
-            'data' => $attributes
-        ]);
-    }
-
-    /**
-     * Khôi phục thuộc tính đã xóa mềm
-     */
+    // POST /admin/attributes/{id}/restore
     public function restore($id)
     {
-        $attribute = Attribute::onlyTrashed()->findOrFail($id);
-        $attribute->restore();
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Khôi phục thuộc tính thành công',
-            'data' => $attribute
-        ]);
+        $attr = Attribute::withTrashed()->findOrFail($id);
+        $attr->restore();
+        return response()->json(['message' => 'restored']);
     }
 
-    /**
-     * Xóa vĩnh viễn thuộc tính
-     */
+    // DELETE /admin/attributes/{id}/force-delete
     public function forceDelete($id)
     {
-        $attribute = Attribute::onlyTrashed()->findOrFail($id);
-        $attribute->forceDelete();
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Đã xóa vĩnh viễn thuộc tính'
-        ]);
+        $attr = Attribute::withTrashed()->findOrFail($id);
+        $attr->forceDelete();
+        return response()->json(['message' => 'force-deleted']);
     }
 }

@@ -23,13 +23,32 @@ import {
   fetchProducts,
   fetchCategories,
   deleteProduct,
-  firstImage,
-  parseImages,
-  toCurrency,
+  parseImages, // 👈 vẫn dùng cho variant.images
 } from "../../../api/productApi";
 
 const pageSize = 10;
 
+/* ============================== Asset URL helper ============================== */
+/**
+ * Backend trả về 'storage/img/product/xxx.jpg' (relative).
+ * Hàm này convert thành absolute URL dựa trên API_URL (bỏ đuôi /api).
+ */
+const API_URL =
+  (import.meta as any).env?.VITE_API_URL ||
+  (import.meta as any).env?.REACT_APP_API_URL ||
+  (process as any).env?.REACT_APP_API_URL ||
+  "http://127.0.0.1:8000/api";
+const ASSET_BASE = String(API_URL).replace(/\/api\/?$/, "");
+
+const toAssetUrl = (u?: string | null): string | undefined => {
+  if (!u) return undefined;
+  if (/^https?:\/\//i.test(u)) return u;
+  return `${ASSET_BASE}/${String(u).replace(/^\/+/, "")}`;
+};
+
+const unique = <T,>(arr: T[]) => Array.from(new Set(arr));
+
+/* ============================== Component ============================== */
 const ProductList: React.FC = () => {
   const navigate = useNavigate();
 
@@ -67,7 +86,6 @@ const ProductList: React.FC = () => {
     loadAll();
   }, []);
 
-  // ====== CHỈ TÌM THEO MÃ (SKU) VÀ TÊN ======
   const dataView = useMemo<Product[]>(() => {
     const q = searchText.trim().toLowerCase();
 
@@ -77,7 +95,7 @@ const ProductList: React.FC = () => {
           const byProductSku = (p.sku ?? "").toLowerCase().includes(q);
           const byVariantSku =
             Array.isArray(p.variants) &&
-            p.variants.some((v) => (v.sku ?? "").toLowerCase().includes(q));
+            p.variants.some((v: any) => (v?.sku ?? "").toLowerCase().includes(q));
           return byName || byProductSku || byVariantSku;
         })
       : products;
@@ -100,6 +118,37 @@ const ProductList: React.FC = () => {
     }
   };
 
+  /** Lấy URL ảnh đại diện cho cột “Ảnh”.
+   * Ưu tiên product.image; nếu không có thì lấy ảnh từ biến thể đầu tiên (image hoặc images[0]).
+   */
+  const coverUrl = (p: Product): string | undefined => {
+    const pImg = (p as any).image as string | undefined; // model mới: image (string|null)
+    if (pImg) return toAssetUrl(pImg);
+
+    // fallback: lấy từ biến thể
+    const firstFromVariants =
+      p.variants?.flatMap((v: any) => {
+        const singles: (string | undefined)[] = [v?.image];
+        const albums = (Array.isArray(v?.images) ? v.images : parseImages(v?.images)) as string[];
+        return [...singles, ...(albums ?? [])];
+      }) ?? [];
+    const first = firstFromVariants.find((x) => !!x) as string | undefined;
+    return toAssetUrl(first);
+  };
+
+  /** Album trong phần expand: gộp product.image + variant.image + variant.images[], unique + chuẩn URL */
+  const albumUrls = (p: Product): string[] =>
+    unique([
+      toAssetUrl((p as any).image) as string | undefined,
+      ...(p.variants ?? []).flatMap((v: any) => {
+        const single = v?.image ? [toAssetUrl(v.image)] : [];
+        const many = (Array.isArray(v?.images) ? v.images : parseImages(v?.images))
+          .map(toAssetUrl)
+          .filter(Boolean) as string[];
+        return [...(single as (string | undefined)[]), ...many];
+      }),
+    ].filter(Boolean) as string[]).slice(0, 12);
+
   const columns: ColumnsType<Product> = [
     {
       title: "STT",
@@ -109,7 +158,6 @@ const ProductList: React.FC = () => {
         (currentPage - 1) * pageSize + index + 1,
       fixed: "left",
     },
-    // ===== CỘT MÃ: Ưu tiên product.sku; nếu trống, gom SKU của biến thể =====
     {
       title: "Mã",
       width: 180,
@@ -117,7 +165,7 @@ const ProductList: React.FC = () => {
         if (r.sku) return r.sku;
 
         const variantSkus = (r.variants ?? [])
-          .map((v) => v.sku)
+          .map((v: any) => v?.sku)
           .filter((s): s is string => !!s);
 
         if (variantSkus.length === 0) return "—";
@@ -133,10 +181,10 @@ const ProductList: React.FC = () => {
     },
     {
       title: "Ảnh",
-      dataIndex: "images",
+      dataIndex: "image", // 👈 product.image
       width: 100,
       render: (_: unknown, record: Product) => {
-        const url = firstImage(record.images);
+        const url = coverUrl(record);
         return url ? (
           <Image
             src={url}
@@ -144,6 +192,7 @@ const ProductList: React.FC = () => {
             height={60}
             style={{ objectFit: "cover", borderRadius: 6 }}
             alt={record.name}
+            placeholder
           />
         ) : (
           <div
@@ -193,10 +242,11 @@ const ProductList: React.FC = () => {
         <Space wrap>
           <Button
             type="link"
-            onClick={() => navigate(`/admin/products/${record.id}/edit`)}
+            onClick={() => navigate(`/admin/products/${record.id}`)}
           >
-            Sửa
+            Chi tiết
           </Button>
+          {/* <Button type="link" onClick={() => navigate(`/admin/products/${record.id}/edit`)}>Sửa</Button> */}
         </Space>
       ),
     },
@@ -258,20 +308,18 @@ const ProductList: React.FC = () => {
           // DẤU CỘNG mở chi tiết sản phẩm (brand, origin, mô tả, album ảnh…)
           expandedRowRender: (record: Product) => (
             <div style={{ padding: 12 }}>
-              {/* Album ảnh */}
+              {/* Album ảnh: product.image + variant.image + variant.images[] */}
               <Space wrap style={{ marginBottom: 12 }}>
-                {parseImages(record.images)
-                  .slice(0, 8)
-                  .map((url: string, idx: number) => (
-                    <Image
-                      key={`${record.id}-${idx}`}
-                      src={url}
-                      width={64}
-                      height={64}
-                      style={{ objectFit: "cover", borderRadius: 8 }}
-                      alt={`${record.name}-img-${idx + 1}`}
-                    />
-                  ))}
+                {albumUrls(record).map((url: string, idx: number) => (
+                  <Image
+                    key={`${record.id}-${idx}`}
+                    src={url}
+                    width={64}
+                    height={64}
+                    style={{ objectFit: "cover", borderRadius: 8 }}
+                    alt={`${record.name}-img-${idx + 1}`}
+                  />
+                ))}
               </Space>
 
               <Descriptions bordered size="small" column={2}>
@@ -281,13 +329,6 @@ const ProductList: React.FC = () => {
                 <Descriptions.Item label="Xuất xứ">
                   {record.origin || "—"}
                 </Descriptions.Item>
-{/*                 <Descriptions.Item label="Biến thể">
-                  {record.variation_status ? (
-                    <Tag color="green">Có ({record.variants?.length ?? 0})</Tag>
-                  ) : (
-                    <Tag>Không</Tag>
-                  )}
-                </Descriptions.Item> */}
                 <Descriptions.Item label="Mô tả" span={3}>
                   {record.description || "—"}
                 </Descriptions.Item>

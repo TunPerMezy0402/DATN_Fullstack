@@ -2,51 +2,37 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Attribute extends Model
 {
-    use HasFactory, SoftDeletes;
+    use SoftDeletes;
 
     protected $table = 'attributes';
-    protected $primaryKey = 'id';
-    public $timestamps = true;
 
     protected $fillable = [
-        'type',
-        'value',
-        'deleted_at',
+        'type', 'value',
     ];
 
     protected $casts = [
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
 
+    // Scopes tiện lọc theo type
+    public function scopeColors($q) { return $q->where('type', 'color'); }
+    public function scopeSizes($q)  { return $q->where('type', 'size'); }
 
-    public function scopeActive($query)
+    // Biến thể dùng attribute làm size/color
+    public function asSizeVariants()
     {
-        return $query->whereNull('deleted_at');
+        return $this->hasMany(ProductVariant::class, 'size_id');
     }
 
-    public function scopeTrashed($query)
+    public function asColorVariants()
     {
-        return $query->whereNotNull('deleted_at');
-    }
-
-    public function softDelete()
-    {
-        $this->delete();
-    }
-
-    public function restoreData()
-    {
-        $this->restore();
-    }
-
-    public function isDeleted()
-    {
-        return $this->trashed();
+        return $this->hasMany(ProductVariant::class, 'color_id');
     }
 }

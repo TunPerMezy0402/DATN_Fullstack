@@ -4,188 +4,134 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ProductVariant;
+use App\Models\Attribute;
 use Illuminate\Http\Request;
 
 class ProductVariantController extends Controller
 {
-    /**
-     * Lấy danh sách các variant chưa bị xóa
-     */
-    public function index()
+    // GET /admin/variants
+    public function index(Request $req)
     {
-        $variants = ProductVariant::where('is_deleted', 0)->paginate(10);
+        $q = ProductVariant::query()
+            ->with(['product:id,name', 'size:id,value', 'color:id,value'])
+            ->orderByDesc('updated_at');
 
-        return response()->json([
-            'status' => true,
-            'data' => $variants
-        ]);
+        if ($pid = $req->query('product_id')) {
+            $q->where('product_id', $pid);
+        }
+        if ($s = $req->query('search')) {
+            $q->where('sku', 'like', "%{$s}%");
+        }
+
+        return response()->json(
+            $q->paginate($req->integer('per_page', 20))
+        );
     }
 
-    /**
-     * Lấy chi tiết 1 variant
-     */
+    // GET /admin/variants/trash
+    public function trash(Request $req)
+    {
+        $q = ProductVariant::onlyTrashed()->with(['size:id,value', 'color:id,value']);
+
+        if ($pid = $req->query('product_id')) {
+            $q->where('product_id', $pid);
+        }
+
+        return response()->json(
+            $q->orderByDesc('deleted_at')->paginate($req->integer('per_page', 20))
+        );
+    }
+
+    // GET /admin/variants/{id}
     public function show($id)
     {
-        $variant = ProductVariant::where('is_deleted', 0)->find($id);
+        $variant = ProductVariant::withTrashed()
+            ->with(['product:id,name', 'size:id,value', 'color:id,value'])
+            ->findOrFail($id);
 
-        if (!$variant) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Variant not found'
-            ], 404);
-        }
-
-        return response()->json([
-            'status' => true,
-            'data' => $variant
-        ]);
+        return response()->json($variant);
     }
 
-    /**
-     * Thêm mới variant
-     */
-    public function store(Request $request)
+    // POST /admin/variants
+    public function store(Request $req)
     {
-        $request->validate([
-            'product_id'     => 'required|integer|exists:products,id',
-            'size_id'        => 'nullable|integer',
-            'color_id'       => 'nullable|integer',
-            'sku'            => 'required|string|max:100|unique:product_variants,sku',
-            'price'          => 'required|numeric|min:0',
-            'discount_price' => 'nullable|numeric|min:0',
-            'stock_quantity' => 'required|integer|min:0',
-            'is_available'   => 'boolean',
+        $data = $req->validate([
+            'product_id'      => 'required|exists:products,id',
+            'size_id'         => 'nullable|exists:attributes,id',
+            'color_id'        => 'nullable|exists:attributes,id',
+            'image'           => 'nullable|string|max:255',
+            'images'          => 'nullable|array',
+            'images.*'        => 'string',
+            'sku'             => 'nullable|string|max:100',
+            'price'           => 'nullable|numeric|min:0',
+            'discount_price'  => 'nullable|numeric|min:0',
+            'quantity_sold'   => 'nullable|integer|min:0',
+            'stock_quantity'  => 'nullable|integer|min:0',
+            'is_available'    => 'nullable|boolean',
         ]);
 
-        $variant = ProductVariant::create([
-            'product_id'     => $request->product_id,
-            'size_id'        => $request->size_id,
-            'color_id'       => $request->color_id,
-            'sku'            => $request->sku,
-            'price'          => $request->price,
-            'discount_price' => $request->discount_price,
-            'stock_quantity' => $request->stock_quantity,
-            'is_available'   => $request->is_available ?? 1,
-            'is_deleted'     => 0,
-        ]);
+        $this->assertAttributeType($data['size_id'] ?? null, 'size');
+        $this->assertAttributeType($data['color_id'] ?? null, 'color');
 
-        return response()->json([
-            'status'  => true,
-            'message' => 'Variant created successfully',
-            'data'    => $variant
-        ], 201);
+        $variant = ProductVariant::create($data);
+        $variant->load('size:id,value', 'color:id,value');
+        return response()->json($variant, 201);
     }
 
-    /**
-     * Cập nhật variant
-     */
-    public function update(Request $request, $id)
+    // PUT /admin/variants/{id}
+    public function update(Request $req, $id)
     {
-        $variant = ProductVariant::where('is_deleted', 0)->find($id);
+        $variant = ProductVariant::withTrashed()->findOrFail($id);
 
-        if (!$variant) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Variant not found'
-            ], 404);
-        }
-
-        $request->validate([
-            'sku'            => 'sometimes|string|max:100|unique:product_variants,sku,' . $id,
-            'price'          => 'sometimes|numeric|min:0',
-            'discount_price' => 'nullable|numeric|min:0',
-            'stock_quantity' => 'sometimes|integer|min:0',
-            'is_available'   => 'boolean',
+        $data = $req->validate([
+            'size_id'         => 'sometimes|nullable|exists:attributes,id',
+            'color_id'        => 'sometimes|nullable|exists:attributes,id',
+            'image'           => 'sometimes|nullable|string|max:255',
+            'images'          => 'sometimes|nullable|array',
+            'images.*'        => 'string',
+            'sku'             => 'sometimes|nullable|string|max:100',
+            'price'           => 'sometimes|nullable|numeric|min:0',
+            'discount_price'  => 'sometimes|nullable|numeric|min:0',
+            'quantity_sold'   => 'sometimes|nullable|integer|min:0',
+            'stock_quantity'  => 'sometimes|nullable|integer|min:0',
+            'is_available'    => 'sometimes|boolean',
         ]);
 
-        $variant->update($request->only([
-            'size_id', 'color_id', 'sku', 'price', 'discount_price', 'stock_quantity', 'is_available'
-        ]));
+        if (array_key_exists('size_id', $data))  $this->assertAttributeType($data['size_id'] ?? null, 'size');
+        if (array_key_exists('color_id', $data)) $this->assertAttributeType($data['color_id'] ?? null, 'color');
 
-        return response()->json([
-            'status'  => true,
-            'message' => 'Variant updated successfully',
-            'data'    => $variant
-        ]);
+        $variant->update($data);
+        $variant->load('size:id,value', 'color:id,value');
+        return response()->json($variant);
     }
 
-    /**
-     * Xóa mềm variant
-     */
+    // DELETE /admin/variants/{id}
     public function destroy($id)
     {
-        $variant = ProductVariant::where('is_deleted', 0)->find($id);
-
-        if (!$variant) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Variant not found'
-            ], 404);
-        }
-
-        $variant->update(['is_deleted' => 1]);
-
-        return response()->json([
-            'status'  => true,
-            'message' => 'Variant soft deleted successfully'
-        ]);
+        $variant = ProductVariant::findOrFail($id);
+        $variant->delete();
+        return response()->json(['message' => 'deleted']);
     }
 
-    /**
-     * Danh sách variant đã xóa mềm
-     */
-    public function trashed()
-    {
-        $variants = ProductVariant::where('is_deleted', 1)->paginate(10);
-
-        return response()->json([
-            'status' => true,
-            'data'   => $variants
-        ]);
-    }
-
-    /**
-     * Khôi phục variant đã xóa mềm
-     */
+    // POST /admin/variants/{id}/restore
     public function restore($id)
     {
-        $variant = ProductVariant::where('is_deleted', 1)->find($id);
-
-        if (!$variant) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Variant not found or not deleted'
-            ], 404);
-        }
-
-        $variant->update(['is_deleted' => 0]);
-
-        return response()->json([
-            'status'  => true,
-            'message' => 'Variant restored successfully',
-            'data'    => $variant
-        ]);
+        $variant = ProductVariant::withTrashed()->findOrFail($id);
+        $variant->restore();
+        return response()->json(['message' => 'restored']);
     }
 
-    /**
-     * Xóa vĩnh viễn variant
-     */
+    // DELETE /admin/variants/{id}/force-delete
     public function forceDelete($id)
     {
-        $variant = ProductVariant::where('is_deleted', 1)->find($id);
+        $variant = ProductVariant::withTrashed()->findOrFail($id);
+        $variant->forceDelete();
+        return response()->json(['message' => 'force-deleted']);
+    }
 
-        if (!$variant) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Variant not found or not deleted'
-            ], 404);
-        }
-
-        $variant->delete();
-
-        return response()->json([
-            'status'  => true,
-            'message' => 'Variant permanently deleted'
-        ]);
+    protected function assertAttributeType($id, $type)
+    {
+        if (empty($id)) return;
+        abort_unless(Attribute::where('id', $id)->where('type', $type)->exists(), 422, "Attribute {$id} is not of type {$type}");
     }
 }
