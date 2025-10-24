@@ -762,14 +762,6 @@ export default function ProductEdit() {
                             form.setFieldValue("category_id", undefined);
                           }}
                         />
-                        <Button 
-                          onClick={() => setCategoryModalOpen(true)}
-                          size="large"
-                          type="primary"
-                          style={{ borderRadius: "0 8px 8px 0" }}
-                        >
-                          <PlusOutlined /> Thêm mới
-                        </Button>
                       </Space.Compact>
                     </Form.Item>
                   </Col>
@@ -1068,10 +1060,10 @@ export default function ProductEdit() {
                                 <Switch
                                   checked={variant.is_available}
                                   onChange={(checked) => handleUpdateVariant(index, "is_available", checked)}
-                                  checkedChildren="Có sẵn"
-                                  unCheckedChildren="Hết hàng"
+                                  checkedChildren="Hiện"
+                                  unCheckedChildren="Ẩn"
                                   disabled={!variant.isEditing}
-                                  style={{ width: "100%" }}
+                                  style={{ width: "23%" }}
                                 />
                               </Form.Item>
                             </Col>
@@ -1202,7 +1194,6 @@ export default function ProductEdit() {
         }
         open={categoryModalOpen}
         onOk={handleCreateCategory}
-        onCancel={() => { setCategoryModalOpen(false); setCategoryName(""); }}
         okText="Tạo danh mục"
         cancelText="Hủy"
         okButtonProps={{ style: { borderRadius: 8 } }}
@@ -1266,6 +1257,8 @@ export default function ProductEdit() {
           }} 
         />
       </Modal>
+      <style>
+      </style>
 
       {/* Enhanced Styles */}
       <style>{`
@@ -1287,6 +1280,7 @@ export default function ProductEdit() {
         .variant-album-upload-enhanced .ant-upload.ant-upload-select-picture-card {
           width: 120px;
           height: 120px;
+          margin-right: 10px;
           border-radius: 12px;
         }
         
