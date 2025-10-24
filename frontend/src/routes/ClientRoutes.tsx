@@ -9,6 +9,7 @@ import OutstandingProducts from '../layouts/client/component/OutstandingProducts
 import ServicesRow from '../layouts/client/component//ServicesRow';
 import Trending from '../layouts/client/component/Trending';
 import ProductsPage from '../layouts/client/component/ProductsPage';
+import ProductDetail from '../layouts/client/component/ProductDetail';
 
 const ClientRoutes = () => {
   return (
@@ -23,6 +24,8 @@ const ClientRoutes = () => {
         <Route path="servicesrow" element={<ServicesRow />} />
         <Route path="trending" element={<Trending />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/products/:id" element={<ProductDetail />} />
+
 
         {/* <Route path="contact" element={<Contact />} /> */}
       </Route>
