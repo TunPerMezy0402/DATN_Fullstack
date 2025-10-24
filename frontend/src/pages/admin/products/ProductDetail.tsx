@@ -125,6 +125,21 @@ export default function ProductDetail() {
       align: 'center',
       render: (_, __, i) => i + 1,
     },
+        {
+      title: 'Hình ảnh',
+      dataIndex: 'image',
+      width: 100,
+      render: (img) => {
+        const url = getImageUrl(img);
+        return url ? (
+          <Image src={url} width={70} height={70} style={{ borderRadius: 8, objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: 70, height: 70, background: '#f5f5f5', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <PictureOutlined style={{ fontSize: 24, color: '#bfbfbf' }} />
+          </div>
+        );
+      },
+    },
     {
       title: 'Album',
       dataIndex: 'images',
@@ -156,7 +171,7 @@ export default function ProductDetail() {
     {
       title: 'SKU',
       dataIndex: 'sku',
-      width: 140,
+      width: 100,
       render: (sku) => (sku ? <Text code copyable={{ text: sku }}>{sku}</Text> : '—'),
     },
     {
