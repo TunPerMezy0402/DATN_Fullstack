@@ -10,17 +10,39 @@ import {
   Input,
   Descriptions,
   Tooltip,
+  Tag,
 } from "antd";
 import axios from "axios";
 import dayjs from "dayjs";
-import { SortDescendingOutlined } from "@ant-design/icons";
+import {
+  SortDescendingOutlined,
+  SortAscendingOutlined,
+  ReloadOutlined,
+  EyeOutlined,
+} from "@ant-design/icons";
 
 interface Category {
   id: number;
   name: string;
+  image?: string | null;      // relative path (VD: "img/category/abc.jpg")
+  image_url?: string | null;  // URL dùng được ngay (VD: "/storage/img/category/abc.jpg" hoặc full URL)
   created_at: string;
   updated_at: string;
 }
+
+const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://127.0.0.1:8000";
+
+const toImageUrl = (row: Partial<Category>) => {
+  const raw = row.image_url || row.image || "";
+  if (!raw) return "";
+  // Nếu BE đã trả full http(s)
+  if (/^https?:\/\//i.test(raw)) return raw;
+  // Nếu bắt đầu bằng "/", ghép BACKEND_URL
+  if (raw.startsWith("/")) return `${BACKEND_URL}${raw}`;
+  // Còn lại là relative path trên disk 'public'
+  return `${BACKEND_URL}/storage/${raw}`;
+};
 
 const CategoryList: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -28,34 +50,35 @@ const CategoryList: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  const [modalVisible, setModalVisible] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
 
-  // 🔎 tìm kiếm + ⏱️ sắp xếp mới nhất
   const [searchText, setSearchText] = useState("");
-  const [sortNewest, setSortNewest] = useState(true);
+  const [sortKey, setSortKey] = useState<"updated_at" | "name">("updated_at");
+  const [ascending, setAscending] = useState<boolean>(false);
 
   const [form] = Form.useForm();
-
   const token = localStorage.getItem("access_token");
-  const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
 
-  // ✅ Lấy danh sách
   const fetchCategories = async () => {
     try {
       setLoading(true);
       const res = await axios.get(`${API_URL}/admin/categories`, {
         headers: { Authorization: `Bearer ${token}` },
+        params: { per_page: 200 }, // lấy nhiều để client-side sort/paginate
       });
 
-      const data =
-        Array.isArray(res.data) ? res.data :
-        Array.isArray(res.data.data) ? res.data.data :
-        res.data.data?.data || [];
+      // Chuẩn hoá data từ nhiều kiểu trả về (paginator hoặc array)
+      const raw =
+        Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.data)
+            ? res.data.data
+            : Array.isArray(res.data?.data?.data)
+              ? res.data.data.data
+              : [];
 
-      setCategories(data);
+      setCategories(raw);
     } catch (err) {
       console.error("❌ Lỗi tải danh mục:", err);
       message.error("Không thể tải danh mục!");
@@ -69,54 +92,29 @@ const CategoryList: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Lọc + sắp xếp
-  const dataView = useMemo(() => {
+  const filteredSorted = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     let list = categories.filter((c) => c.name.toLowerCase().includes(q));
-    if (sortNewest) {
-      list = [...list].sort(
-        (a, b) => dayjs(b.updated_at).valueOf() - dayjs(a.updated_at).valueOf()
+
+    if (sortKey === "updated_at") {
+      list = [...list].sort((a, b) =>
+        ascending
+          ? dayjs(a.updated_at).valueOf() - dayjs(b.updated_at).valueOf()
+          : dayjs(b.updated_at).valueOf() - dayjs(a.updated_at).valueOf()
+      );
+    } else {
+      list = [...list].sort((a, b) =>
+        ascending ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
       );
     }
     return list;
-  }, [categories, searchText, sortNewest]);
+  }, [categories, searchText, sortKey, ascending]);
 
-  // ✅ Mở modal thêm/sửa
-  const openModal = (category?: Category) => {
-    if (category) {
-      setEditingCategory(category);
-      form.setFieldsValue(category);
-    } else {
-      setEditingCategory(null);
-      form.resetFields();
-    }
-    setModalVisible(true);
+  const openDetailModal = (category: Category) => {
+    setSelectedCategory(category);
+    setDetailVisible(true);
   };
 
-  // ✅ Lưu
-  const handleSave = async () => {
-    try {
-      const values = await form.validateFields();
-      if (editingCategory) {
-        await axios.put(`${API_URL}/admin/categories/${editingCategory.id}`, values, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        message.success("✅ Cập nhật danh mục thành công!");
-      } else {
-        await axios.post(`${API_URL}/admin/categories`, values, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        message.success("✅ Thêm danh mục thành công!");
-      }
-      setModalVisible(false);
-      fetchCategories();
-    } catch (err) {
-      console.error(err);
-      message.error("Không thể lưu danh mục!");
-    }
-  };
-
-  // ✅ Xóa mềm
   const handleSoftDelete = async (id: number) => {
     try {
       await axios.delete(`${API_URL}/admin/categories/${id}`, {
@@ -130,29 +128,59 @@ const CategoryList: React.FC = () => {
     }
   };
 
-  const openDetailModal = (category: Category) => {
-    setSelectedCategory(category);
-    setDetailVisible(true);
-  };
-
   const columns = [
     {
       title: "STT",
-      render: (_: any, __: any, index: number) =>
-        (currentPage - 1) * pageSize + index + 1,
       width: 80,
       align: "center" as const,
+      render: (_: any, __: any, index: number) =>
+        (currentPage - 1) * pageSize + index + 1,
     },
-    { title: "Tên danh mục", dataIndex: "name", key: "name" },
+    {
+      title: "Hình ảnh",
+      dataIndex: "image_url",
+      key: "image_url",
+      render: (_: any, record: Category) => {
+        const src = toImageUrl(record);
+        return src ? (
+          <img
+            src={src}
+            alt={record.name}
+            style={{
+              width: 50,
+              height: 50,
+              objectFit: "cover",
+              borderRadius: "50%",
+            }}
+            onError={(e: any) => {
+              e.currentTarget.style.visibility = "hidden";
+            }}
+          />
+        ) : (
+          <Tag color="default">Không có ảnh</Tag>
+        );
+      },
+    },
+    {
+      title: "Tên danh mục",
+      dataIndex: "name",
+      key: "name",
+      ellipsis: true,
+    },
     {
       title: "Hành động",
       key: "actions",
       render: (_: any, record: Category) => (
-        <Space>
-          <Button type="link" onClick={() => openDetailModal(record)}>
-            Chi tiết
-          </Button>
-          <Button type="link" onClick={() => openModal(record)}>
+        <Space size="small">
+          <Tooltip title="Xem chi tiết">
+            <Button
+              type="link"
+              onClick={() => openDetailModal(record)}
+            >
+              Chi tiết
+            </Button>
+          </Tooltip>
+          <Button type="link" href={`/admin/categories/${record.id}/edit`}>
             Sửa
           </Button>
           <Popconfirm
@@ -174,7 +202,7 @@ const CategoryList: React.FC = () => {
 
   return (
     <div style={{ padding: 24, background: "#f5f7fa", minHeight: "100vh" }}>
-      {/* Header */}
+      {/* Header bar */}
       <div
         style={{
           display: "flex",
@@ -185,37 +213,62 @@ const CategoryList: React.FC = () => {
           justifyContent: "space-between",
         }}
       >
-        {/* Trái: Tìm kiếm + Icon sắp xếp ngay cạnh */}
-        <Space>
+        <Space wrap>
           <Input
             placeholder="Tìm theo tên danh mục..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            onPressEnter={(e) =>
-              setSearchText((e.target as HTMLInputElement).value)
-            }
             allowClear
             style={{ width: 320 }}
           />
-
+          {/* Nút/chế độ sắp xếp */}
           <Tooltip
             title={
-              sortNewest ? "Đang sắp xếp: Mới nhất" : "Bật sắp xếp theo Mới nhất"
+              sortKey === "updated_at"
+                ? ascending
+                  ? "Sắp xếp: Cũ nhất trước"
+                  : "Sắp xếp: Mới nhất trước"
+                : ascending
+                  ? "Sắp xếp tên: A → Z"
+                  : "Sắp xếp tên: Z → A"
             }
           >
             <Button
               size="small"
               shape="circle"
-              type={sortNewest ? "primary" : "default"}
+              type={sortKey === "updated_at" ? "primary" : "default"}
               icon={<SortDescendingOutlined />}
-              aria-label="Sắp xếp theo mới nhất"
-              onClick={() => setSortNewest((v) => !v)}
+              aria-label="Sắp xếp theo ngày cập nhật"
+              onClick={() => {
+                setSortKey("updated_at");
+                setAscending((v) => !v);
+              }}
             />
           </Tooltip>
+
+          {/*           <Tooltip title="Sắp xếp theo tên (A/Z – nhấn để đảo chiều)">
+            <Button
+              size="small"
+              shape="circle"
+              type={sortKey === "name" ? "primary" : "default"}
+              icon={<SortAscendingOutlined />}
+              aria-label="Sắp xếp theo tên"
+              onClick={() => {
+                setSortKey("name");
+                setAscending((v) => !v);
+              }}
+            />
+          </Tooltip>
+
+          <Tooltip title="Tải lại">
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={fetchCategories}
+            />
+          </Tooltip> */}
         </Space>
 
-        {/* Phải: nút Thêm */}
-        <Button type="primary" onClick={() => openModal()}>
+        <Button type="primary" href="/admin/categories/create">
           + Thêm danh mục
         </Button>
       </div>
@@ -223,7 +276,7 @@ const CategoryList: React.FC = () => {
       <Table
         rowKey="id"
         columns={columns}
-        dataSource={dataView}
+        dataSource={filteredSorted}
         loading={loading}
         pagination={{
           pageSize,
@@ -233,25 +286,6 @@ const CategoryList: React.FC = () => {
         }}
       />
 
-      {/* Modal Thêm / Sửa */}
-      <Modal
-        title={editingCategory ? "📝 Chỉnh sửa danh mục" : "➕ Thêm danh mục"}
-        open={modalVisible}
-        onCancel={() => setModalVisible(false)}
-        onOk={handleSave}
-        okText="Lưu"
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item
-            label="Tên danh mục"
-            name="name"
-            rules={[{ required: true, message: "Nhập tên danh mục!" }]}
-          >
-            <Input />
-          </Form.Item>
-        </Form>
-      </Modal>
-
       {/* Modal Chi tiết */}
       <Modal
         title="📄 Chi tiết danh mục"
@@ -260,7 +294,7 @@ const CategoryList: React.FC = () => {
         footer={null}
       >
         {selectedCategory && (
-          <Descriptions bordered column={1}>
+          <Descriptions bordered column={1} size="middle">
             <Descriptions.Item label="Tên">
               {selectedCategory.name}
             </Descriptions.Item>
@@ -269,6 +303,17 @@ const CategoryList: React.FC = () => {
             </Descriptions.Item>
             <Descriptions.Item label="Ngày cập nhật">
               {dayjs(selectedCategory.updated_at).format("HH:mm - DD/MM/YYYY")}
+            </Descriptions.Item>
+            <Descriptions.Item label="Hình ảnh">
+              {toImageUrl(selectedCategory) ? (
+                <img
+                  src={toImageUrl(selectedCategory)}
+                  alt={selectedCategory.name}
+                  style={{ width: "100%", maxHeight: 360, objectFit: "contain" }}
+                />
+              ) : (
+                <Tag color="default">Không có ảnh</Tag>
+              )}
             </Descriptions.Item>
           </Descriptions>
         )}

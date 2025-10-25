@@ -54,7 +54,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
       items: [
         { label: "Tất cả sản phẩm", path: "/admin/products" },
         { label: "Thêm sản phẩm", path: "/admin/products/create" },
+        { label: "Danh sách xóa mềm", path: "/admin/products/trash" },
       ],
+    },
+    {
+      id: "orders",
+      title: "Đơn hàng",
+      icon: "fa-list",
+      items: [
+        { label: "Tất cả đơn hàng", path: "admin/orders" },
+      ]
     },
   ];
 
