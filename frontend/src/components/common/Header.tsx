@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const Header = () => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [sloganIndex, setSloganIndex] = useState(0);
+  const [user, setUser] = useState<any>(null);
+  const navigate = useNavigate();
 
   const slogans = [
     "Giao hàng siêu tốc chỉ trong 2 giờ",
@@ -13,12 +15,31 @@ const Header = () => {
     "Hàng triệu người tin dùng mỗi ngày",
   ];
 
+  // Xử lý chuyển slogan
   useEffect(() => {
     const interval = setInterval(() => {
       setSloganIndex((prev) => (prev + 1) % slogans.length);
     }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  // Kiểm tra token
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const userData = localStorage.getItem("user");
+    if (token && userData) {
+      setUser(JSON.parse(userData));
+    } else {
+      setUser(null);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setUser(null);
+    navigate("/login");
+  };
 
   const toggleDropdown = () => setShowDropdown((prev) => !prev);
 
@@ -81,21 +102,53 @@ const Header = () => {
 
         {/* User Actions */}
         <div className="flex items-center gap-4 text-center flex-shrink-0">
-          {/* Login / Account */}
-          <div className="flex items-center gap-2 hover:text-gray-900 cursor-pointer">
-            <i className="far fa-user text-2xl text-gray-700"></i>
-            <div className="text-left">
-              <Link to="/login" className="text-xs block hover:underline">
-                Đăng nhập
-              </Link>
-              <Link
-                to="/register"
-                className="text-xs font-medium block hover:underline"
-              >
-                Đăng ký
-              </Link>
+          {/* Nếu có user → hiển thị thông tin người dùng */}
+          {user ? (
+            <div className="relative group">
+              <div className="flex items-center gap-2 cursor-pointer">
+                <i className="far fa-user text-2xl text-gray-700"></i>
+                <div className="text-left">
+                  <span className="text-xs font-medium">
+                    {user?.name || "Người dùng"}
+                  </span>
+                  <span className="text-xs text-gray-500 block">
+                    Tài khoản của tôi
+                  </span>
+                </div>
+              </div>
+              {/* Dropdown menu */}
+              <div className="absolute hidden group-hover:block bg-white shadow-lg rounded w-40 mt-2 right-0 z-10">
+                <Link
+                  to="/profile"
+                  className="block px-4 py-2 text-sm hover:bg-gray-100"
+                >
+                  Thông tin cá nhân
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+                >
+                  Đăng xuất
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            // Nếu chưa đăng nhập → hiển thị login/register
+            <div className="flex items-center gap-2 hover:text-gray-900 cursor-pointer">
+              <i className="far fa-user text-2xl text-gray-700"></i>
+              <div className="text-left">
+                <Link to="/login" className="text-xs block hover:underline">
+                  Đăng nhập
+                </Link>
+                <Link
+                  to="/register"
+                  className="text-xs font-medium block hover:underline"
+                >
+                  Đăng ký
+                </Link>
+              </div>
+            </div>
+          )}
 
           {/* Wishlist */}
           <div className="flex items-center gap-2 hover:text-gray-900 cursor-pointer">
