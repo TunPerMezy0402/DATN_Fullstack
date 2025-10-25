@@ -10,7 +10,6 @@ import OutstandingProducts from '../layouts/client/component/OutstandingProducts
 import ServicesRow from '../layouts/client/component//ServicesRow';
 import Trending from '../layouts/client/component/Trending';
 
-// 👉 Import thêm các trang client khác nếu có
 
 const ClientRoutes = () => {
   return (
@@ -28,7 +27,6 @@ const ClientRoutes = () => {
         <Route path="servicesrow" element={<ServicesRow />} />
         <Route path="trending" element={<Trending />} />
 
-        {/* <Route path="contact" element={<Contact />} /> */}
       </Route>
     </Routes>
   );
