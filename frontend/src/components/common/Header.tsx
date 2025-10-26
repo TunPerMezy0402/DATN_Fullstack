@@ -6,6 +6,9 @@ const Header = () => {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [sloganIndex, setSloganIndex] = useState(0);
   const [user, setUser] = useState<any>(null);
+  const [wishlistCount, setWishlistCount] = useState(0);
+  const [cartCount, setCartCount] = useState(0);
+
   const navigate = useNavigate();
 
   const slogans = [
@@ -16,6 +19,7 @@ const Header = () => {
     "Hàng triệu người tin dùng mỗi ngày",
   ];
 
+  // 🔹 Chuyển slogan tự động
   useEffect(() => {
     const interval = setInterval(() => {
       setSloganIndex((prev) => (prev + 1) % slogans.length);
@@ -23,13 +27,28 @@ const Header = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // 🔹 Kiểm tra login và lấy wishlist/cart từ localStorage
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     const userData = localStorage.getItem("user_data");
     if (token && userData) {
-      setUser(JSON.parse(userData));
+      const userObj = JSON.parse(userData);
+      setUser(userObj);
+
+      // Lấy wishlist và cart từ localStorage
+      const wishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
+      setWishlistCount(wishlist.length);
+
+      const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+      const totalItems = cart.reduce(
+        (sum: number, item: any) => sum + item.quantity,
+        0
+      );
+      setCartCount(totalItems);
     } else {
       setUser(null);
+      setWishlistCount(0);
+      setCartCount(0);
     }
   }, []);
 
@@ -42,6 +61,22 @@ const Header = () => {
 
   const handleGoToProfile = () => {
     navigate("/profile");
+  };
+
+  const handleGoToWishlist = () => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    navigate("/wishlist");
+  };
+
+  const handleGoToCart = () => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    navigate("/cart");
   };
 
   const toggleDropdown = () => setShowDropdown((prev) => !prev);
@@ -159,19 +194,25 @@ const Header = () => {
           )}
 
           {/* Wishlist */}
-          <div className="flex items-center gap-2 hover:text-gray-900 cursor-pointer">
+          <div
+            className="flex items-center gap-2 hover:text-gray-900 cursor-pointer"
+            onClick={handleGoToWishlist}
+          >
             <i className="far fa-heart text-2xl"></i>
             <div>
-              <div className="text-xs">0 ITEMS</div>
+              <div className="text-xs">{wishlistCount}-ITEMS</div>
               <div className="text-xs font-medium">Yêu thích</div>
             </div>
           </div>
 
           {/* Cart */}
-          <div className="flex items-center gap-2 hover:text-gray-900 cursor-pointer">
+          <div
+            className="flex items-center gap-2 hover:text-gray-900 cursor-pointer"
+            onClick={handleGoToCart}
+          >
             <i className="fas fa-shopping-bag text-2xl text-gray-800"></i>
             <div>
-              <div className="text-xs">0 ITEMS</div>
+              <div className="text-xs">{cartCount}-ITEMS</div>
               <div className="text-xs font-medium">Giỏ hàng</div>
             </div>
           </div>

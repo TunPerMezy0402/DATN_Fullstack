@@ -10,7 +10,7 @@ const Profile = () => {
     if (userData) {
       setUser(JSON.parse(userData));
     } else {
-      navigate("/login"); // nếu chưa đăng nhập thì chuyển đến login
+      navigate("/login"); 
     }
   }, [navigate]);
 

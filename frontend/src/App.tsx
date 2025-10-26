@@ -8,7 +8,9 @@ import Login from './layouts/account/Login';
 import Register from './layouts/account/Register';
 import Unauthorized from './pages/Unauthorized';
 import authService from './services/authService';
-import Profile from "./pages/client/users/Profile";
+import Profile from "./pages/client/Users/Profile";
+import Wishlist from "./pages/client/Wishlist/Wishlist";
+import Cart from "./pages/client/Cart/Cart";
 // Component wrapper để redirect nếu đã login
 const PublicRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const isAuthenticated = authService.isAuthenticated();
@@ -57,6 +59,8 @@ const App: React.FC = () => {
         {/* Client Routes - PUBLIC, không cần đăng nhập */}
         <Route path="/*" element={<ClientRoutes />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/wishlist" element={<Wishlist />} />
+        <Route path="/cart" element={<Cart />} />
       </Routes>
     </Router>
   );
