@@ -16,7 +16,7 @@ class BannerImageController extends Controller
 			'is_active' => ['boolean'],
 		]);
 
-		$path = $request->file('image')->store('banners', 'public');
+		$path = $request->file('image')->store('img/banner', 'public');
 
 		$image = $banner->images()->create([
 			'image' => $path,
@@ -34,7 +34,7 @@ class BannerImageController extends Controller
 		]);
 
 		if ($request->hasFile('image')) {
-			$data['image'] = $request->file('image')->store('banners', 'public');
+			$data['image'] = $request->file('image')->store('img/banner', 'public');
 		}
 
 		$image->update($data);
