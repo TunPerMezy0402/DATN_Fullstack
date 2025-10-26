@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use App\Models\Banner;
 use App\Models\BannerImage;
 
@@ -34,6 +35,11 @@ class BannerImageController extends Controller
 		]);
 
 		if ($request->hasFile('image')) {
+			// Xóa ảnh cũ
+			if ($image->image) {
+				Storage::disk('public')->delete($image->image);
+			}
+			// Lưu ảnh mới
 			$data['image'] = $request->file('image')->store('img/banner', 'public');
 		}
 
@@ -62,6 +68,12 @@ class BannerImageController extends Controller
 	public function forceDelete($id)
 	{
 		$image = BannerImage::onlyTrashed()->findOrFail($id);
+		
+		// Xóa file ảnh khỏi storage
+		if ($image->image) {
+			Storage::disk('public')->delete($image->image);
+		}
+		
 		$image->forceDelete();
 		return response()->noContent();
 	}
