@@ -14,12 +14,17 @@ use App\Http\Controllers\Api\admin\SupportTicketController;
 use App\Http\Controllers\Api\admin\WishlistController;
 use App\Http\Controllers\Api\admin\CartController;
 use App\Http\Controllers\Api\admin\AddressBookController;
+use App\Http\Controllers\Api\admin\CouponController;
+
+
+
 use App\Http\Controllers\Api\UploadController;
 
 
 
 
 use App\Http\Controllers\Api\client\HomeClientController;
+use App\Http\Controllers\Api\client\LikeController;
 
 
 
@@ -39,9 +44,6 @@ Route::prefix('auth')->group(function () {
 
 });
 
-// Trang Home (API)
-Route::get('/', [HomeClientController::class, 'index']);
-Route::get('products', [HomeClientController::class, 'index']);
 
 // Upload routes
 Route::post('uploads', [UploadController::class, 'upload'])->middleware('auth:sanctum');
@@ -50,6 +52,16 @@ Route::delete('uploads', [UploadController::class, 'delete'])->middleware('auth:
 
 
 
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/', [HomeClientController::class, 'index']);
+    Route::get('products', [HomeClientController::class, 'getAllProducts']);
+    Route::get('products/{id}', [HomeClientController::class, 'getProductDetail']);
+
+    Route::post('/products/{id}/like', [LikeController::class, 'like']);
+    Route::delete('/products/{id}/unlike', [LikeController::class, 'unlike']);
+    Route::get('/products/{id}/is-liked', [LikeController::class, 'isLiked']);
+    Route::get('/user/liked-products', [LikeController::class, 'likedProducts']);
+});
 
 
 
@@ -114,5 +126,6 @@ Route::adminApiResource('admin/support_tickets', SupportTicketController::class)
 Route::adminApiResource('admin/wishlists', WishlistController::class);
 Route::adminApiResource('admin/cart', CartController::class);
 Route::adminApiResource('admin/address_book', AddressBookController::class);
+Route::adminApiResource('admin/coupons', CouponController::class);
 
 

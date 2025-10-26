@@ -22,6 +22,9 @@ import ProductDetail from '../pages/admin/products/ProductDetail';
 import ProductEdit from '../pages/admin/products/ProductEdit';
 import ProductCreate from '../pages/admin/products/ProductCreate';
 
+import CouponList from '../pages/admin/coupons/CouponList';
+
+
 
 
 const AdminRoutes: React.FC = () => {
@@ -52,6 +55,8 @@ const AdminRoutes: React.FC = () => {
         <Route path="products/trash" element={<ProductTrash />} />
         <Route path="products/:id" element={<ProductDetail />} />
         <Route path="products/:id/edit" element={<ProductEdit />} />
+
+        <Route path="coupons" element={<CouponList />} />
 
       </Route>
     </Routes>
