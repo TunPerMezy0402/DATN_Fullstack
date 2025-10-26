@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 const Header = () => {
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [sloganIndex, setSloganIndex] = useState(0);
   const [user, setUser] = useState<any>(null);
   const navigate = useNavigate();
@@ -15,7 +16,6 @@ const Header = () => {
     "Hàng triệu người tin dùng mỗi ngày",
   ];
 
-  // Xử lý chuyển slogan
   useEffect(() => {
     const interval = setInterval(() => {
       setSloganIndex((prev) => (prev + 1) % slogans.length);
@@ -23,10 +23,9 @@ const Header = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Kiểm tra token
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const userData = localStorage.getItem("user");
+    const token = localStorage.getItem("access_token");
+    const userData = localStorage.getItem("user_data");
     if (token && userData) {
       setUser(JSON.parse(userData));
     } else {
@@ -35,13 +34,18 @@ const Header = () => {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user_data");
     setUser(null);
     navigate("/login");
   };
 
+  const handleGoToProfile = () => {
+    navigate("/profile");
+  };
+
   const toggleDropdown = () => setShowDropdown((prev) => !prev);
+  const toggleUserDropdown = () => setShowUserDropdown((prev) => !prev);
 
   return (
     <header className="bg-gradient-to-r from-green-50 via-white to-green-50 border-b border-gray-100 text-xs text-gray-600">
@@ -101,11 +105,13 @@ const Header = () => {
         </div>
 
         {/* User Actions */}
-        <div className="flex items-center gap-4 text-center flex-shrink-0">
-          {/* Nếu có user → hiển thị thông tin người dùng */}
+        <div className="flex items-center gap-4 text-center flex-shrink-0 relative">
           {user ? (
-            <div className="relative group">
-              <div className="flex items-center gap-2 cursor-pointer">
+            <div className="relative">
+              <div
+                onClick={toggleUserDropdown}
+                className="flex items-center gap-2 cursor-pointer"
+              >
                 <i className="far fa-user text-2xl text-gray-700"></i>
                 <div className="text-left">
                   <span className="text-xs font-medium">
@@ -116,24 +122,26 @@ const Header = () => {
                   </span>
                 </div>
               </div>
+
               {/* Dropdown menu */}
-              <div className="absolute hidden group-hover:block bg-white shadow-lg rounded w-40 mt-2 right-0 z-10">
-                <Link
-                  to="/profile"
-                  className="block px-4 py-2 text-sm hover:bg-gray-100"
-                >
-                  Thông tin cá nhân
-                </Link>
-                <button
-                  onClick={handleLogout}
-                  className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
-                >
-                  Đăng xuất
-                </button>
-              </div>
+              {showUserDropdown && (
+                <div className="absolute bg-white shadow-lg rounded w-40 mt-2 right-0 z-20">
+                  <button
+                    onClick={handleGoToProfile}
+                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+                  >
+                    Thông tin cá nhân
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-100"
+                  >
+                    Đăng xuất
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
-            // Nếu chưa đăng nhập → hiển thị login/register
             <div className="flex items-center gap-2 hover:text-gray-900 cursor-pointer">
               <i className="far fa-user text-2xl text-gray-700"></i>
               <div className="text-left">
@@ -203,8 +211,7 @@ const Header = () => {
 
           {/* Center - Links */}
           <div className="flex gap-x-8 text-sm font-normal font-sans">
-            {[
-              { path: "/", label: "Trang chủ" },
+            {[{ path: "/", label: "Trang chủ" },
               { path: "/products", label: "Sản phẩm" },
               { path: "/blog", label: "Tin tức" },
               { path: "/compare", label: "So sánh" },

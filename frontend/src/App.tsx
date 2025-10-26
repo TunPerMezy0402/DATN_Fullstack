@@ -8,7 +8,7 @@ import Login from './layouts/account/Login';
 import Register from './layouts/account/Register';
 import Unauthorized from './pages/Unauthorized';
 import authService from './services/authService';
-
+import Profile from "./pages/client/users/Profile";
 // Component wrapper để redirect nếu đã login
 const PublicRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const isAuthenticated = authService.isAuthenticated();
@@ -56,6 +56,7 @@ const App: React.FC = () => {
 
         {/* Client Routes - PUBLIC, không cần đăng nhập */}
         <Route path="/*" element={<ClientRoutes />} />
+        <Route path="/profile" element={<Profile />} />
       </Routes>
     </Router>
   );
