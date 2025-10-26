@@ -24,7 +24,11 @@ use App\Http\Controllers\Api\UploadController;
 
 
 use App\Http\Controllers\Api\client\HomeClientController;
+use App\Http\Controllers\Api\client\ProductClientController;
 use App\Http\Controllers\Api\client\LikeController;
+use App\Http\Controllers\Api\client\CartClientController;
+use App\Http\Controllers\Api\client\OrderClientController;
+use App\Http\Controllers\Api\client\CategoryClientController;
 
 
 
@@ -52,16 +56,33 @@ Route::delete('uploads', [UploadController::class, 'delete'])->middleware('auth:
 
 
 
-Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/', [HomeClientController::class, 'index']);
-    Route::get('products', [HomeClientController::class, 'getAllProducts']);
-    Route::get('products/{id}', [HomeClientController::class, 'getProductDetail']);
+Route::get('/', [HomeClientController::class, 'index']);
+Route::get('products', [ProductClientController::class, 'getAllProducts']);
+Route::get('products/{id}', [ProductClientController::class, 'getProductDetail']);
 
-    Route::post('/products/{id}/like', [LikeController::class, 'like']);
-    Route::delete('/products/{id}/unlike', [LikeController::class, 'unlike']);
-    Route::get('/products/{id}/is-liked', [LikeController::class, 'isLiked']);
-    Route::get('/user/liked-products', [LikeController::class, 'likedProducts']);
-});
+Route::post('products/{id}/like', [LikeController::class, 'like']);
+Route::delete('products/{id}/unlike', [LikeController::class, 'unlike']);
+Route::get('products/{id}/is-liked', [LikeController::class, 'isLiked']);
+Route::get('user/liked-products', [LikeController::class, 'likedProducts']);
+
+
+Route::get('categories', [CategoryClientController::class, 'getCategoriesWithProducts']);
+Route::get('categories/{id}', [CategoryClientController::class, 'getCategoryProducts']);
+
+
+
+
+
+Route::get('/cart', [CartClientController::class, 'index']);
+Route::post('/cart/add', [CartClientController::class, 'add']);
+Route::put('/cart/update/{id}', [CartClientController::class, 'update']);
+Route::delete('/cart/remove/{id}', [CartClientController::class, 'remove']);
+Route::delete('/cart/clear', [CartClientController::class, 'clear']);
+
+// ORDER
+Route::get('/orders', [OrderClientController::class, 'index']);
+Route::get('/orders/{id}', [OrderClientController::class, 'show']);
+Route::post('/orders', [OrderClientController::class, 'store']);
 
 
 
@@ -124,7 +145,6 @@ Route::adminApiResource('admin/attributes', AttributeController::class);
 Route::adminApiResource('admin/productvariants', ProductVariantController::class);
 Route::adminApiResource('admin/support_tickets', SupportTicketController::class);
 Route::adminApiResource('admin/wishlists', WishlistController::class);
-Route::adminApiResource('admin/cart', CartController::class);
 Route::adminApiResource('admin/address_book', AddressBookController::class);
 Route::adminApiResource('admin/coupons', CouponController::class);
 
