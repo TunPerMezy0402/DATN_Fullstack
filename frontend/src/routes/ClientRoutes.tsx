@@ -11,6 +11,7 @@ import Trending from '../layouts/client/component/Trending';
 import ProductsPage from '../layouts/client/component/ProductsPage';
 import ProductDetail from '../layouts/client/component/ProductDetail';
 
+
 const ClientRoutes = () => {
   return (
     <Routes>
@@ -27,7 +28,6 @@ const ClientRoutes = () => {
         <Route path="/products/:id" element={<ProductDetail />} />
 
 
-        {/* <Route path="contact" element={<Contact />} /> */}
       </Route>
     </Routes>
   );
