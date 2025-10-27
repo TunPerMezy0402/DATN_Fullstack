@@ -1,3 +1,5 @@
+// src/layouts/client/component/ProductsPage.tsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Badge,
@@ -16,43 +18,36 @@ import {
 } from "antd";
 import { useNavigate } from "react-router-dom";
 import {
-  fetchProducts,
-  parseImages,
+  fetchClientProducts,
+  fetchClientCategories,
+     // <- dùng cái này cho bộ lọc
   type Product,
 } from "../../../api/productApi";
-import axios from "axios";
 
 const { useBreakpoint } = Grid;
 const { Title, Text } = Typography;
 
-/* ------------ Base URL + Axios ------------ */
-const API_URL =
-  (import.meta as any).env?.VITE_API_URL ||
-  (import.meta as any).env?.REACT_APP_API_URL ||
-  (process as any).env?.REACT_APP_API_URL ||
-  "http://127.0.0.1:8000/api";
-const ASSET_BASE = String(API_URL).replace(/\/api\/?$/, "");
+/* ===================== Helpers ===================== */
 
-const raw = axios.create({ baseURL: API_URL, timeout: 20000 });
-raw.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token");
-  if (token)
-    (config.headers as any) = {
-      ...(config.headers || {}),
-      Authorization: `Bearer ${token}`,
-    };
-  return config;
-});
+// Lấy ảnh cover từ product (ưu tiên image, rồi images[], rồi variant)
+const coverUrl = (p: Product): string | undefined => {
+  const direct = (p as any).image as string | undefined | null;
+  if (direct) return direct || undefined;
 
-const toAssetUrl = (u?: string | null): string | undefined => {
-  if (!u) return undefined;
-  if (/^https?:\/\//i.test(u)) return u;
-  return `${ASSET_BASE}/${String(u).replace(/^\/+/, "")}`;
+  const album = Array.isArray(p.images) ? (p.images as string[]) : [];
+  if (album.length > 0) return album[0];
+
+  const fromVariants =
+    p.variants?.flatMap((v: any) => {
+      const singles: (string | undefined | null)[] = [v?.image];
+      const albums: string[] = Array.isArray(v?.images) ? v.images : [];
+      return [...singles, ...(albums ?? [])];
+    }) ?? [];
+  const first = fromVariants.find(Boolean) as string | undefined;
+  return first;
 };
 
 const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
-
-/* ------------ Helper: chuyển object -> text (size/color) ------------ */
 const attrText = (x: any): string => {
   if (!x) return "";
   if (typeof x === "string" || typeof x === "number") return String(x);
@@ -60,20 +55,6 @@ const attrText = (x: any): string => {
     return x.value || x.name || x.label || x.text || String(x.id || "");
   }
   return String(x);
-};
-
-/* ------------ Helpers sản phẩm/biến thể ------------ */
-const coverUrl = (p: Product): string | undefined => {
-  const pImg = (p as any).image as string | undefined;
-  if (pImg) return toAssetUrl(pImg);
-  const fromVariants =
-    p.variants?.flatMap((v: any) => {
-      const singles: (string | undefined)[] = [v?.image];
-      const albums = (Array.isArray(v?.images) ? v.images : parseImages(v?.images)) as string[];
-      return [...singles, ...(albums ?? [])];
-    }) ?? [];
-  const first = fromVariants.find(Boolean) as string | undefined;
-  return toAssetUrl(first);
 };
 
 const sizesOf = (p: any): string[] => {
@@ -101,17 +82,12 @@ const stockSum = (p: any): number =>
 const anyVariantAvailable = (p: any): boolean =>
   (Array.isArray(p?.variants) ? p.variants : []).some((v: any) => !!v?.is_available);
 
-/* ------------ Helpers GIÁ ------------ */
-// Parse "100000" hoặc "100,000" => 100000; null/undefined/NaN => null
 const toNum = (v: any): number | null => {
   if (v === null || v === undefined || v === "") return null;
-  const n = Number(String(v).replace(/[^\d.-]/g, "")); // an toàn với "1.000.000" / "1,000,000"
+  const n = Number(String(v).replace(/[^\d.-]/g, ""));
   return Number.isFinite(n) ? n : null;
 };
 
-// Tính giá hiển thị cho 1 product
-// - Có biến thể: lấy min(discount_price) nếu có, else min(price)
-// - Không có biến thể: dùng product.discount_price || product.price
 const priceForDisplay = (
   p: any
 ): { price: number | null; compareAt: number | null } => {
@@ -150,7 +126,8 @@ const priceForDisplay = (
 
 const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
 
-/* =================================================================== */
+/* ===================== Component ===================== */
+
 const ProductsPage: React.FC = () => {
   const screens = useBreakpoint();
   const navigate = useNavigate();
@@ -174,23 +151,18 @@ const ProductsPage: React.FC = () => {
   const [brand, setBrand] = useState<string | null>(null);
   const [sellStatus, setSellStatus] = useState<"all" | "selling">("all");
 
-  /* --------- Load products + categories --------- */
+  /* --------- Load products + categories (client/public) --------- */
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-        const [prods, catsRes] = await Promise.all([
-          fetchProducts(),
-          raw.get("/admin/categories", { params: { per_page: 1000 } }),
+        const [prods, cats] = await Promise.all([
+          fetchClientProducts(),     // /api/products
+          fetchClientCategories(),   // /api/categories (hoặc fallback nếu đã thêm)
         ]);
 
         setAllProducts(Array.isArray(prods) ? prods : []);
-
-        const catsRaw = Array.isArray(catsRes.data)
-          ? catsRes.data
-          : catsRes.data?.data?.data || catsRes.data?.data || [];
-        setCategories(catsRaw.map((c: any) => ({ value: Number(c.id), label: c.name })));
-
+        setCategories((cats || []).map((c: any) => ({ value: Number(c.id), label: c.name })));
         setError(null);
       } catch (e: any) {
         console.error(e);
@@ -201,6 +173,7 @@ const ProductsPage: React.FC = () => {
             : "Không thể tải dữ liệu."
         );
         setAllProducts([]);
+        setCategories([]);
       } finally {
         setLoading(false);
       }
@@ -228,7 +201,18 @@ const ProductsPage: React.FC = () => {
     if (catId != null) {
       result = result.filter((p: any) => Number(p.category_id) === Number(catId));
     }
-    if (brand) result = result.filter((p: any) => (p.brand ? p.brand === brand : false));
+    // src/layouts/client/component/ProductsPage.tsx (~dòng 252)
+
+// ...
+
+if (brand) {
+    // Chỉ so sánh nếu p.brand là một string có giá trị
+    result = result.filter(
+        (p: Product) => typeof p.brand === "string" && p.brand === brand
+    );
+}
+
+// ...
     if (sizeText) result = result.filter((p) => sizesOf(p).includes(sizeText));
     if (colorText) result = result.filter((p) => colorsOf(p).includes(colorText));
     if (sellStatus === "selling") {
@@ -264,7 +248,7 @@ const ProductsPage: React.FC = () => {
     return result;
   }, [allProducts, catId, brand, sizeText, colorText, sellStatus, priceRange, customMin, customMax]);
 
-  /* -------------------------- Click helpers -------------------------- */
+  /* -------------------------- Handlers -------------------------- */
   const onPickSize = (s: string) => setSizeText((cur) => (cur === s ? null : s));
   const onPickColor = (c: string) => setColorText((cur) => (cur === c ? null : c));
   const onPickBrand = (b: string) => setBrand((cur) => (cur === b ? null : b));
@@ -326,7 +310,6 @@ const ProductsPage: React.FC = () => {
               )}
             </Space>
 
-            {/* Danh mục */}
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <Text strong>Danh mục</Text>
               <Select
@@ -340,20 +323,8 @@ const ProductsPage: React.FC = () => {
               />
             </Space>
 
-            {/* Thương hiệu */}
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text strong>Thương hiệu</Text>
-              <Select
-                allowClear
-                showSearch
-                placeholder="Chọn thương hiệu"
-                options={BRAND_OPTIONS.map((b) => ({ label: b, value: b }))}
-                value={brand ?? undefined}
-                onChange={(v) => setBrand(v ?? null)}
-              />
-            </Space>
+            
 
-            {/* Size */}
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <Text strong>Size</Text>
               <Select
@@ -366,7 +337,6 @@ const ProductsPage: React.FC = () => {
               />
             </Space>
 
-            {/* Màu sắc */}
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <Text strong>Màu sắc</Text>
               <Select
@@ -379,7 +349,6 @@ const ProductsPage: React.FC = () => {
               />
             </Space>
 
-            {/* Trạng thái bán */}
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <Text strong>Trạng thái bán</Text>
               <Radio.Group value={sellStatus} onChange={(e) => setSellStatus(e.target.value)}>
@@ -427,6 +396,9 @@ const ProductsPage: React.FC = () => {
                     ? Math.round(((compareAt - showPrice) / compareAt) * 100)
                     : null;
 
+                const soldQty = (p as any)?.sold_quantity ?? Math.floor(Math.random() * 10) * 1000;
+                const soldText = soldQty > 0 ? `Đã bán ${fmtVND(soldQty)}+` : "";
+
                 return (
                   <Badge.Ribbon
                     key={`r-${p.id}`}
@@ -441,7 +413,7 @@ const ProductsPage: React.FC = () => {
                   >
                     <Card
                       hoverable
-                      onClick={() => navigate(`/products/${p.id}`)}
+                      onClick={() => onCardClick(p)}
                       styles={{ body: { padding: 12 } }}
                       style={{ cursor: "pointer" }}
                       cover={
@@ -455,13 +427,28 @@ const ProductsPage: React.FC = () => {
                       <Space direction="vertical" size={8} style={{ width: "100%" }}>
                         <Text strong>{p.name}</Text>
 
-                        <Space size={8} align="baseline">
-                          <Title level={5} style={{ margin: 0 }}>
-                            {showPrice !== null ? `${fmtVND(showPrice)} đ` : "—"}
-                          </Title>
-                          {compareAt !== null && (
-                            <Text delete type="secondary">
-                              {fmtVND(compareAt)} đ
+                        <Space
+                          size={8}
+                          align="baseline"
+                          style={{ display: "flex", justifyContent: "space-between" }}
+                        >
+                          <Flex vertical gap={4}>
+                            <Title level={5} style={{ margin: 0, color: "#fa541c" }}>
+                              {showPrice !== null ? `${fmtVND(showPrice)} đ` : "—"}
+                            </Title>
+                            {compareAt !== null && (
+                              <Text delete type="secondary" style={{ fontSize: "0.9em" }}>
+                                {fmtVND(compareAt)} đ
+                              </Text>
+                            )}
+                          </Flex>
+
+                          {soldText && (
+                            <Text
+                              type="secondary"
+                              style={{ fontSize: "0.9em", whiteSpace: "nowrap" }}
+                            >
+                              {soldText}
                             </Text>
                           )}
                         </Space>
@@ -471,7 +458,7 @@ const ProductsPage: React.FC = () => {
                             onClick={(e) => {
                               e.stopPropagation();
                               e.preventDefault();
-                              navigate(`/products/${p.id}`);
+                              onCardClick(p);
                             }}
                             style={{ cursor: "pointer" }}
                           >
@@ -487,10 +474,9 @@ const ProductsPage: React.FC = () => {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   e.preventDefault();
-                                  navigate(`/products/${p.id}`);
+                                  onCardClick(p);
                                 }}
                                 style={{ cursor: "pointer" }}
-                                color={undefined}
                               >
                                 {s}
                               </Tag>
@@ -506,10 +492,9 @@ const ProductsPage: React.FC = () => {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   e.preventDefault();
-                                  navigate(`/products/${p.id}`);
+                                  onCardClick(p);
                                 }}
                                 style={{ cursor: "pointer" }}
-                                color={undefined}
                               >
                                 {c}
                               </Tag>

@@ -10,6 +10,8 @@ export interface Category {
   id: number;
   name: string;
   description?: string;
+  image?: string | null;
+  image_url?: string | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -29,6 +31,9 @@ export interface Variant {
   created_at: string;
   updated_at: string;
   deleted_at: Nullable<string>;
+  size?: { id: number; value: string };
+  color?: { id: number; value: string };
+  final_price?: number | string | null;
 }
 
 export interface Product {
@@ -42,12 +47,20 @@ export interface Product {
   price: Nullable<string>;
   stock_quantity: number;
   images: Nullable<string[] | string>;
-  discount_price: Nullable<string>;
-  variation_status: number; // 0 | 1 từ BE
+  image?: Nullable<string>;
+  /** có nơi trả string/number/null → cho rộng để không lỗi */
+  discount_price: Nullable<string> | number | null;
+  variation_status: number;
   created_at: string;
   updated_at: string;
   deleted_at: Nullable<string>;
   variants?: Variant[];
+  sold_quantity?: number;
+  /** các field BE client có thể gắn thêm */
+  image_url?: string | null;
+  min_variant?: Variant | null;
+  min_effective_price?: number | string | null;
+  [k: string]: any;
 }
 
 /* =======================
@@ -57,10 +70,10 @@ export interface VariantCreatePayload {
   size_id: Nullable<number>;
   color_id: Nullable<number>;
   image: Nullable<string>;
-  images?: string[]; // luôn gửi mảng string hợp lệ
-  sku: Nullable<string>; // CHUỖI
-  price: Nullable<string>; // CHUỖI
-  discount_price: Nullable<string>; // CHUỖI
+  images?: string[];
+  sku: Nullable<string>;
+  price: Nullable<string>;
+  discount_price: Nullable<string>;
   stock_quantity: number;
   is_available: boolean;
 }
@@ -69,11 +82,11 @@ export interface CreateProductDTO {
   name: string;
   category_id: Nullable<number>;
   description: Nullable<string>;
-  sku: Nullable<string>; // CHUỖI
+  sku: Nullable<string>;
   origin: Nullable<string>;
   brand: Nullable<string>;
-  images?: string[]; // mảng URL
-  variation_status: 0 | 1 | boolean; // FE cho phép boolean, BE nhận 0/1
+  images?: string[];
+  variation_status: 0 | 1 | boolean;
   variants?: VariantCreatePayload[];
 }
 
@@ -82,14 +95,15 @@ export interface UpdateProductDTO extends Partial<CreateProductDTO> {}
 /* =======================
  * Axios instance
  * ======================= */
-const API_URL =
+export const API_URL =
   (import.meta as any)?.env?.VITE_API_URL ||
+  (import.meta as any)?.env?.REACT_APP_API_URL ||
   process.env.REACT_APP_API_URL ||
   "http://127.0.0.1:8000/api";
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 15000,
+  timeout: 20000,
 });
 
 api.interceptors.request.use((config) => {
@@ -106,6 +120,8 @@ api.interceptors.request.use((config) => {
 /* =======================
  * Helpers
  * ======================= */
+const ASSET_BASE = String(API_URL).replace(/\/api\/?$/, "");
+
 const isNonEmpty = (s?: string | null) => !!s && s.trim() !== "";
 
 const nonnullStrArr = (arr?: (string | null | undefined)[]) =>
@@ -116,6 +132,8 @@ function unwrapArray<T>(resData: any, fallback: T[]): T[] {
   if (Array.isArray(resData)) return resData as T[];
   if (Array.isArray(resData?.data)) return resData.data as T[];
   if (Array.isArray(resData?.data?.data)) return resData.data.data as T[];
+  if (Array.isArray(resData?.products)) return resData.products as T[];
+  if (Array.isArray(resData?.data?.products)) return resData.data.products as T[];
   return fallback;
 }
 
@@ -124,7 +142,7 @@ function unwrapObj<T>(resData: any): T {
   return (resData?.data ?? resData) as T;
 }
 
-/** Ép number | null an toàn cho category_id, size_id, color_id */
+/** number | null an toàn */
 const toNumberOrNull = (v: any): number | null => {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) {
@@ -133,27 +151,226 @@ const toNumberOrNull = (v: any): number | null => {
   return null;
 };
 
-/** Giữ money dạng string hoặc null (để đúng với DTO/DB hiện tại) */
+/** money string | null */
 const normalizeMoneyString = (v: any): string | null => {
   if (v === null || v === undefined || v === "") return null;
-  // Nếu là số, convert thẳng sang string
   if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  // Nếu là string có thể parse được thành số => giữ nguyên dạng string đã trim
   if (typeof v === "string" && v.trim() !== "") return v.trim();
   return null;
 };
 
-/* =======================
- * Categories
- * ======================= */
+/** Build URL đầy đủ cho asset (Laravel storage, v.v.) */
+export const toAssetUrl = (u?: string | null): string | undefined => {
+  if (!u) return undefined;
+  if (/^https?:\/\//i.test(u)) return u;
+  return `${ASSET_BASE}/${String(u).replace(/^\/+/, "")}`;
+};
+
+/** Parse ảnh từ JSON/string/csv/array → string[] (đã chuẩn hoá sang URL đầy đủ) */
+export const parseImages = (imgs: Product["images"] | Variant["images"]) => {
+  if (!imgs) return [] as string[];
+  let arr: string[] = [];
+  if (Array.isArray(imgs)) arr = imgs.filter(Boolean) as string[];
+  else {
+    try {
+      const parsed = JSON.parse(imgs as string);
+      if (Array.isArray(parsed)) arr = parsed.filter(Boolean) as string[];
+      else arr = [String(imgs)];
+    } catch {
+      arr = String(imgs).split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  return arr.map(toAssetUrl).filter(Boolean) as string[];
+};
+
+export const firstImage = (imgs: Product["images"] | Variant["images"]) => {
+  const list = parseImages(imgs);
+  return list[0] ?? null;
+};
+
+export const toCurrency = (v: any) => {
+  const num = typeof v === "string" ? Number(v) : v;
+  if (isNaN(num)) return "—";
+  return num.toLocaleString("vi-VN", { style: "currency", currency: "VND" });
+};
+
+/* ===================================================================
+ *                CLIENT / PUBLIC ENDPOINTS
+ *  - Public: /products, /products/{id}
+ *  - Categories (homepage blocks): /client/categories
+ * =================================================================== */
+
+/** Danh mục + tối đa 10 SP/DM (homepage) */
+export async function fetchClientCategoriesWithProducts(): Promise<any[]> {
+  const { data } = await api.get("/client/categories");
+  const arr =
+    (Array.isArray(data?.data) && data.data) ||
+    (Array.isArray(data) && data) ||
+    [];
+  return arr.map((c: any) => ({
+    ...c,
+    image_url: c.image_url ? toAssetUrl(c.image_url) : toAssetUrl(c.image),
+    products: (c.products || []).map((p: any) => ({
+      ...p,
+      image: p.image_url ?? toAssetUrl(p.image),
+      images: parseImages(p.images),
+      variants: Array.isArray(p.variants)
+        ? p.variants.map((v: any) => ({
+            ...v,
+            image: v.image ? toAssetUrl(v.image) : v.image,
+            images: parseImages(v.images),
+          }))
+        : [],
+    })),
+  }));
+}
+
+/** Danh mục rút gọn (id, name) → dùng cho filter Select */
+export async function fetchClientCategories(): Promise<{ id: number; name: string }[]> {
+  const full = await fetchClientCategoriesWithProducts();
+  return full.map((c: any) => ({ id: Number(c.id), name: String(c.name) }));
+}
+
+/** Chi tiết 1 danh mục + products phân trang */
+export async function fetchClientCategoryProducts(
+  id: number,
+  page = 1
+): Promise<{ category: any; products: any[]; meta: any }> {
+  const { data } = await api.get(`/client/categories/${id}`, { params: { page } });
+  const cat = data?.category ?? null;
+  const paginator = data?.products ?? {};
+  const prods = Array.isArray(paginator?.data) ? paginator.data : [];
+
+  return {
+    category: {
+      ...cat,
+      image_url: cat?.image_url ? toAssetUrl(cat.image_url) : toAssetUrl(cat?.image),
+    },
+    products: prods.map((p: any) => ({
+      ...p,
+      image: p.image_url ?? toAssetUrl(p.image),
+      images: parseImages(p.images),
+      variants: Array.isArray(p.variants)
+        ? p.variants.map((v: any) => ({
+            ...v,
+            image: v.image ? toAssetUrl(v.image) : v.image,
+            images: parseImages(v.images),
+          }))
+        : [],
+    })),
+    meta: {
+      current_page: paginator?.current_page ?? 1,
+      last_page: paginator?.last_page ?? 1,
+      total: paginator?.total ?? prods.length,
+      per_page: paginator?.per_page ?? 9,
+    },
+  };
+}
+
+/** Danh sách sản phẩm (public) → GET /api/products */
+/** Danh sách sản phẩm (public) → GET /api/products */
+export async function fetchClientProducts(params?: {
+  page?: number;
+  per_page?: number;
+  sort?: string;
+  category_id?: number | string;
+}): Promise<Product[]> {
+  const { data } = await api.get("/products", { params });
+
+  // Bắt nhiều shape khác nhau: [], {data:[]}, {products:[]}, {products:{data:[]}}, {data:{data:[]}}, v.v.
+  const extractProducts = (payload: any): any[] => {
+    const d = payload?.data ?? payload;
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(d)) return d;
+    if (Array.isArray(d?.products)) return d.products;
+    if (Array.isArray(d?.products?.data)) return d.products.data;
+    if (Array.isArray(d?.data)) return d.data;
+    if (Array.isArray(d?.data?.data)) return d.data.data;
+    return [];
+  };
+
+  const raw = extractProducts(data);
+
+  // Chuẩn hoá ảnh & biến thể sang URL đầy đủ
+  return raw.map((p: any) => ({
+    ...p,
+    image: p.image_url ?? (p.image ? toAssetUrl(p.image) : undefined),
+    images: parseImages(p.images),
+    variants: Array.isArray(p.variants)
+      ? p.variants.map((v: any) => ({
+          ...v,
+          image: v.image ? toAssetUrl(v.image) : v.image,
+          images: parseImages(v.images),
+        }))
+      : [],
+  })) as Product[];
+}
+
+/** Chi tiết sản phẩm (public) → GET /api/products/{id} */
+/** ========================
+ * Chi tiết sản phẩm (public)
+ * GET /api/products/{id}
+ * ======================== */
+export async function fetchClientProduct(id: number): Promise<{ product: Product }> {
+  const { data } = await api.get(`/products/${id}`);
+
+  // 🧩 Lấy đúng key product (vì BE trả { product: {...} })
+  const p: any = data?.product ?? data?.data ?? data;
+  if (!p) throw new Error("Không tìm thấy sản phẩm.");
+
+  // 🧰 Chuẩn hoá thông tin sản phẩm và các biến thể (giống Admin)
+  const product: Product = {
+    ...p,
+    // Ảnh chính
+    image_url: p.image_url ? toAssetUrl(p.image_url) : toAssetUrl(p.image),
+    image: p.image_url ?? (p.image ? toAssetUrl(p.image) : undefined),
+    images: parseImages(p.images),
+
+    // Biến thể đầy đủ
+    variants: Array.isArray(p.variants)
+      ? p.variants.map((v: any) => {
+          const price = v.price ?? 0;
+          const discount = v.discount_price && Number(v.discount_price) < Number(price)
+            ? v.discount_price
+            : null;
+
+          return {
+            ...v,
+            image: v.image ? toAssetUrl(v.image) : null,
+            images: parseImages(v.images),
+            price: String(price),
+            discount_price: discount ? String(discount) : null,
+            stock_quantity: v.stock_quantity ?? 0,
+            final_price: discount ?? price,
+            size: v.size ? { ...v.size, value: String(v.size.value) } : undefined,
+            color: v.color ? { ...v.color, value: String(v.color.value) } : undefined,
+          };
+        })
+      : [],
+
+    // Đảm bảo có min_variant
+    min_variant:
+      Array.isArray(p.variants) && p.variants.length > 0
+        ? p.variants.reduce((min: any, v: any) => {
+            const price = Number(v.discount_price ?? v.price);
+            if (!min || price < Number(min.discount_price ?? min.price)) return v;
+            return min;
+          }, null)
+        : null,
+  };
+
+  return { product };
+}
+
+
+/* ===================================================================
+ *                ADMIN / PRIVATE ENDPOINTS (GIỮ NGUYÊN)
+ * =================================================================== */
 export async function fetchCategories(): Promise<Category[]> {
   const { data } = await api.get("/admin/categories");
   return unwrapArray<Category>(data, []);
 }
 
-/* =======================
- * Products (list/detail)
- * ======================= */
 export async function fetchProducts(): Promise<Product[]> {
   const { data } = await api.get("/admin/products");
   return unwrapArray<Product>(data, []);
@@ -164,9 +381,6 @@ export async function fetchProduct(id: number): Promise<Product> {
   return unwrapObj<Product>(data);
 }
 
-/* =======================
- * Create / Update
- * ======================= */
 export async function createProduct(payload: CreateProductDTO): Promise<Product> {
   const normalized: CreateProductDTO = {
     ...payload,
@@ -178,9 +392,9 @@ export async function createProduct(payload: CreateProductDTO): Promise<Product>
       color_id: toNumberOrNull(v.color_id),
       image: isNonEmpty(v.image) ? (v.image as string) : null,
       images: nonnullStrArr(v.images),
-      sku: isNonEmpty(v.sku) ? (v.sku as string) : null, // CHUỖI
-      price: normalizeMoneyString(v.price), // CHUỖI
-      discount_price: normalizeMoneyString(v.discount_price), // CHUỖI
+      sku: isNonEmpty(v.sku) ? (v.sku as string) : null,
+      price: normalizeMoneyString(v.price),
+      discount_price: normalizeMoneyString(v.discount_price),
       stock_quantity: Number.isFinite(v.stock_quantity) ? v.stock_quantity : 0,
       is_available: !!v.is_available,
     })),
@@ -208,9 +422,9 @@ export async function updateProduct(id: number, payload: UpdateProductDTO): Prom
           color_id: toNumberOrNull(v.color_id),
           image: isNonEmpty(v.image) ? (v.image as string) : null,
           images: nonnullStrArr(v.images),
-          sku: isNonEmpty(v.sku) ? (v.sku as string) : null, // CHUỖI
-          price: normalizeMoneyString(v.price), // CHUỖI
-          discount_price: normalizeMoneyString(v.discount_price), // CHUỖI
+          sku: isNonEmpty(v.sku) ? (v.sku as string) : null,
+          price: normalizeMoneyString(v.price),
+          discount_price: normalizeMoneyString(v.discount_price),
           stock_quantity: Number.isFinite(v.stock_quantity) ? v.stock_quantity : 0,
           is_available: !!v.is_available,
         }))
@@ -221,9 +435,6 @@ export async function updateProduct(id: number, payload: UpdateProductDTO): Prom
   return unwrapObj<Product>(data);
 }
 
-/* =======================
- * Delete / Trash / Restore
- * ======================= */
 export async function deleteProduct(id: number): Promise<void> {
   await api.delete(`/admin/products/${id}`);
 }
@@ -234,35 +445,9 @@ export async function fetchTrashedProducts(): Promise<Product[]> {
 }
 
 export async function restoreProduct(id: number): Promise<void> {
-  // Nếu BE dùng POST thay vì PATCH, đổi dòng dưới cho phù hợp
-  await api.patch(`/admin/products/${id}/restore`);
+  await api.post(`/admin/products/${id}/restore`);
 }
 
 export async function forceDeleteProduct(id: number): Promise<void> {
   await api.delete(`/admin/products/${id}/force-delete`);
 }
-
-/* =======================
- * Image utils
- * ======================= */
-export const parseImages = (imgs: Product["images"] | Variant["images"]) => {
-  if (!imgs) return [] as string[];
-  if (Array.isArray(imgs)) return imgs.filter(Boolean) as string[];
-  try {
-    const parsed = JSON.parse(imgs as string);
-    return Array.isArray(parsed) ? (parsed.filter(Boolean) as string[]) : [imgs as string];
-  } catch {
-    return [imgs as string];
-  }
-};
-
-export const firstImage = (imgs: Product["images"] | Variant["images"]) => {
-  const list = parseImages(imgs);
-  return list[0] ?? null;
-};
-
-export const toCurrency = (v: any) => {
-  const num = typeof v === "string" ? Number(v) : v;
-  if (isNaN(num)) return "—";
-  return num.toLocaleString("vi-VN", { style: "currency", currency: "VND" });
-};

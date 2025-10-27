@@ -15,7 +15,7 @@ use App\Http\Controllers\Api\client\LikeController;
 use App\Http\Controllers\Api\client\CartClientController;
 use App\Http\Controllers\Api\client\OrderClientController;
 use App\Http\Controllers\Api\client\CategoryClientController;
-
+use App\Http\Controllers\Api\client\ProductVariantClientController;
 // ==== ADMIN CONTROLLERS ====
 use App\Http\Controllers\Api\admin\AdminController;
 use App\Http\Controllers\Api\admin\UserController;
@@ -83,6 +83,13 @@ Route::prefix('client')->group(function () {
     // 🗂️ Danh mục
     Route::get('categories', [CategoryClientController::class, 'getCategoriesWithProducts']);
     Route::get('categories/{id}', [CategoryClientController::class, 'getCategoryProducts']);
+
+// Variants (client)
+Route::get('variants', [ProductVariantClientController::class, 'index']);
+Route::get('variants/{id}', [ProductVariantClientController::class, 'show']);
+Route::get('products/{productId}/variants', [ProductVariantClientController::class, 'byProduct']);
+
+
 
     // 🛒 Giỏ hàng
     Route::prefix('cart')->group(function () {
