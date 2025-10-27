@@ -1,29 +1,79 @@
 <?php
 
-namespace App\Http\Controllers\Api\client;
+namespace App\Http\Controllers\Api\Client;
 
 use App\Http\Controllers\Controller;
-use App\Models\{Order, OrderItem, Cart};
-use Illuminate\Support\Facades\Auth;
+use App\Models\{Order, OrderItem, Cart, User};
 use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
 
 class OrderClientController extends Controller
 {
-    // Đặt hàng từ giỏ
-    public function store()
+    public function index(Request $request)
     {
-        $user = Auth::user();
-        $cart = Cart::where('user_id', $user->id)->with('items.variant')->first();
+        $userId = $request->input('user_id');
+
+        if (!$userId || !User::find($userId)) {
+            return response()->json(['message' => 'Người dùng không hợp lệ'], 401);
+        }
+
+        $orders = Order::where('user_id', $userId)
+            ->with(['items.variant.product:id,name,thumbnail'])
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'message' => 'Danh sách đơn hàng của bạn',
+            'data' => $orders
+        ]);
+    }
+
+    public function show(Request $request, $id)
+    {
+        $userId = $request->input('user_id');
+
+        if (!$userId || !User::find($userId)) {
+            return response()->json(['message' => 'Người dùng không hợp lệ'], 401);
+        }
+
+        $order = Order::where('user_id', $userId)
+            ->with('items.variant.product')
+            ->find($id);
+
+        if (!$order) {
+            return response()->json(['message' => 'Không tìm thấy đơn hàng'], 404);
+        }
+
+        return response()->json([
+            'message' => 'Chi tiết đơn hàng',
+            'data' => $order
+        ]);
+    }
+
+    /**
+     * 🛒 Đặt hàng mới từ giỏ hàng
+     */
+    public function store(Request $request)
+    {
+        $userId = $request->input('user_id');
+
+        if (!$userId || !User::find($userId)) {
+            return response()->json(['message' => 'Người dùng không hợp lệ'], 401);
+        }
+
+        $cart = Cart::where('user_id', $userId)
+            ->with('items.variant')
+            ->first();
 
         if (!$cart || $cart->items->isEmpty()) {
-            return response()->json(['message' => 'Giỏ hàng trống'], 400);
+            return response()->json(['message' => 'Giỏ hàng của bạn đang trống'], 400);
         }
 
         DB::beginTransaction();
 
         try {
             $order = Order::create([
-                'user_id' => $user->id,
+                'user_id' => $userId,
                 'status' => 'pending',
                 'total_price' => 0,
             ]);
@@ -47,32 +97,16 @@ class OrderClientController extends Controller
 
             DB::commit();
 
-            return response()->json(['message' => 'Đặt hàng thành công', 'order' => $order->load('items.variant')]);
-
+            return response()->json([
+                'message' => 'Đặt hàng thành công',
+                'data' => $order->load('items.variant.product')
+            ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Đặt hàng thất bại', 'detail' => $e->getMessage()], 500);
+            return response()->json([
+                'error' => 'Đặt hàng thất bại',
+                'detail' => $e->getMessage()
+            ], 500);
         }
-    }
-
-    // Danh sách đơn hàng của user
-    public function index()
-    {
-        $orders = Order::where('user_id', Auth::id())
-            ->with('items.variant')
-            ->latest()
-            ->get();
-
-        return response()->json($orders);
-    }
-
-    // Chi tiết 1 đơn hàng
-    public function show($id)
-    {
-        $order = Order::where('user_id', Auth::id())
-            ->with('items.variant')
-            ->findOrFail($id);
-
-        return response()->json($order);
     }
 }

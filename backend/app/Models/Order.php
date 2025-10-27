@@ -3,17 +3,44 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+
 class Order extends Model
 {
-    protected $fillable = ['user_id', 'status', 'total_price'];
+    protected $table = 'orders';
 
-    public function items()
-    {
-        return $this->hasMany(OrderItem::class);
-    }
+    protected $fillable = [
+        'user_id', 'sku', 'total_amount', 'discount_amount', 'final_amount',
+        'coupon_id', 'coupon_code', 'status', 'payment_status', 'note'
+    ];
 
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
+public function items()
+{
+    return $this->hasMany(OrderItem::class, 'order_id');
+}
+
+public function coupon()
+{
+    return $this->belongsTo(Coupon::class, 'coupon_id');
+}
+
+public function shipping()
+{
+    return $this->hasOne(Shipping::class, 'order_id');
+}
+
+public function paymentTransactions()
+{
+    return $this->hasMany(PaymentTransaction::class, 'order_id');
+}
+
+public function returnRequests()
+{
+    return $this->hasMany(ReturnRequest::class, 'order_id');
+}
+
+public function cancelLogs()
+{
+    return $this->hasMany(OrderCancelLog::class, 'order_id');
+}
+
 }
