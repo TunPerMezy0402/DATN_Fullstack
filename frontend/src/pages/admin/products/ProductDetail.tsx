@@ -171,7 +171,7 @@ export default function ProductDetail() {
     {
       title: 'SKU',
       dataIndex: 'sku',
-      width: 100,
+      width: 120,
       render: (sku) => (sku ? <Text code copyable={{ text: sku }}>{sku}</Text> : '—'),
     },
     {

@@ -62,8 +62,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
       title: "Đơn hàng",
       icon: "fa-list",
       items: [
-        { label: "Tất cả đơn hàng", path: "admin/orders" },
-      ]
+        { label: "Tất cả đơn hàng", path: "/admin/orders" },
+      ],
+    },
+    {
+      id: "coupons",
+      title: "Mã giảm giá",
+      icon: "fa-list",
+      items: [
+        { label: "Tất cả mã giảm giá", path: "/admin/coupons" },
+        { label: "Thêm danh mục", path: "/admin/coupons/create" },
+        { label: "Mã lưu trữ", path: "/admin/coupons/trash" },
+      ],
     },
   ];
 
@@ -179,27 +189,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
               <DropdownGroup key={g.id} group={g} />
             ))}
 
-            <NavLink
-              to="/admin/orders"
-              className={({ isActive }) =>
-                `sidebar__link ${isActive ? "sidebar__link--active" : ""}`
-              }
-              onClick={onToggle}
-            >
-              <i className="sidebar__icon fas fa-shopping-cart" />
-              <span className="sidebar__text">Đơn hàng</span>
-            </NavLink>
-
-            <NavLink
-              to="/admin/customers"
-              className={({ isActive }) =>
-                `sidebar__link ${isActive ? "sidebar__link--active" : ""}`
-              }
-              onClick={onToggle}
-            >
-              <i className="sidebar__icon fas fa-user-friends" />
-              <span className="sidebar__text">Khách hàng</span>
-            </NavLink>
           </div>
 
           {/* Nội dung */}

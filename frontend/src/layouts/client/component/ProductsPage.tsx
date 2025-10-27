@@ -1,4 +1,3 @@
-// src/layouts/client/component/ProductsPage.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Badge,
@@ -15,6 +14,7 @@ import {
   Tag,
   Typography,
 } from "antd";
+import { useNavigate } from "react-router-dom";
 import {
   fetchProducts,
   parseImages,
@@ -69,9 +69,7 @@ const coverUrl = (p: Product): string | undefined => {
   const fromVariants =
     p.variants?.flatMap((v: any) => {
       const singles: (string | undefined)[] = [v?.image];
-      const albums = (Array.isArray(v?.images)
-        ? v.images
-        : parseImages(v?.images)) as string[];
+      const albums = (Array.isArray(v?.images) ? v.images : parseImages(v?.images)) as string[];
       return [...singles, ...(albums ?? [])];
     }) ?? [];
   const first = fromVariants.find(Boolean) as string | undefined;
@@ -81,7 +79,7 @@ const coverUrl = (p: Product): string | undefined => {
 const sizesOf = (p: any): string[] => {
   const a = Array.isArray(p?.sizes) ? p.sizes.map(attrText) : [];
   const b = Array.isArray(p?.variants)
-    ? p.variants.map((v: any) => attrText(v?.size)).filter(Boolean)
+    ? p.variants.map((v: any) => attrText(v?.size ?? v?.attributes?.size)).filter(Boolean)
     : [];
   return uniq([...a, ...b]);
 };
@@ -89,33 +87,25 @@ const sizesOf = (p: any): string[] => {
 const colorsOf = (p: any): string[] => {
   const a = Array.isArray(p?.colors) ? p.colors.map(attrText) : [];
   const b = Array.isArray(p?.variants)
-    ? p.variants.map((v: any) => attrText(v?.color)).filter(Boolean)
+    ? p.variants.map((v: any) => attrText(v?.color ?? v?.attributes?.color)).filter(Boolean)
     : [];
   return uniq([...a, ...b]);
 };
 
-const variantSkusOf = (p: any): string[] =>
-  Array.isArray(p?.variants)
-    ? p.variants.map((v: any) => v?.sku).filter(Boolean).map(String)
-    : [];
-
 const stockSum = (p: any): number =>
   (Array.isArray(p?.variants) ? p.variants : []).reduce(
-    (sum: number, v: any) =>
-      sum + (Number(v?.stock ?? v?.stock_quantity ?? 0) || 0),
+    (sum: number, v: any) => sum + (Number(v?.stock ?? v?.stock_quantity ?? 0) || 0),
     0
   );
 
 const anyVariantAvailable = (p: any): boolean =>
-  (Array.isArray(p?.variants) ? p.variants : []).some(
-    (v: any) => !!v?.is_available
-  );
+  (Array.isArray(p?.variants) ? p.variants : []).some((v: any) => !!v?.is_available);
 
-/* ------------ Helpers GIÁ: tránh hiển thị 0đ ------------ */
+/* ------------ Helpers GIÁ ------------ */
 // Parse "100000" hoặc "100,000" => 100000; null/undefined/NaN => null
 const toNum = (v: any): number | null => {
   if (v === null || v === undefined || v === "") return null;
-  const n = Number(String(v).replace(/[^\d.-]/g, ""));
+  const n = Number(String(v).replace(/[^\d.-]/g, "")); // an toàn với "1.000.000" / "1,000,000"
   return Number.isFinite(n) ? n : null;
 };
 
@@ -163,20 +153,14 @@ const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
 /* =================================================================== */
 const ProductsPage: React.FC = () => {
   const screens = useBreakpoint();
+  const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // data
   const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<
-    Array<{ value: number; label: string }>
-  >([]);
-
-  // toggle chọn card
-  const [pickedProductId, setPickedProductId] = useState<
-    string | number | null
-  >(null);
+  const [categories, setCategories] = useState<Array<{ value: number; label: string }>>([]);
 
   // filters
   const [priceRange, setPriceRange] =
@@ -205,9 +189,7 @@ const ProductsPage: React.FC = () => {
         const catsRaw = Array.isArray(catsRes.data)
           ? catsRes.data
           : catsRes.data?.data?.data || catsRes.data?.data || [];
-        setCategories(
-          catsRaw.map((c: any) => ({ value: Number(c.id), label: c.name }))
-        );
+        setCategories(catsRaw.map((c: any) => ({ value: Number(c.id), label: c.name })));
 
         setError(null);
       } catch (e: any) {
@@ -243,28 +225,19 @@ const ProductsPage: React.FC = () => {
   const filtered = useMemo(() => {
     let result = [...allProducts];
 
-    if (pickedProductId != null) {
-      result = result.filter((p) => p.id === pickedProductId);
-    }
-
     if (catId != null) {
       result = result.filter((p: any) => Number(p.category_id) === Number(catId));
     }
-
-    if (brand) {
-      result = result.filter((p: any) => (p.brand ? p.brand === brand : false));
-    }
-
+    if (brand) result = result.filter((p: any) => (p.brand ? p.brand === brand : false));
     if (sizeText) result = result.filter((p) => sizesOf(p).includes(sizeText));
     if (colorText) result = result.filter((p) => colorsOf(p).includes(colorText));
-
     if (sellStatus === "selling") {
       result = result.filter((p) => anyVariantAvailable(p));
     }
 
     if (priceRange && priceRange !== "custom") {
       result = result.filter((p: any) => {
-        const { price } = priceForDisplay(p); // dùng helper đã chuẩn hóa
+        const { price } = priceForDisplay(p);
         const val = price ?? 0;
         switch (priceRange) {
           case "<1":
@@ -289,25 +262,13 @@ const ProductsPage: React.FC = () => {
     }
 
     return result;
-  }, [
-    allProducts,
-    pickedProductId,
-    catId,
-    brand,
-    sizeText,
-    colorText,
-    sellStatus,
-    priceRange,
-    customMin,
-    customMax,
-  ]);
+  }, [allProducts, catId, brand, sizeText, colorText, sellStatus, priceRange, customMin, customMax]);
 
   /* -------------------------- Click helpers -------------------------- */
   const onPickSize = (s: string) => setSizeText((cur) => (cur === s ? null : s));
   const onPickColor = (c: string) => setColorText((cur) => (cur === c ? null : c));
   const onPickBrand = (b: string) => setBrand((cur) => (cur === b ? null : b));
-  const onCardClick = (p: Product) =>
-    setPickedProductId((cur) => (cur === p.id ? null : p.id));
+  const onCardClick = (p: Product) => navigate(`/products/${p.id}`);
 
   /* -------------------------- UI -------------------------- */
   return (
@@ -315,9 +276,7 @@ const ProductsPage: React.FC = () => {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: screens.md
-            ? "300px minmax(0, 900px)"
-            : "minmax(0, 900px)",
+          gridTemplateColumns: screens.md ? "300px minmax(0, 900px)" : "minmax(0, 900px)",
           gap: 24,
           alignItems: "start",
           justifyContent: "center",
@@ -329,9 +288,7 @@ const ProductsPage: React.FC = () => {
         {/* Sidebar */}
         <Card style={{ position: "sticky", top: 12, width: 300 }} styles={{ body: { padding: 16 } }}>
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Title level={5} style={{ margin: 0 }}>
-              Bộ lọc sản phẩm
-            </Title>
+            <Title level={5} style={{ margin: 0 }}>Bộ lọc sản phẩm</Title>
             <Divider style={{ margin: "8px 0" }} />
 
             {/* Giá */}
@@ -340,10 +297,7 @@ const ProductsPage: React.FC = () => {
                 <Tag bordered={false}>💲</Tag>
                 <Text strong>Giá</Text>
               </Space>
-              <Radio.Group
-                value={priceRange}
-                onChange={(e) => setPriceRange(e.target.value)}
-              >
+              <Radio.Group value={priceRange} onChange={(e) => setPriceRange(e.target.value)}>
                 <Flex vertical gap={8}>
                   <Radio.Button value="<1">Dưới 1 triệu</Radio.Button>
                   <Radio.Button value="1-2">1 - 2 triệu</Radio.Button>
@@ -358,18 +312,14 @@ const ProductsPage: React.FC = () => {
                     placeholder="Từ"
                     min={0}
                     value={customMin as number | null}
-                    onChange={(v) =>
-                      setCustomMin(typeof v === "number" ? v : null)
-                    }
+                    onChange={(v) => setCustomMin(typeof v === "number" ? v : null)}
                     addonAfter="đ"
                   />
                   <InputNumber
                     placeholder="Đến"
                     min={0}
                     value={customMax as number | null}
-                    onChange={(v) =>
-                      setCustomMax(typeof v === "number" ? v : null)
-                    }
+                    onChange={(v) => setCustomMax(typeof v === "number" ? v : null)}
                     addonAfter="đ"
                   />
                 </Space>
@@ -410,10 +360,7 @@ const ProductsPage: React.FC = () => {
                 allowClear
                 showSearch
                 placeholder="Chọn size"
-                options={SIZE_TEXT_OPTIONS.map((s) => ({
-                  label: s,
-                  value: s,
-                }))}
+                options={SIZE_TEXT_OPTIONS.map((s) => ({ label: s, value: s }))}
                 value={sizeText ?? undefined}
                 onChange={(v) => setSizeText(v ?? null)}
               />
@@ -426,10 +373,7 @@ const ProductsPage: React.FC = () => {
                 allowClear
                 showSearch
                 placeholder="Chọn màu"
-                options={COLOR_TEXT_OPTIONS.map((c) => ({
-                  label: c,
-                  value: c,
-                }))}
+                options={COLOR_TEXT_OPTIONS.map((c) => ({ label: c, value: c }))}
                 value={colorText ?? undefined}
                 onChange={(v) => setColorText(v ?? null)}
               />
@@ -438,10 +382,7 @@ const ProductsPage: React.FC = () => {
             {/* Trạng thái bán */}
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <Text strong>Trạng thái bán</Text>
-              <Radio.Group
-                value={sellStatus}
-                onChange={(e) => setSellStatus(e.target.value)}
-              >
+              <Radio.Group value={sellStatus} onChange={(e) => setSellStatus(e.target.value)}>
                 <Space wrap>
                   <Radio.Button value="all">Tất cả</Radio.Button>
                   <Radio.Button value="selling">Đang bán</Radio.Button>
@@ -469,52 +410,49 @@ const ProductsPage: React.FC = () => {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: screens.md
-                  ? "repeat(3, 1fr)"
-                  : "repeat(2, 1fr)",
+                gridTemplateColumns: screens.md ? "repeat(3, 1fr)" : "repeat(2, 1fr)",
                 gap: 16,
               }}
             >
               {filtered.map((p) => {
-                const imgSrc =
+                const baseImg =
                   coverUrl(p) || "https://via.placeholder.com/600x600?text=No+Image";
                 const { price: showPrice, compareAt } = priceForDisplay(p);
                 const sList = sizesOf(p);
                 const cList = colorsOf(p);
-                const vSkus = variantSkusOf(p);
                 const totalStock = stockSum(p);
-                const picked = pickedProductId === p.id;
+
+                const discountPct =
+                  compareAt && showPrice && compareAt > showPrice
+                    ? Math.round(((compareAt - showPrice) / compareAt) * 100)
+                    : null;
 
                 return (
                   <Badge.Ribbon
                     key={`r-${p.id}`}
-                    text={totalStock > 0 ? `Tồn: ${totalStock}` : "Hết hàng"}
-                    color={totalStock > 0 ? "blue" : "red"}
+                    text={
+                      discountPct
+                        ? `-${discountPct}%`
+                        : totalStock > 0
+                        ? `Tồn: ${totalStock}`
+                        : "Hết hàng"
+                    }
+                    color={discountPct ? "red" : totalStock > 0 ? "blue" : "red"}
                   >
                     <Card
                       hoverable
-                      onClick={() => onCardClick(p)}
+                      onClick={() => navigate(`/products/${p.id}`)}
                       styles={{ body: { padding: 12 } }}
-                      style={{
-                        borderColor: picked ? "#1677ff" : undefined,
-                        boxShadow: picked
-                          ? "0 0 0 2px rgba(22,119,255,.2)"
-                          : undefined,
-                        cursor: "pointer",
-                      }}
+                      style={{ cursor: "pointer" }}
                       cover={
                         <img
-                          src={imgSrc}
+                          src={baseImg}
                           alt={p.name}
-                          style={{
-                            width: "100%",
-                            height: 240,
-                            objectFit: "cover",
-                          }}
+                          style={{ width: "100%", height: 240, objectFit: "cover" }}
                         />
                       }
                     >
-                      <Space direction="vertical" size={6} style={{ width: "100%" }}>
+                      <Space direction="vertical" size={8} style={{ width: "100%" }}>
                         <Text strong>{p.name}</Text>
 
                         <Space size={8} align="baseline">
@@ -532,10 +470,10 @@ const ProductsPage: React.FC = () => {
                           <Tag
                             onClick={(e) => {
                               e.stopPropagation();
-                              onPickBrand((p as any).brand);
+                              e.preventDefault();
+                              navigate(`/products/${p.id}`);
                             }}
                             style={{ cursor: "pointer" }}
-                            color={brand === (p as any).brand ? "blue" : undefined}
                           >
                             {(p as any).brand}
                           </Tag>
@@ -548,10 +486,11 @@ const ProductsPage: React.FC = () => {
                                 key={`${p.id}-s-${s}`}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onPickSize(String(s));
+                                  e.preventDefault();
+                                  navigate(`/products/${p.id}`);
                                 }}
                                 style={{ cursor: "pointer" }}
-                                color={sizeText === String(s) ? "processing" : undefined}
+                                color={undefined}
                               >
                                 {s}
                               </Tag>
@@ -566,18 +505,17 @@ const ProductsPage: React.FC = () => {
                                 key={`${p.id}-c-${c}`}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onPickColor(String(c));
+                                  e.preventDefault();
+                                  navigate(`/products/${p.id}`);
                                 }}
                                 style={{ cursor: "pointer" }}
-                                color={colorText === String(c) ? "magenta" : undefined}
+                                color={undefined}
                               >
                                 {c}
                               </Tag>
                             ))}
                           </Space>
                         )}
-
-                        
                       </Space>
                     </Card>
                   </Badge.Ribbon>
