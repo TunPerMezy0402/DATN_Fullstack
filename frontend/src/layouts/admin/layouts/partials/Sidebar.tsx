@@ -92,8 +92,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
       title: "Banner",
       icon: "fa-image",
       items: [
-        { label: "Tất cả Banner", path: "/admin/banners" },
-        { label: "Thêm banner mới", path: "/admin/banners/create" },
+        { label: "Tất cả Banner", path: "/admin/banner" },
       ],
     },
   ];
