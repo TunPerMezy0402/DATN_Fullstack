@@ -207,7 +207,7 @@ const Header = () => {
               { path: "/", label: "Trang chủ" },
 /*               { path: "/categories", label: "Danh Mục" }, */
               { path: "/products", label: "Sản phẩm" },
-              { path: "/blog", label: "Tin tức" },
+              { path: "/news", label: "Tin tức" },
               { path: "/compare", label: "So sánh" },
               { path: "/lien_he", label: "Liên hệ" },
             ].map((link) => (
