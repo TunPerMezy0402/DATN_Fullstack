@@ -85,48 +85,42 @@ class ProductClientController extends Controller
     /**
      * 📦 Lấy chi tiết sản phẩm theo ID hoặc slug
      */
-    public function getProductDetail($id)
-    {
-        $product = Product::query()
-            ->with([
-                'category:id,name',
-                'variants' => function ($q) {
-                    $q->select('id', 'product_id', 'price', 'discount_price', 'size_id', 'color_id')
-                        ->with([
-                            'size:id,value',
-                            'color:id,value',
-                        ]);
-                },
-            ])
-            ->where('id', $id)
-            ->orWhere('slug', $id)
-            ->first();
+   // app/Http/Controllers/Api/Client/ProductClientController.php
 
-        if (!$product) {
-            return response()->json([
-                'message' => 'Sản phẩm không tồn tại.',
-            ], 404);
-        }
+public function getProductDetail($id)
+{
+    $product = Product::query()
+        ->with([
+            'category:id,name',
+            'variants' => function ($q) {
+                $q->select([
+                    'id','product_id',
+                    'image','images',
+                    'sku',
+                    'price','discount_price',
+                    'stock_quantity','is_available',   // 👈 THÊM 2 CỘT NÀY
+                    'size_id','color_id'
+                ])->with([
+                    'size:id,value',
+                    'color:id,value',
+                ]);
+            },
+        ])
+        ->where('id', $id)
+        ->first();
 
-        // Tính giá cuối cùng của biến thể
-        $product->variants->map(function ($v) {
-            $v->final_price = ($v->discount_price && $v->discount_price < $v->price)
-                ? $v->discount_price
-                : $v->price;
-            return $v;
-        });
-
-        // Xử lý ảnh
-        if ($product->image) {
-            $product->image_url = strpos($product->image, 'storage/') === 0
-                ? asset($product->image)
-                : asset('storage/' . $product->image);
-        } else {
-            $product->image_url = null;
-        }
-
-        return response()->json([
-            'product' => $product,
-        ]);
+    if (!$product) {
+        return response()->json(['message' => 'Sản phẩm không tồn tại.'], 404);
     }
+
+    // Chuẩn hoá ảnh cover
+    $product->image_url = $product->image
+        ? (str_starts_with($product->image, 'storage/')
+            ? asset($product->image)
+            : asset('storage/' . $product->image))
+        : null;
+
+    return response()->json(['product' => $product]);
+}
+
 }
