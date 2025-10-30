@@ -4,11 +4,11 @@ import "./NewsSidebar.css";
 
 const NewsSidebar: React.FC = () => {
   const categories = [
-    { name: "Xu hướng giày mới nhất", path: "/news/trends" },
-    { name: "Mẹo bảo quản & chăm sóc giày", path: "/news/tips" },
+    { name: "Top 10 đôi giày thể thao đáng mua năm 2025", path: "/news/trends" },
+    { name: "Cách bảo quản giày thể thao đúng cách", path: "/news/tips" },
     { name: "Đánh giá & review sản phẩm", path: "/news/review" },
     { name: "Khuyến mãi & sự kiện", path: "/news/promotion" },
-    { name: "Câu chuyện thương hiệu & phong cách sống", path: "/news/story" },
+    { name: "Xu hướng giày sneaker 2025", path: "/news/story" },
   ];
 
   return (

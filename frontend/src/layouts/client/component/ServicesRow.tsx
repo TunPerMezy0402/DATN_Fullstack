@@ -1,32 +1,31 @@
-import React, { memo } from 'react';
-import { Link } from 'react-router-dom';
+import React, { memo } from "react";
+import { Link } from "react-router-dom";
 
 const ServicesRow = () => {
-  // Dữ liệu mẫu để giữ lại giao diện
   const blogs = [
     {
-      _id: '1',
-      title: 'Top 10 đôi giày thể thao đáng mua năm 2025',
-      slug: 'top-10-giay-the-thao-2025',
-      thumbnail: 'https://via.placeholder.com/400x250.png?text=Blog+1',
+      _id: "1",
+      title: "Top 10 đôi giày thể thao đáng mua năm 2025",
+      slug: "trends", // 👈 dùng slug để khớp với route /news/trends
+      thumbnail: "https://via.placeholder.com/400x250.png?text=Top+10+Giay+2025",
       publishedAt: new Date().toISOString(),
-      excerpt: 'Khám phá những đôi giày hot nhất năm 2025 được giới trẻ săn đón.',
+      excerpt: "Khám phá những đôi giày hot nhất năm 2025 được giới trẻ săn đón.",
     },
     {
-      _id: '2',
-      title: 'Cách bảo quản giày thể thao đúng cách',
-      slug: 'bao-quan-giay-the-thao',
-      thumbnail: 'https://via.placeholder.com/400x250.png?text=Blog+2',
+      _id: "2",
+      title: "Cách bảo quản giày thể thao đúng cách",
+      slug: "tips", // 👈 tương ứng với /news/tips
+      thumbnail: "https://via.placeholder.com/400x250.png?text=Bao+Quan+Giay",
       publishedAt: new Date().toISOString(),
-      excerpt: 'Mẹo nhỏ giúp bạn giữ đôi giày luôn mới và bền lâu hơn.',
+      excerpt: "Mẹo nhỏ giúp bạn giữ đôi giày luôn mới và bền lâu hơn.",
     },
     {
-      _id: '3',
-      title: 'Xu hướng giày sneaker 2025',
-      slug: 'xu-huong-sneaker-2025',
-      thumbnail: 'https://via.placeholder.com/400x250.png?text=Blog+3',
+      _id: "3",
+      title: "Xu hướng giày sneaker 2025",
+      slug: "review", // 👈 tương ứng với /news/story
+      thumbnail: "https://via.placeholder.com/400x250.png?text=Xu+Huong+Sneaker",
       publishedAt: new Date().toISOString(),
-      excerpt: 'Cùng điểm qua những mẫu sneaker đang “làm mưa làm gió” trong giới trẻ.',
+      excerpt: "Cùng điểm qua những mẫu sneaker đang “làm mưa làm gió” trong giới trẻ.",
     },
   ];
 
@@ -45,7 +44,8 @@ const ServicesRow = () => {
             key={blog._id}
             className="border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition"
           >
-            <Link to={`/blog/${blog.slug}`}>
+            {/* 👇 Sửa đường dẫn để sang trang tin tức */}
+            <Link to={`/news/${blog.slug}`}>
               <img
                 src={blog.thumbnail}
                 alt={blog.title}
@@ -63,8 +63,10 @@ const ServicesRow = () => {
               <p className="text-sm text-gray-600 line-clamp-3 mb-2">
                 {blog.excerpt}
               </p>
+              {/* 👇 Nút đọc thêm */}
               <Link
-                to={`/blog/${blog.slug}`}
+                to={`/news/${blog.slug}`}
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
                 className="text-sm font-medium text-green-600 hover:underline"
               >
                 Đọc thêm →
@@ -76,8 +78,8 @@ const ServicesRow = () => {
 
       <div className="mt-6 text-right">
         <Link
-          to="/blog"
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          to="/news"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
           className="text-sm text-gray-500 hover:text-green-600 hover:underline"
         >
           Xem tất cả bài viết →

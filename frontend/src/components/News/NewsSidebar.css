@@ -1,60 +1,90 @@
+/* --- Tổng thể sidebar --- */
 .news-sidebar {
-  width: 260px;
-  background-color: #fff;
+  width: 250px;
+  background-color: #ffffff;
   border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  padding: 16px;
-  position: sticky;
-  top: 100px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+  padding: 20px;
   height: fit-content;
-
-  /* ✅ Căn trái để thẳng hàng với nút “Danh mục” */
-  margin-left: 120px; 
-  margin-top: 16px;
+  position: sticky;
+  top: 100px; /* để khi scroll thì sidebar vẫn cố định */
 }
 
-/* Tiêu đề danh mục */
+/* --- Tiêu đề --- */
 .sidebar-title {
+  font-size: 1.1rem;
   font-weight: 700;
   color: #2e7d32;
-  margin-bottom: 12px;
-  font-size: 1.1rem;
-  text-transform: uppercase;
-  border-bottom: 2px solid #e8f5e9;
-  padding-bottom: 6px;
+  margin-bottom: 14px;
+  text-align: center;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 8px;
 }
 
-/* Danh sách */
+/* --- Danh sách --- */
 .sidebar-list {
   list-style: none;
-  padding: 0;
   margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-/* Link danh mục */
+/* --- Liên kết --- */
 .sidebar-link {
   display: block;
-  color: #333;
   padding: 10px 12px;
   border-radius: 8px;
   text-decoration: none;
+  color: #333;
+  font-size: 0.95rem;
   transition: all 0.2s ease;
 }
 
-/* Hiệu ứng hover + trạng thái đang active */
-.sidebar-link:hover,
-.sidebar-link.active {
+/* --- Hiệu ứng hover và active --- */
+.sidebar-link:hover {
   background-color: #e8f5e9;
   color: #2e7d32;
+  transform: translateX(3px);
+}
+
+.sidebar-link.active {
+  background-color: #2e7d32;
+  color: #fff;
   font-weight: 600;
 }
 
-/* 📱 Responsive nhẹ: căn lại cho màn nhỏ */
-@media (max-width: 1024px) {
+/* --- Bố cục toàn trang: sidebar + nội dung --- */
+.news-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 20px;
+}
+
+/* --- Vùng nội dung chính --- */
+.news-content {
+  flex: 1;
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* --- Responsive --- */
+@media (max-width: 900px) {
+  .news-layout {
+    flex-direction: column;
+  }
+
   .news-sidebar {
-    margin-left: 0;
+    width: 100%;
     position: relative;
     top: 0;
+  }
+
+  .news-content {
     width: 100%;
   }
 }

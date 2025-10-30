@@ -1,0 +1,74 @@
+.news-article-tips {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 20px;
+  font-family: "Segoe UI", sans-serif;
+  line-height: 1.8;
+  color: #333;
+  background: #fff;
+}
+
+/* Tiêu đề */
+.news-article-tips h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #111;
+  margin-bottom: 20px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Khung chứa ảnh */
+.news-image-wrapper {
+  text-align: center;
+  margin: 30px 0;
+}
+
+/* 📸 Ảnh đã được chỉnh nhỏ lại */
+.news-image {
+  max-width: 100%;
+  width: 60%; /* giảm từ 85% → 60% để ảnh nhỏ hơn */
+  border-radius: 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
+}
+
+/* Hiệu ứng hover ảnh cho đẹp hơn */
+.news-image:hover {
+  transform: scale(1.03);
+}
+
+/* Nội dung */
+.news-article-tips p {
+  margin-bottom: 20px;
+  text-align: justify;
+  font-size: 1rem;
+}
+
+/* Danh sách gợi ý */
+.news-article-tips ul {
+  list-style: none;
+  padding: 0;
+  margin: 30px 0;
+}
+
+.news-article-tips li {
+  margin-bottom: 15px;
+  background: #f9f9f9;
+  border-left: 4px solid #16a34a;
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+
+.news-article-tips strong {
+  color: #16a34a;
+}
+
+/* Ký tên cuối bài */
+.news-signature {
+  text-align: right;
+  font-style: italic;
+  margin-top: 30px;
+  color: #666;
+}
