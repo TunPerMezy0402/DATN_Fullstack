@@ -8,8 +8,18 @@ import Menu from '../layouts/client/component/Menu';
 import OutstandingProducts from '../layouts/client/component/OutstandingProducts';
 import ServicesRow from '../layouts/client/component//ServicesRow';
 import Trending from '../layouts/client/component/Trending';
-import ProductsPage from '../layouts/client/component/ProductsPage';
-import ProductDetail from '../layouts/client/component/ProductDetail';
+
+import ProductsPage from '../layouts/client/component/product/ProductsPage';
+import ProductDetail from '../layouts/client/component/product/ProductDetail';
+
+import CartList from '../layouts/client/component/cart/CartList';
+
+import CheckoutPage from '../layouts/client/component/payment/CheckoutPage';
+
+import Profile from '../layouts/client/component/profile/Profile';
+
+
+
 
 /* import CategoryPage from '../layouts/client/component/CategoryPage';
 import CategoryDetail from '../layouts/client/component/CategoryDetail'; */
@@ -34,6 +44,12 @@ const ClientRoutes = () => {
 
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/products/:id" element={<ProductDetail />} />
+
+        <Route path="/cart" element={<CartList />} />
+
+        <Route path="/payment" element={<CheckoutPage />} />
+
+        <Route path="/profile" element={<Profile />} />
 
 
       </Route>

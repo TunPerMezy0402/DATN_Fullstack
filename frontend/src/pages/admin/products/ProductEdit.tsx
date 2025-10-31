@@ -33,6 +33,7 @@ import {
   PictureOutlined,
   InboxOutlined,
   InfoCircleOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import type { RcFile, UploadFile } from "antd/es/upload/interface";
 import { useNavigate, useParams } from "react-router-dom";
@@ -415,6 +416,57 @@ export default function ProductEdit() {
       return updated;
     });
   }, []);
+
+  // Chức năng sao chép biến thể
+  const handleDuplicateVariant = useCallback((index: number) => {
+    const source = variants[index];
+    if (!source) return;
+    
+    // Deep clone files với uid mới để Antd Upload nhận diện đúng
+    const cloneFiles = (files: UploadFile[]): UploadFile[] => {
+      return files.map((file) => ({
+        ...file,
+        uid: `${file.uid}-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      }));
+    };
+    
+    // Tạo bản sao với SKU mới và không có ID (biến thể mới)
+    const copied: VariantForm = {
+      // Không copy id - để backend tạo mới
+      size_id: source.size_id,
+      color_id: source.color_id,
+      sku: generateSku(), // SKU mới
+      price: source.price,
+      discount_price: source.discount_price,
+      stock_quantity: source.stock_quantity,
+      is_available: source.is_available,
+      mainFiles: cloneFiles(source.mainFiles),
+      albumFiles: cloneFiles(source.albumFiles),
+      isEditing: true, // Mở chế độ chỉnh sửa cho biến thể mới
+      deletedMainImage: false,
+      deletedAlbumUrls: [],
+    };
+
+    setVariants((prev) => {
+      const next = [...prev];
+      next.splice(index + 1, 0, copied); // Chèn ngay sau biến thể được sao chép
+      return next;
+    });
+
+    message.success(
+      `Đã sao chép biến thể #${index + 1} (${source.mainFiles.length} ảnh chính + ${source.albumFiles.length} ảnh phụ)`
+    );
+    
+    // Scroll đến biến thể mới sau 100ms
+    setTimeout(() => {
+      const variantCards = document.querySelectorAll('.variant-card-item');
+      const targetCard = variantCards[index + 1] as HTMLElement;
+      if (targetCard) {
+        targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetCard.style.animation = 'highlight-card 1s ease';
+      }
+    }, 100);
+  }, [variants]);
 
   /* -------- Upload handlers -------- */
   const handleProductFileChange = useCallback(({ fileList }: { fileList: UploadFile[] }) => {
@@ -866,6 +918,7 @@ export default function ProductEdit() {
                       {variants.map((variant, index) => (
                         <Card
                           key={`variant-${variant.id || index}`}
+                          className="variant-card-item"
                           style={{ 
                             borderRadius: 12,
                             border: variant.isEditing ? "2px solid #667eea" : "1px solid #e8e8e8",
@@ -891,6 +944,9 @@ export default function ProductEdit() {
                                 {variant.id && (
                                   <Tag color="blue">ID: {variant.id}</Tag>
                                 )}
+                                {!variant.id && (
+                                  <Tag color="green">MỚI</Tag>
+                                )}
                                 {variant.is_available ? (
                                   <Tag color="success">Còn hàng</Tag>
                                 ) : (
@@ -907,6 +963,14 @@ export default function ProductEdit() {
                                   style={{ borderRadius: 8 }}
                                 >
                                   {variant.isEditing ? "Hoàn tất" : "Chỉnh sửa"}
+                                </Button>
+                                <Button 
+                                  type="dashed" 
+                                  icon={<CopyOutlined />} 
+                                  onClick={() => handleDuplicateVariant(index)}
+                                  style={{ borderRadius: 8 }}
+                                >
+                                  Sao chép
                                 </Button>
                                 {variant.isEditing && (
                                   <Button 
@@ -1257,8 +1321,6 @@ export default function ProductEdit() {
           }} 
         />
       </Modal>
-      <style>
-      </style>
 
       {/* Enhanced Styles */}
       <style>{`
@@ -1318,6 +1380,21 @@ export default function ProductEdit() {
         .ant-select-focused .ant-select-selector {
           border-color: #667eea;
           box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+        
+        @keyframes highlight-card {
+          0%, 100% {
+            box-shadow: 0 2px 8px rgba(0,0,0,.08);
+            transform: scale(1);
+          }
+          50% {
+            box-shadow: 0 8px 32px rgba(102, 126, 234, .4);
+            transform: scale(1.02);
+          }
+        }
+        
+        .variant-card-item {
+          scroll-margin-top: 100px;
         }
       `}</style>
     </div>

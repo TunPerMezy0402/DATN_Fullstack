@@ -1,3 +1,6 @@
+
+import logo from "../../assets/client/logo/logo.png";
+
 const Footer = () => {
   return (
     <footer className="w-full bg-gradient-to-r from-green-100 via-white to-green-100 text-gray-700 border-t border-gray-200 mt-10 py-6">
@@ -5,7 +8,7 @@ const Footer = () => {
         {/* Logo & Mô tả */}
         <div className="flex flex-col items-center md:items-start md:w-1/4 space-y-4 mr-6">
           <img
-            src="/image/logo.png"
+            src={logo}
             alt="Velora Shoes"
             className="w-16 h-16 rounded-sm ml-24"
             style={{ minWidth: "64px", minHeight: "64px" }}
@@ -13,18 +16,6 @@ const Footer = () => {
           <p className="text-[13px] text-center md:text-left leading-relaxed max-w-xs text-gray-600">
             Velora – nơi bạn tìm thấy những đôi giày thời trang, chất lượng, phù hợp cho mọi phong cách.
           </p>
-          <div className="flex space-x-3">
-            <img
-              src="/assets/images/android.png.png"
-              alt="Tải ứng dụng Android"
-              className="w-30 h-10 min-w-[120px]"
-            />
-            <img
-              src="/assets/images/apple.png.png"
-              alt="Tải ứng dụng iOS"
-              className="w-30 h-10 min-w-[120px]"
-            />
-          </div>
         </div>
 
         {/* Liên kết */}
@@ -117,14 +108,6 @@ const Footer = () => {
             </a>{" "}
             - Tất cả bản quyền được bảo lưu.
           </p>
-          <div className="flex items-center">
-            <img
-              src="/image/image.png"
-              alt="Logo Footer"
-              className="w-auto h-6"
-              style={{ minWidth: "auto", minHeight: "24px" }}
-            />
-          </div>
         </div>
       </div>
     </footer>

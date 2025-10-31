@@ -21,7 +21,7 @@ class CategoryController extends Controller
 
         $page = $q->paginate($per);
         $page->getCollection()->transform(function ($c) {
-            $c->image_url = $c->image ? asset($c->image) : null; // 'storage/img/category/...'
+            $c->image_url = $c->image ? asset($c->image) : null;
             return $c;
         });
 
@@ -55,7 +55,7 @@ class CategoryController extends Controller
         return response()->json($c);
     }
 
-    /** POST /api/admin/categories  (multipart: name, image?) */
+    /** POST /api/admin/categories */
     public function store(Request $r)
     {
         $data = $r->validate([
@@ -65,14 +65,13 @@ class CategoryController extends Controller
 
         $pathForDb = null;
         if ($r->hasFile('image')) {
-            $dest = public_path('storage/img/category');                // thư mục đích trong public/
+            $dest = public_path('storage/img/category');
             if (!File::exists($dest)) File::makeDirectory($dest, 0775, true);
 
             $f = $r->file('image');
             $filename = time().'_'.uniqid().'.'.$f->getClientOriginalExtension();
             $f->move($dest, $filename);
-
-            $pathForDb = 'storage/img/category/'.$filename;            // chuỗi lưu DB
+            $pathForDb = 'storage/img/category/'.$filename;
         }
 
         $cat = Category::create([
@@ -84,7 +83,7 @@ class CategoryController extends Controller
         return response()->json(['data' => $cat], 201);
     }
 
-    /** PUT /api/admin/categories/{id}  (multipart: name?, image? | image=null => xoá ảnh) */
+    /** PUT /api/admin/categories/{id} */
     public function update(Request $r, $id)
     {
         $cat  = Category::withTrashed()->findOrFail($id);
@@ -97,17 +96,16 @@ class CategoryController extends Controller
 
         if ($r->has('image')) {
             if ($r->hasFile('image')) {
-                // xóa ảnh cũ nếu có
                 if ($cat->image && File::exists(public_path($cat->image))) {
                     File::delete(public_path($cat->image));
                 }
+
                 $dest = public_path('storage/img/category');
                 if (!File::exists($dest)) File::makeDirectory($dest, 0775, true);
 
                 $f = $r->file('image');
                 $filename = time().'_'.uniqid().'.'.$f->getClientOriginalExtension();
                 $f->move($dest, $filename);
-
                 $cat->image = 'storage/img/category/'.$filename;
             } else {
                 // client gửi image=null => xoá ảnh hiện tại
@@ -127,11 +125,19 @@ class CategoryController extends Controller
     public function destroy($id)
     {
         $cat = Category::findOrFail($id);
+
+        // Kiểm tra nếu category có sản phẩm
+        if ($cat->products()->count() > 0) {
+            return response()->json([
+                'error' => 'Không thể xóa. Category đang có sản phẩm liên kết.'
+            ], 400);
+        }
+
         $cat->delete();
         return response()->json(['message' => 'deleted']);
     }
 
-    /** POST /api/admin/categories/{id}/restore — phục hồi */
+    /** POST /api/admin/categories/{id}/restore */
     public function restore($id)
     {
         $cat = Category::withTrashed()->findOrFail($id);
@@ -139,7 +145,7 @@ class CategoryController extends Controller
         return response()->json(['message' => 'restored']);
     }
 
-    /** DELETE /api/admin/categories/{id}/force-delete — xóa vĩnh viễn + dọn file */
+    /** DELETE /api/admin/categories/{id}/force-delete */
     public function forceDelete($id)
     {
         $cat = Category::withTrashed()->findOrFail($id);
@@ -152,3 +158,4 @@ class CategoryController extends Controller
         return response()->json(['message' => 'force-deleted']);
     }
 }
+    

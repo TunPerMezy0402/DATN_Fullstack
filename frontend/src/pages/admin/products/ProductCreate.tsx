@@ -17,7 +17,7 @@ import {
   Upload,
   message,
 } from "antd";
-import { PlusOutlined, DeleteOutlined, UploadOutlined } from "@ant-design/icons";
+import { PlusOutlined, DeleteOutlined, UploadOutlined, CopyOutlined } from "@ant-design/icons";
 import type { RcFile, UploadFile } from "antd/es/upload/interface";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -31,15 +31,13 @@ type Attribute = { id: number; type: "size" | "color" | string; value: string };
 type VariantForm = {
   size_id: number | null;
   color_id: number | null;
-  sku: string;           // auto random 9 ký tự
-  price: string;         // UI lưu raw string
+  sku: string;
+  price: string;
   discount_price: string;
   stock_quantity: number;
   is_available: boolean;
-
-  // UI-only (file)
-  mainFiles: UploadFile[];   // ảnh đại diện biến thể (1 file)
-  albumFiles: UploadFile[];  // album (nhiều file)
+  mainFiles: UploadFile[];
+  albumFiles: UploadFile[];
 };
 
 /* ============================== Axios ============================== */
@@ -64,17 +62,13 @@ const toNumberOrUndef = (v: unknown) =>
     ? Number(v)
     : undefined;
 
-/** SKU random 9 ký tự (A–Z, 0–9) */
 const generateSku = (len = 9) => {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const arr = new Uint32Array(len);
   (crypto as any)?.getRandomValues?.(arr);
-  return Array.from({ length: len }, (_, i) => chars[(arr[i] ?? Math.floor(Math.random() * 1e9)) % chars.length]).join(
-    ""
-  );
+  return Array.from({ length: len }, (_, i) => chars[(arr[i] ?? Math.floor(Math.random() * 1e9)) % chars.length]).join("");
 };
 
-/** Không cho copy/sửa SKU */
 const noCopyProps = {
   readOnly: true,
   disabled: true,
@@ -92,7 +86,6 @@ const getBase64 = (file: File): Promise<string> =>
     r.onerror = reject;
   });
 
-/** Chặn antd upload tự động; validate cơ bản */
 const blockAutoUpload = (file: RcFile) => {
   if (!file.type.startsWith("image/")) {
     message.error("Chỉ chấp nhận file ảnh");
@@ -102,29 +95,25 @@ const blockAutoUpload = (file: RcFile) => {
     message.error("Ảnh phải nhỏ hơn 8MB");
     return Upload.LIST_IGNORE;
   }
-  return false; // ❗️chặn upload tự động, chỉ add vào fileList
+  return false;
 };
 
-/** Danh mục là required (chấp nhận 0) */
 const requiredCategory = (_: any, value: any) => {
   if (value === 0 || (value !== undefined && value !== null)) return Promise.resolve();
   return Promise.reject(new Error("Chọn danh mục"));
 };
 
-/** Parse tiền về number | null */
 function parseMoneyNumber(input: string | number | null | undefined): number | null {
   if (input === null || input === undefined || input === "") return null;
   const n = Number(input);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-/** Tiền -> string|null (API cần string|null) */
 function moneyToApiString(input: string | number | null | undefined): string | null {
   const n = parseMoneyNumber(input);
   return n === null ? null : String(n);
 }
 
-/** Validate biến thể */
 function validateVariantsOrToast(variants: VariantForm[]) {
   for (let i = 0; i < variants.length; i++) {
     const v = variants[i];
@@ -148,35 +137,21 @@ export default function ProductCreate() {
   const navigate = useNavigate();
   const [form] = Form.useForm();
 
-  // UI state
   const [saving, setSaving] = useState(false);
   const [variationEnabled, setVariationEnabled] = useState(false);
-
-  // Categories
   const [categories, setCategories] = useState<Category[]>([]);
-
-  // Attributes
   const [sizes, setSizes] = useState<Attribute[]>([]);
   const [colors, setColors] = useState<Attribute[]>([]);
-
-  // Modals (create nhanh)
   const [catModalOpen, setCatModalOpen] = useState(false);
   const [catName, setCatName] = useState("");
   const [attrModalOpen, setAttrModalOpen] = useState<null | "size" | "color">(null);
   const [attrValue, setAttrValue] = useState("");
-
-  // Product cover (CHỈ 1 ảnh)
-  const [productFile, setProductFile] = useState<UploadFile[]>([]); // maxCount=1
-
-  // Variants
+  const [productFile, setProductFile] = useState<UploadFile[]>([]);
   const [variants, setVariants] = useState<VariantForm[]>([]);
-
-  // Preview
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<string>("");
   const [previewTitle, setPreviewTitle] = useState<string>("Ảnh xem trước");
 
-  /* -------- Load categories + attributes -------- */
   useEffect(() => {
     (async () => {
       try {
@@ -184,7 +159,6 @@ export default function ProductCreate() {
         const cats: Category[] = Array.isArray(catRes.data)
           ? catRes.data
           : catRes.data?.data?.data || catRes.data?.data || [];
-
         setCategories(cats.map((c: any) => ({ id: Number(c.id), name: c.name })));
 
         const [sz, cl] = await Promise.all([
@@ -208,13 +182,11 @@ export default function ProductCreate() {
     })();
   }, []);
 
-  /* -------- Seed SKU sản phẩm -------- */
   useEffect(() => {
     const current = form.getFieldValue("sku");
     if (!current) form.setFieldValue("sku", generateSku(9));
   }, [form]);
 
-  /* -------- Options -------- */
   const categoryOptions = useMemo(
     () => categories.map((c) => ({ label: c.name, value: Number(c.id) })),
     [categories]
@@ -222,7 +194,6 @@ export default function ProductCreate() {
   const sizeOptions = useMemo(() => sizes.map((s) => ({ label: s.value, value: s.id })), [sizes]);
   const colorOptions = useMemo(() => colors.map((c) => ({ label: c.value, value: c.id })), [colors]);
 
-  /* =================== Variant handlers =================== */
   const addVariant = () =>
     setVariants((prev) => [
       ...prev,
@@ -241,6 +212,52 @@ export default function ProductCreate() {
 
   const removeVariant = (idx: number) => setVariants((prev) => prev.filter((_, i) => i !== idx));
 
+  // Chức năng sao chép biến thể
+  const duplicateVariant = (idx: number) => {
+    const source = variants[idx];
+    if (!source) return;
+    
+    // Deep clone files với uid mới để Antd Upload nhận diện đúng
+    const cloneFiles = (files: UploadFile[]): UploadFile[] => {
+      return files.map((file) => ({
+        ...file,
+        uid: `${file.uid}-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      }));
+    };
+    
+    // Tạo bản sao với SKU mới
+    const copied: VariantForm = {
+      size_id: source.size_id,
+      color_id: source.color_id,
+      sku: generateSku(9), // SKU mới
+      price: source.price,
+      discount_price: source.discount_price,
+      stock_quantity: source.stock_quantity,
+      is_available: source.is_available,
+      // Deep clone files với uid mới
+      mainFiles: cloneFiles(source.mainFiles),
+      albumFiles: cloneFiles(source.albumFiles),
+    };
+
+    setVariants((prev) => {
+      const next = [...prev];
+      next.splice(idx + 1, 0, copied); // Chèn ngay sau biến thể được sao chép
+      return next;
+    });
+
+    message.success(`Đã sao chép biến thể #${idx + 1} (${source.mainFiles.length} ảnh chính + ${source.albumFiles.length} ảnh phụ)`);
+    
+    // Scroll đến biến thể mới sau 100ms
+    setTimeout(() => {
+      const cards = document.querySelectorAll('.variant-list .ant-card');
+      const targetCard = cards[idx + 1] as HTMLElement;
+      if (targetCard) {
+        targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetCard.style.animation = 'highlight-card 1s ease';
+      }
+    }, 100);
+  };
+
   const setVariant = <K extends keyof VariantForm>(idx: number, key: K, value: VariantForm[K]) =>
     setVariants((prev) => {
       const next = [...prev];
@@ -248,22 +265,18 @@ export default function ProductCreate() {
       return next;
     });
 
-  /* =================== Upload handlers =================== */
-  // Product cover: CHỈ 1 ảnh
   const onChangeProductFile = ({ fileList }: { fileList: UploadFile[] }) => {
-    setProductFile(fileList.slice(-1)); // giữ đúng 1 ảnh
+    setProductFile(fileList.slice(-1));
   };
 
-  // Biến thể - ảnh chính
   const onChangeVariantMain = (idx: number, fileList: UploadFile[]) => {
     setVariants((prev) => {
       const next = [...prev];
-      next[idx].mainFiles = fileList.slice(-1); // 1 file
+      next[idx].mainFiles = fileList.slice(-1);
       return next;
     });
   };
 
-  // Biến thể - album
   const onChangeVariantAlbum = (idx: number, fileList: UploadFile[]) => {
     setVariants((prev) => {
       const next = [...prev];
@@ -272,7 +285,6 @@ export default function ProductCreate() {
     });
   };
 
-  /* =================== Preview =================== */
   const onPreviewFile = async (file: UploadFile) => {
     let src = file.url as string | undefined;
     if (!src && file.originFileObj) src = await getBase64(file.originFileObj as File);
@@ -282,7 +294,6 @@ export default function ProductCreate() {
     setPreviewOpen(true);
   };
 
-  /* =================== Submit (multipart/form-data) =================== */
   const onFinish = async (values: any) => {
     try {
       setSaving(true);
@@ -305,13 +316,11 @@ export default function ProductCreate() {
       if (values.brand) fd.append("brand", values.brand);
       fd.append("variation_status", variationEnabled ? "1" : "0");
 
-      // Ảnh sản phẩm -> CHỈ 1 ảnh => gửi field 'image'
       const cover = productFile[0]?.originFileObj as RcFile | undefined;
       if (cover) {
         fd.append("image", cover);
       }
 
-      // Biến thể
       if (variationEnabled) {
         variants.forEach((v, i) => {
           if (v.size_id !== null && v.size_id !== undefined) {
@@ -333,13 +342,11 @@ export default function ProductCreate() {
           );
           fd.append(`variants[${i}][is_available]`, v.is_available ? "1" : "0");
 
-          // Ảnh chính biến thể (1 file) -> variants[i][image]
           const mainFile = v.mainFiles[0]?.originFileObj as RcFile | undefined;
           if (mainFile) {
             fd.append(`variants[${i}][image]`, mainFile);
           }
 
-          // Album biến thể (nhiều file) -> variants[i][images][]
           v.albumFiles.forEach((af) => {
             const file = af.originFileObj as RcFile | undefined;
             if (file) fd.append(`variants[${i}][images][]`, file);
@@ -347,12 +354,7 @@ export default function ProductCreate() {
         });
       }
 
-      // POST multipart
-      const res = await raw.post("/admin/products", fd, {
-        headers: {
-          // KHÔNG đặt Content-Type -> để axios tự set multipart boundary
-        },
-      });
+      const res = await raw.post("/admin/products", fd);
 
       const product = res.data?.data ?? res.data;
       message.success("Tạo sản phẩm thành công");
@@ -365,7 +367,6 @@ export default function ProductCreate() {
     }
   };
 
-  /* =================== Render =================== */
   return (
     <div className="p-4">
       <Row gutter={[16, 16]}>
@@ -379,16 +380,14 @@ export default function ProductCreate() {
           onFinish={onFinish}
           initialValues={{
             name: "",
-            sku: "", // seed ở useEffect
+            sku: "",
             category_id: undefined,
             origin: "",
             brand: "",
             description: "",
           }}
         >
-          {/* --- Basic info --- */}
           <Row gutter={[16, 16]} align="top">
-            {/* Trái: Ảnh sản phẩm (CHỈ 1) */}
             <Col xs={24} md={8}>
               <Form.Item label="Ảnh sản phẩm (1 ảnh)">
                 <Upload
@@ -410,12 +409,11 @@ export default function ProductCreate() {
                   )}
                 </Upload>
                 <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                  Chỉ chọn 1 ảnh; tối đa 8MB. Ảnh sẽ được lưu vào <code>storage/img/product</code>.
+                  Chỉ chọn 1 ảnh; tối đa 8MB
                 </div>
               </Form.Item>
             </Col>
 
-            {/* Phải: Thông tin cơ bản */}
             <Col xs={24} md={16}>
               <Row gutter={[16, 0]}>
                 <Col xs={24} md={12}>
@@ -428,14 +426,12 @@ export default function ProductCreate() {
                   </Form.Item>
                 </Col>
 
-                {/* SKU: auto random, không cho sửa/copy */}
                 <Col xs={24} md={12}>
                   <Form.Item label="SKU (tự tạo)" name="sku" tooltip="Tự động 9 ký tự: A–Z, 0–9">
                     <Input {...noCopyProps} maxLength={9} placeholder="SKU tự động" />
                   </Form.Item>
                 </Col>
 
-                {/* Danh mục */}
                 <Col xs={24} md={12}>
                   <Form.Item
                     label="Danh mục"
@@ -481,7 +477,6 @@ export default function ProductCreate() {
             </Col>
           </Row>
 
-          {/* --- Variants --- */}
           <Divider plain orientation="left">Biến thể</Divider>
           <Space align="center" size="middle" style={{ marginBottom: 12 }}>
             <Text>Kích hoạt biến thể</Text>
@@ -492,8 +487,11 @@ export default function ProductCreate() {
             <div className="variant-list">
               {variants.map((v, idx) => (
                 <Card key={idx} className="mb-3 rounded-xl shadow-xs" size="small">
+                  <div style={{ marginBottom: 12, fontWeight: 600, color: "#1890ff" }}>
+                    Biến thể #{idx + 1}
+                  </div>
+                  
                   <Row gutter={[16, 8]}>
-                    {/* Ảnh đại diện biến thể */}
                     <Col xs={24} sm={12} md={6}>
                       <Form.Item label="Ảnh đại diện biến thể (1 ảnh)">
                         <Upload
@@ -517,7 +515,6 @@ export default function ProductCreate() {
                       </Form.Item>
                     </Col>
 
-                    {/* Size */}
                     <Col xs={24} sm={12} md={6}>
                       <Form.Item label="Size">
                         <Space.Compact style={{ width: "100%" }}>
@@ -536,7 +533,6 @@ export default function ProductCreate() {
                       </Form.Item>
                     </Col>
 
-                    {/* Color */}
                     <Col xs={24} sm={12} md={6}>
                       <Form.Item label="Màu">
                         <Space.Compact style={{ width: "100%" }}>
@@ -555,14 +551,12 @@ export default function ProductCreate() {
                       </Form.Item>
                     </Col>
 
-                    {/* SKU biến thể */}
                     <Col xs={24} sm={12} md={6}>
                       <Form.Item label="SKU biến thể">
                         <Input {...noCopyProps} maxLength={9} value={v.sku} />
                       </Form.Item>
                     </Col>
 
-                    {/* Tồn kho */}
                     <Col xs={24} sm={12} md={6}>
                       <Form.Item label="Tồn kho">
                         <InputNumber
@@ -574,7 +568,6 @@ export default function ProductCreate() {
                       </Form.Item>
                     </Col>
 
-                    {/* Giá */}
                     <Col xs={24} sm={12} md={6}>
                       <Form.Item label="Giá">
                         <InputNumber
@@ -588,7 +581,6 @@ export default function ProductCreate() {
                       </Form.Item>
                     </Col>
 
-                    {/* Giá KM */}
                     <Col xs={24} sm={12} md={6}>
                       <Form.Item label="Giá KM">
                         <InputNumber
@@ -606,7 +598,6 @@ export default function ProductCreate() {
                       </Form.Item>
                     </Col>
 
-                    {/* Trạng thái */}
                     <Col xs={24} sm={12} md={6}>
                       <Form.Item label="Trạng thái">
                         <Switch
@@ -616,7 +607,6 @@ export default function ProductCreate() {
                       </Form.Item>
                     </Col>
 
-                    {/* Album ảnh phụ */}
                     <Col span={24}>
                       <Form.Item label="Ảnh phụ của biến thể (nhiều ảnh)">
                         <Upload
@@ -643,6 +633,13 @@ export default function ProductCreate() {
                     <Button danger icon={<DeleteOutlined />} onClick={() => removeVariant(idx)}>
                       Xoá biến thể
                     </Button>
+                    <Button 
+                      type="dashed" 
+                      icon={<CopyOutlined />} 
+                      onClick={() => duplicateVariant(idx)}
+                    >
+                      Sao chép biến thể
+                    </Button>
                   </Space>
                 </Card>
               ))}
@@ -652,7 +649,7 @@ export default function ProductCreate() {
               </Button>
             </div>
           ) : (
-            <Text type="secondary">Bật “Kích hoạt biến thể” để thêm size/màu; mỗi biến thể có 1 ảnh chính và nhiều ảnh phụ.</Text>
+            <Text type="secondary">Bật "Kích hoạt biến thể" để thêm size/màu</Text>
           )}
 
           <Divider />
@@ -665,7 +662,6 @@ export default function ProductCreate() {
         </Form>
       </Row>
 
-      {/* Modal: Category */}
       <Modal
         title="Thêm danh mục"
         open={catModalOpen}
@@ -692,9 +688,8 @@ export default function ProductCreate() {
         <Input placeholder="Tên danh mục" value={catName} onChange={(e) => setCatName(e.target.value)} />
       </Modal>
 
-      {/* Modal: Attribute */}
       <Modal
-        title={attrModalOpen === "size" ? "Thêm Size (attributes)" : "Thêm Color (attributes)"}
+        title={attrModalOpen === "size" ? "Thêm Size" : "Thêm Color"}
         open={!!attrModalOpen}
         onOk={async () => {
           if (!attrValue.trim() || !attrModalOpen) return message.warning("Nhập giá trị");
@@ -722,21 +717,17 @@ export default function ProductCreate() {
         />
       </Modal>
 
-      {/* Modal: Preview ảnh lớn */}
       <Modal open={previewOpen} title={previewTitle} footer={null} onCancel={() => setPreviewOpen(false)} width={900}>
         <img alt={previewTitle} src={previewSrc} style={{ width: "100%", maxHeight: "75vh", objectFit: "contain" }} />
       </Modal>
 
-      {/* ===== CSS nhúng ===== */}
       <style>{`
-        /* Ảnh sản phẩm */
         .upload-cover .ant-upload-list-picture-card .ant-upload-list-item,
         .upload-cover .ant-upload.ant-upload-select-picture-card {
           width: 160px;
           height: 160px;
         }
 
-        /* Ảnh biến thể & album */
         .upload-variant-main .ant-upload-list-picture-card .ant-upload-list-item,
         .upload-variant-main .ant-upload.ant-upload-select-picture-card,
         .upload-variant-album .ant-upload-list-picture-card .ant-upload-list-item,
@@ -745,7 +736,6 @@ export default function ProductCreate() {
           height: 120px;
         }
 
-        /* Khung upload đẹp, nổi bật */
         .pretty-upload .ant-upload-select,
         .pretty-upload .ant-upload-list-picture-card .ant-upload-list-item {
           border-radius: 12px;
@@ -756,15 +746,24 @@ export default function ProductCreate() {
           transition: all .2s ease;
         }
         .pretty-upload .ant-upload.ant-upload-select-picture-card:hover {
-          border-color: #000;
-          box-shadow: 0 4px 18px rgba(0, 0, 0, .08);
+          border-color: #1890ff;
+          box-shadow: 0 4px 18px rgba(24, 144, 255, .15);
           transform: translateY(-1px);
         }
 
-        /* Card biến thể */
         .mb-3 { margin-bottom: 12px; }
         .rounded-xl { border-radius: 12px; }
         .shadow-xs { box-shadow: 0 1px 6px rgba(0,0,0,.05); }
+
+        @keyframes highlight-card {
+          0%, 100% {
+            box-shadow: 0 1px 6px rgba(0,0,0,.05);
+          }
+          50% {
+            box-shadow: 0 4px 20px rgba(24, 144, 255, .3);
+            transform: scale(1.01);
+          }
+        }
       `}</style>
     </div>
   );

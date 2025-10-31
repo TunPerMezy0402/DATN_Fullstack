@@ -19,7 +19,7 @@ import {
   fetchProducts,
   parseImages,
   type Product,
-} from "../../../api/productApi";
+} from "../../../../api/productApi";
 import axios from "axios";
 
 const { useBreakpoint } = Grid;
@@ -340,19 +340,6 @@ const ProductsPage: React.FC = () => {
               />
             </Space>
 
-            {/* Thương hiệu */}
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text strong>Thương hiệu</Text>
-              <Select
-                allowClear
-                showSearch
-                placeholder="Chọn thương hiệu"
-                options={BRAND_OPTIONS.map((b) => ({ label: b, value: b }))}
-                value={brand ?? undefined}
-                onChange={(v) => setBrand(v ?? null)}
-              />
-            </Space>
-
             {/* Size */}
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <Text strong>Size</Text>
@@ -377,17 +364,6 @@ const ProductsPage: React.FC = () => {
                 value={colorText ?? undefined}
                 onChange={(v) => setColorText(v ?? null)}
               />
-            </Space>
-
-            {/* Trạng thái bán */}
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text strong>Trạng thái bán</Text>
-              <Radio.Group value={sellStatus} onChange={(e) => setSellStatus(e.target.value)}>
-                <Space wrap>
-                  <Radio.Button value="all">Tất cả</Radio.Button>
-                  <Radio.Button value="selling">Đang bán</Radio.Button>
-                </Space>
-              </Radio.Group>
             </Space>
           </Space>
         </Card>
@@ -454,7 +430,18 @@ const ProductsPage: React.FC = () => {
                     >
                       <Space direction="vertical" size={8} style={{ width: "100%" }}>
                         <Text strong>{p.name}</Text>
-
+                          {(p as any).brand && (
+                            <Tag
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                navigate(`/products/${p.id}`);
+                              }}
+                              style={{ cursor: "pointer" }}
+                            >
+                              {(p as any).brand}
+                            </Tag>
+                          )}
                         <Space size={8} align="baseline">
                           <Title level={5} style={{ margin: 0 }}>
                             {showPrice !== null ? `${fmtVND(showPrice)} đ` : "—"}
@@ -466,56 +453,6 @@ const ProductsPage: React.FC = () => {
                           )}
                         </Space>
 
-                        {(p as any).brand && (
-                          <Tag
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              navigate(`/products/${p.id}`);
-                            }}
-                            style={{ cursor: "pointer" }}
-                          >
-                            {(p as any).brand}
-                          </Tag>
-                        )}
-
-                        {sList.length > 0 && (
-                          <Space wrap>
-                            {sList.map((s) => (
-                              <Tag
-                                key={`${p.id}-s-${s}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  navigate(`/products/${p.id}`);
-                                }}
-                                style={{ cursor: "pointer" }}
-                                color={undefined}
-                              >
-                                {s}
-                              </Tag>
-                            ))}
-                          </Space>
-                        )}
-
-                        {cList.length > 0 && (
-                          <Space wrap>
-                            {cList.map((c) => (
-                              <Tag
-                                key={`${p.id}-c-${c}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  navigate(`/products/${p.id}`);
-                                }}
-                                style={{ cursor: "pointer" }}
-                                color={undefined}
-                              >
-                                {c}
-                              </Tag>
-                            ))}
-                          </Space>
-                        )}
                       </Space>
                     </Card>
                   </Badge.Ribbon>

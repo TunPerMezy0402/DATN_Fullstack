@@ -153,7 +153,7 @@ const Login: React.FC = () => {
       if (userRole === 'admin') {
         navigate('/admin/dashboard');
       } else {
-        navigate('/dashboard');
+        navigate('/');
       }
     } catch (error: any) {
       console.error('Login error:', error);

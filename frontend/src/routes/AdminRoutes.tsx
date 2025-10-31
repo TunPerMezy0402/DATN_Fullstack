@@ -25,6 +25,9 @@ import ProductCreate from '../pages/admin/products/ProductCreate';
 import CouponList from '../pages/admin/coupons/CouponList';
 
 import OrderList from '../pages/admin/orders/OrderList';
+import OrderDetail from '../pages/admin/orders/OrderDetail';
+import OrderEdit from '../pages/admin/orders/OrderEdit';
+
 
 
 
@@ -62,6 +65,9 @@ const AdminRoutes: React.FC = () => {
         <Route path="coupons" element={<CouponList />} />
 
         <Route path="orders" element={<OrderList />} />
+        <Route path="orders/:id" element={<OrderDetail />} />
+        <Route path="orders/:id/edit" element={<OrderEdit />} />
+
 
 
       </Route>

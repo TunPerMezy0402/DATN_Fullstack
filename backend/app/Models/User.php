@@ -23,9 +23,9 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'image',
         'google_id',
         'phone',
-        'address',
         'status',
         'role',
     ];
@@ -54,8 +54,15 @@ class User extends Authenticatable
     }
 
     public function likedProducts()
-{
-    return $this->belongsToMany(Product::class, 'user_likes', 'user_id', 'product_id');
-}
+    {
+        return $this->belongsToMany(Product::class, 'user_likes', 'user_id', 'product_id');
+    }
+    
+    public function addresses()
+    {
+        return $this->hasMany(AddressBook::class, 'user_id');
+    }
+
+    
 
 }

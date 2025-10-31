@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\client\LikeController;
 use App\Http\Controllers\Api\client\CartClientController;
 use App\Http\Controllers\Api\client\OrderClientController;
 use App\Http\Controllers\Api\client\CategoryClientController;
+use App\Http\Controllers\Api\client\UserProfileController;
 
 // ==== ADMIN CONTROLLERS ====
 use App\Http\Controllers\Api\admin\AdminController;
@@ -26,7 +27,6 @@ use App\Http\Controllers\Api\admin\ProductVariantController;
 /* use App\Http\Controllers\Api\admin\ProductReviewController; */
 use App\Http\Controllers\Api\admin\SupportTicketController;
 use App\Http\Controllers\Api\admin\WishlistController;
-use App\Http\Controllers\Api\admin\CartController;
 use App\Http\Controllers\Api\admin\AddressBookController;
 use App\Http\Controllers\Api\admin\CouponController;
 use App\Http\Controllers\Api\admin\OrderController;
@@ -35,7 +35,7 @@ use App\Http\Controllers\Api\admin\OrderController;
 |--------------------------------------------------------------------------
 | API Routes
 |--------------------------------------------------------------------------
-| Phiên bản refactor chuẩn RESTful – Laravel 10+
+| Phiên bản refactor chuẩn RESTful – Laravel 12+
 | Tách biệt rõ client / admin / upload / auth
 |--------------------------------------------------------------------------
 */
@@ -54,7 +54,6 @@ Route::prefix('auth')->group(function () {
     });
 });
 
-
 // =====================================================================
 // 📤 UPLOAD ROUTES
 // =====================================================================
@@ -65,26 +64,40 @@ Route::prefix('uploads')->middleware('auth:sanctum')->group(function () {
 });
 
 // =====================================================================
-
-    Route::get('/', [HomeClientController::class, 'index']);
-
-    Route::get('products', [ProductClientController::class, 'getAllProducts']);
-    Route::get('products/{id}', [ProductClientController::class, 'getProductDetail']);
-
-// 🛍️ CLIENT ROUTES
+// 🌐 CLIENT ROUTES
 // =====================================================================
-Route::prefix('client')->group(function () {
 
+// Trang chủ
+Route::get('/', [HomeClientController::class, 'index']);
+
+// Sản phẩm
+Route::get('products', [ProductClientController::class, 'getAllProducts']);
+Route::get('products/{id}', [ProductClientController::class, 'getProductDetail']);
+
+
+// Các route client chung
+Route::middleware('auth:sanctum')->group(function () {
+
+    Route::get('/profile', [UserProfileController::class, 'show']);
+    Route::put('/profile', [UserProfileController::class, 'update']);
+    Route::post('/profile/address', [UserProfileController::class, 'addAddress']);
+    Route::put('/profile/address/{id}', [UserProfileController::class, 'updateAddress']);
+    Route::delete('/profile/address/{id}', [UserProfileController::class, 'deleteAddress']);
+    Route::post('/profile/change-password', [UserProfileController::class, 'changePassword']);
+
+
+    // Like sản phẩm
     Route::post('products/{id}/like', [LikeController::class, 'like']);
     Route::delete('products/{id}/unlike', [LikeController::class, 'unlike']);
     Route::get('products/{id}/is-liked', [LikeController::class, 'isLiked']);
     Route::get('user/liked-products', [LikeController::class, 'likedProducts']);
 
-    // 🗂️ Danh mục
+
+    // Danh mục
     Route::get('categories', [CategoryClientController::class, 'getCategoriesWithProducts']);
     Route::get('categories/{id}', [CategoryClientController::class, 'getCategoryProducts']);
 
-    // 🛒 Giỏ hàng
+    // Giỏ hàng
     Route::prefix('cart')->group(function () {
         Route::get('/', [CartClientController::class, 'index']);
         Route::post('/add', [CartClientController::class, 'add']);
@@ -93,14 +106,14 @@ Route::prefix('client')->group(function () {
         Route::delete('/clear', [CartClientController::class, 'clear']);
     });
 
-    // 📦 Đơn hàng (chỉ user đăng nhập)
+    // Đơn hàng (cần login)
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('orders', [OrderClientController::class, 'index']);
         Route::get('orders/{id}', [OrderClientController::class, 'show']);
         Route::post('orders', [OrderClientController::class, 'store']);
     });
-});
 
+});
 
 // =====================================================================
 // 🧑‍💼 ADMIN ROUTES
@@ -111,28 +124,24 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('admin', [AdminController::class, 'index']);
 });
 
-
-// Macro: chuẩn CRUD Admin Resource
+// Macro chuẩn CRUD cho Admin Resources
 Route::macro('adminApiResource', function ($prefix, $controller) {
     Route::prefix($prefix)
         ->middleware(['auth:sanctum', 'admin'])
         ->name(str_replace('/', '.', $prefix) . '.')
         ->group(function () use ($controller) {
             Route::get('/', [$controller, 'index']);                  // Danh sách
-            Route::get('/trash', [$controller, 'trash']);              // Danh sách đã xóa
-            Route::get('/{id}', [$controller, 'show']);               // Chi tiết
-            Route::post('/', [$controller, 'store']);                 // Tạo mới
+            Route::get('/trash', [$controller, 'trash']);             // Danh sách đã xóa
+            Route::get('/{id}', [$controller, 'show']);              // Chi tiết
+            Route::post('/', [$controller, 'store']);                // Tạo mới
             Route::match(['put', 'patch'], '/{id}', [$controller, 'update']); // Cập nhật
-            Route::delete('/{id}', [$controller, 'destroy']);         // Xóa mềm
-            Route::post('/{id}/restore', [$controller, 'restore']);   // Phục hồi
+            Route::delete('/{id}', [$controller, 'destroy']);        // Xóa mềm
+            Route::post('/{id}/restore', [$controller, 'restore']);  // Phục hồi
             Route::delete('/{id}/force-delete', [$controller, 'forceDelete']); // Xóa vĩnh viễn
         });
 });
 
-
-// =====================================================================
-// 🧾 ADMIN RESOURCES
-// =====================================================================
+// Admin resources
 Route::adminApiResource('admin/users', UserController::class);
 Route::adminApiResource('admin/products', ProductController::class);
 Route::adminApiResource('admin/categories', CategoryController::class);

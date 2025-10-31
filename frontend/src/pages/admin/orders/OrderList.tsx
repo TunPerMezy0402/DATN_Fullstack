@@ -1,251 +1,132 @@
 import React, { useEffect, useState } from "react";
+import { Table, Badge, Button, Space, Typography, message } from "antd";
+import { EyeOutlined, EditOutlined } from "@ant-design/icons";
 import axios from "axios";
-import { Loader2, Eye, RotateCcw, Edit } from "lucide-react";
+import type { ColumnsType } from "antd/es/table";
+import { useNavigate } from "react-router-dom";
 
-// ==============================
-// 🧩 Kiểu dữ liệu đơn hàng
-// ==============================
-interface OrderItem {
-  id: number;
-  order_id: number;
-  product_id: number;
-  variant_id: number;
-  product_name?: string | null;
-  product_image?: string | null;
-  size?: string | null;
-  color?: string | null;
-  quantity: number;
-  price: string | number;
-}
+const { Title } = Typography;
 
 interface Order {
   id: number;
-  sku?: string;
-  user_id: number;
-  total_amount?: string | number | null;
-  discount_amount?: string | number | null;
-  final_amount?: string | number | null;
-  status: "pending" | "completed" | "cancelled" | string;
-  payment_status?: string;
-  created_at: string;
-  items: OrderItem[];
+  sku: string;
+  user?: { id?: number; name?: string; phone?: string; email?: string };
+  total_amount?: number | null;
+  status: string;
+  payment_status: string;
 }
 
-// ==============================
-// ⚙️ Cấu hình API
-// ==============================
-const API = axios.create({
-  baseURL: "http://127.0.0.1:8000/api",
-  headers: { Accept: "application/json" },
-});
+const API_URL = "http://127.0.0.1:8000/api";
+const token = localStorage.getItem("access_token") || "";
 
-// Thêm token tự động vào mọi request
-API.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+const statusMap: Record<string, { text: string; color: string }> = {
+  pending: { text: "Đang chờ", color: "gold" },
+  confirmed: { text: "Xác nhận", color: "blue" },
+  shipped: { text: "Đang giao", color: "purple" },
+  delivered: { text: "Đã giao", color: "cyan" },
+  completed: { text: "Hoàn tất", color: "green" },
+  cancelled: { text: "Đã hủy", color: "red" },
+  returned: { text: "Trả lại", color: "orange" },
+};
 
-// ==============================
-// 🧾 Component OrderList
-// ==============================
+const paymentMap: Record<string, { text: string; color: string }> = {
+  unpaid: { text: "Chưa thanh toán", color: "red" },
+  paid: { text: "Đã thanh toán", color: "green" },
+  refunded: { text: "Đã hoàn tiền", color: "orange" },
+  failed: { text: "Thanh toán thất bại", color: "volcano" },
+};
+
 const OrderList: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [pagination, setPagination] = useState({
-    current_page: 1,
-    last_page: 1,
-    per_page: 10,
-    total: 0,
-  });
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-  // ==============================
-  // 📦 Lấy danh sách đơn hàng
-  // ==============================
-  const fetchOrders = async (page = 1) => {
+  const fetchOrders = async () => {
     setLoading(true);
-    setError(null);
-
     try {
-      const res = await API.get(`/admin/orders-admin?page=${page}`);
-      const data = res.data;
-
-      if (data.data && Array.isArray(data.data)) {
-        setOrders(data.data);
-        setPagination({
-          current_page: data.current_page,
-          last_page: data.last_page,
-          per_page: data.per_page,
-          total: data.total,
-        });
-      } else {
-        setOrders([]);
-        setPagination({ current_page: 1, last_page: 1, per_page: 10, total: 0 });
-      }
-    } catch (err: any) {
-      console.error("❌ Lỗi khi gọi API:", err);
-      if (err.response?.status === 401) setError("Bạn chưa đăng nhập hoặc token đã hết hạn.");
-      else if (err.response?.status === 403) setError("Bạn không có quyền truy cập trang này.");
-      else setError("Không thể tải danh sách đơn hàng. Vui lòng thử lại.");
+      const res = await axios.get(`${API_URL}/admin/orders-admin`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      console.log("API Response:", res.data);
+      console.log("Orders data:", res.data.data);
+      setOrders(res.data.data || []);
+    } catch (err) {
+      message.error("Không tải được danh sách đơn hàng");
+      console.error("Error fetching orders:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  // ==============================
-  // ⚡ Gọi API khi load trang
-  // ==============================
   useEffect(() => {
     fetchOrders();
   }, []);
 
-  // ==============================
-  // 💡 JSX hiển thị
-  // ==============================
-  if (loading)
-    return (
-      <div className="flex justify-center items-center py-20 text-gray-500">
-        <Loader2 className="animate-spin mr-2" /> Đang tải danh sách đơn hàng...
-      </div>
-    );
-
-  if (error)
-    return (
-      <div className="text-center text-red-500 py-20">
-        {error}
-        <div className="mt-3 flex justify-center gap-2">
-          <button
-            className="px-4 py-2 border rounded text-sm hover:bg-gray-100"
-            onClick={() => fetchOrders(pagination.current_page)}
-          >
-            Thử lại
-          </button>
-          {error.includes("token") && (
-            <button
-              className="px-4 py-2 border rounded text-sm hover:bg-gray-100"
-              onClick={() => (window.location.href = "/login")}
-            >
-              Đăng nhập lại
-            </button>
-          )}
-        </div>
-      </div>
-    );
+  const columns: ColumnsType<Order> = [
+    { title: "ID", dataIndex: "id", key: "id", width: 60, align: "center" },
+    { title: "SKU", dataIndex: "sku", key: "sku", width: 120 },
+    {
+      title: "Tên khách",
+      key: "name",
+      render: (_, record) => record.user?.name || `#${record.id}`,
+    },
+    {
+      title: "SĐT",
+      key: "phone",
+      render: (_, record) => record.user?.phone || "-",
+    },
+    {
+      title: "Tổng tiền",
+      key: "total",
+      align: "right",
+      render: (_, record) => (record.total_amount ?? 0).toLocaleString("vi-VN") + "₫",
+    },
+    {
+      title: "Trạng thái",
+      key: "status",
+      render: (_, record) => {
+        const info = statusMap[record.status] || { text: record.status, color: "default" };
+        return <Badge color={info.color} text={info.text} />;
+      },
+    },
+    {
+      title: "Thanh toán",
+      key: "payment_status",
+      render: (_, record) => {
+        const info = paymentMap[record.payment_status] || {
+          text: record.payment_status,
+          color: "default",
+        };
+        return <Badge color={info.color} text={info.text} />;
+      },
+    },
+    {
+      title: "Thao tác",
+      key: "actions",
+      render: (_, record) => (
+        <Space>
+          <Button icon={<EyeOutlined />} onClick={() => navigate(`/admin/orders/${record.id}`)}>
+            Chi tiết
+          </Button>
+          <Button icon={<EditOutlined />} onClick={() => navigate(`/admin/orders/${record.id}/edit`)}>
+            Cập nhật
+          </Button>
+        </Space>
+      ),
+    },
+  ];
 
   return (
-    <div className="p-6">
-      <div className="bg-white shadow rounded-lg mb-4">
-        {/* Header */}
-        <div className="flex justify-between items-center border-b px-4 py-3">
-          <h2 className="text-xl font-semibold">📦 Quản lý đơn hàng</h2>
-          <button
-            className="px-3 py-2 border rounded hover:bg-gray-50 flex items-center text-sm"
-            onClick={() => fetchOrders(pagination.current_page)}
-          >
-            <RotateCcw className="w-4 h-4 mr-2" /> Làm mới
-          </button>
-        </div>
-
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm border-collapse">
-            <thead className="bg-gray-100 text-gray-700 border-b">
-              <tr>
-                <th className="py-2 px-3 text-left">Mã đơn</th>
-                <th className="py-2 px-3 text-left">Người dùng</th>
-                <th className="py-2 px-3 text-right">Tổng tiền</th>
-                <th className="py-2 px-3 text-right">Giảm giá</th>
-                <th className="py-2 px-3 text-right">Thanh toán</th>
-                <th className="py-2 px-3 text-center">Trạng thái</th>
-                <th className="py-2 px-3 text-center">Thao tác</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {orders.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-6 text-gray-500 italic">
-                    Chưa có đơn hàng nào.
-                  </td>
-                </tr>
-              ) : (
-                orders.map((order) => (
-                  <tr key={order.id} className="border-b hover:bg-gray-50 transition">
-                    <td className="py-2 px-3 font-medium text-gray-800">
-                      {order.sku || `#${order.id}`}
-                    </td>
-                    <td className="py-2 px-3 text-gray-700">#{order.user_id}</td>
-                    <td className="py-2 px-3 text-right">
-                      {Number(order.total_amount || 0).toLocaleString()}₫
-                    </td>
-                    <td className="py-2 px-3 text-right text-red-500">
-                      -{Number(order.discount_amount || 0).toLocaleString()}₫
-                    </td>
-                    <td className="py-2 px-3 text-right font-semibold">
-                      {Number(order.final_amount || 0).toLocaleString()}₫
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-xs font-medium ${
-                          order.status === "completed"
-                            ? "bg-green-100 text-green-700"
-                            : order.status === "cancelled"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-yellow-100 text-yellow-700"
-                        }`}
-                      >
-                        {order.status}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-center">
-                      <div className="flex justify-center gap-2">
-                        <button
-                          className="p-2 border rounded hover:bg-gray-100"
-                          onClick={() =>
-                            (window.location.href = `/admin/orders/${order.id}`)
-                          }
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          className="p-2 border rounded hover:bg-blue-50 text-blue-600"
-                          onClick={() =>
-                            (window.location.href = `/admin/orders/${order.id}/edit`)
-                          }
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        <div className="flex justify-between items-center mt-4">
-          <button
-            className="px-3 py-1 border rounded disabled:opacity-50"
-            disabled={pagination.current_page <= 1}
-            onClick={() => fetchOrders(pagination.current_page - 1)}
-          >
-            Trước
-          </button>
-          <span>
-            Trang {pagination.current_page} / {pagination.last_page}
-          </span>
-          <button
-            className="px-3 py-1 border rounded disabled:opacity-50"
-            disabled={pagination.current_page >= pagination.last_page}
-            onClick={() => fetchOrders(pagination.current_page + 1)}
-          >
-            Tiếp
-          </button>
-        </div>
-      </div>
+    <div style={{ padding: 24, background: "#f0f2f5", minHeight: "100vh" }}>
+      <Title level={3}>Danh sách đơn hàng</Title>
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={orders}
+        loading={loading}
+        pagination={{ pageSize: 10 }}
+        scroll={{ x: 1000 }}
+      />
     </div>
   );
 };

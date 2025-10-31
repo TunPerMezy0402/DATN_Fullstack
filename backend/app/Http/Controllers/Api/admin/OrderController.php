@@ -11,12 +11,9 @@ use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
-    /**
-     * Danh sách đơn hàng
-     */
     public function index(Request $request)
     {
-        $query = Order::with(['items', 'shipping', 'coupon'])
+        $query = Order::with(['user:id,name,phone,email', 'items', 'shipping', 'coupon'])
             ->orderByDesc('created_at');
 
         if ($request->has('status')) {
@@ -26,9 +23,6 @@ class OrderController extends Controller
         return response()->json($query->paginate(10));
     }
 
-    /**
-     * Danh sách đã xóa
-     */
     public function trash()
     {
         $orders = Order::onlyTrashed()
@@ -38,69 +32,74 @@ class OrderController extends Controller
 
         return response()->json($orders);
     }
+ public function show($id)
+ {
+     $order = Order::withTrashed()
+         ->with([
+             'user',
+             'items',
+             'shipping',
+             'coupon',
+             'paymentTransactions',
+             'cancelLogs',
+             'returnRequests'
+         ])
+         ->findOrFail($id);
 
- /**
- * Xem chi tiết đơn hàng (đầy đủ thông tin)
- */
-public function show($id)
-{
-    $order = Order::withTrashed()
-        ->with([
-            'items',                 // chi tiết sản phẩm đã mua
-            'shipping',              // đơn vị vận chuyển
-            'coupon',                // mã giảm giá
-            'paymentTransactions',   // thanh toán
-            'cancelLogs',            // lịch sử hủy
-            'returnRequests'         // yêu cầu trả hàng
-        ])
-        ->findOrFail($id);
-
-    return response()->json([
-        'order' => [
-            'id' => $order->id,
-            'sku' => $order->sku,
-            'user_id' => $order->user_id,
-            'status' => $order->status,
-            'payment_status' => $order->payment_status,
-            'total_amount' => $order->total_amount,
-            'discount_amount' => $order->discount_amount,
-            'final_amount' => $order->final_amount,
-            'note' => $order->note,
-            'created_at' => $order->created_at,
-            'updated_at' => $order->updated_at,
-        ],
-        'coupon' => $order->coupon,
-        'items' => $order->items->map(function ($item) {
-            return [
-                'product_id' => $item->product_id,
-                'product_name' => $item->product_name,
-                'product_image' => $item->product_image,
-                'variant_id' => $item->variant_id,
-                'size' => $item->size,
-                'color' => $item->color,
-                'quantity' => $item->quantity,
-                'price' => $item->price,
-                'subtotal' => $item->quantity * $item->price,
-            ];
-        }),
-        'shipping' => $order->shipping ? [
-            'shipping_name' => $order->shipping->shipping_name,
-            'shipping_phone' => $order->shipping->shipping_phone,
-            'shipping_address_line' => $order->shipping->shipping_address_line,
-            'shipping_city' => $order->shipping->shipping_city,
-            'shipping_province' => $order->shipping->shipping_province,
-            'shipping_postal_code' => $order->shipping->shipping_postal_code,
-            'carrier' => $order->shipping->carrier,
-            'tracking_number' => $order->shipping->tracking_number,
-            'shipping_status' => $order->shipping->shipping_status,
-            'estimated_delivery' => $order->shipping->estimated_delivery,
-            'delivered_at' => $order->shipping->delivered_at,
-        ] : null,
-        'payments' => $order->paymentTransactions,
-        'cancel_logs' => $order->cancelLogs,
-        'return_requests' => $order->returnRequests,
-    ]);
-}
+     return response()->json([
+         'order' => [
+             'id' => $order->id,
+             'sku' => $order->sku,
+             'user_id' => $order->user_id,
+             'status' => $order->status,
+             'payment_status' => $order->payment_status,
+             'total_amount' => $order->total_amount,
+             'discount_amount' => $order->discount_amount,
+             'final_amount' => $order->final_amount,
+             'note' => $order->note,
+             'created_at' => $order->created_at,
+             'updated_at' => $order->updated_at,
+         ],
+         'user' => $order->user ? [
+             'id' => $order->user->id,
+             'name' => $order->user->name,
+             'phone' => $order->user->phone,
+             'email' => $order->user->email,
+         ] : null,
+         'coupon' => $order->coupon,
+         'items' => $order->items->map(function ($item) {
+             $qty = (int) ($item->quantity ?? 0);
+             $price = (float) ($item->price ?? 0);
+             return [
+                 'product_id' => $item->product_id,
+                 'product_name' => $item->product_name ?? '',
+                 'product_image' => $item->product_image ?? null,
+                 'variant_id' => $item->variant_id ?? null,
+                 'size' => $item->size ?? null,
+                 'color' => $item->color ?? null,
+                 'quantity' => $qty,
+                 'price' => $price,
+                 'subtotal' => $qty * $price,
+             ];
+         }),
+         'shipping' => $order->shipping ? [
+             'shipping_name' => $order->shipping->shipping_name ?? null,
+             'shipping_phone' => $order->shipping->shipping_phone ?? null,
+             'shipping_address_line' => $order->shipping->shipping_address_line ?? null,
+             'shipping_city' => $order->shipping->shipping_city ?? null,
+             'shipping_province' => $order->shipping->shipping_province ?? null,
+             'shipping_postal_code' => $order->shipping->shipping_postal_code ?? null,
+             'carrier' => $order->shipping->carrier ?? null,
+             'tracking_number' => $order->shipping->tracking_number ?? null,
+             'shipping_status' => $order->shipping->shipping_status ?? null,
+             'estimated_delivery' => $order->shipping->estimated_delivery ?? null,
+             'delivered_at' => $order->shipping->delivered_at ?? null,
+         ] : null,
+         'payments' => $order->paymentTransactions,
+         'cancel_logs' => $order->cancelLogs,
+         'return_requests' => $order->returnRequests,
+     ]);
+ }
 
     public function update(Request $request, $id)
     {
@@ -114,13 +113,11 @@ public function show($id)
 
         DB::beginTransaction();
         try {
-            // Cập nhật trạng thái đơn hàng
             $order->update(array_filter([
                 'status' => $validated['status'] ?? $order->status,
                 'payment_status' => $validated['payment_status'] ?? $order->payment_status,
             ]));
 
-            // Nếu có thông tin shipping → thêm hoặc cập nhật
             if (!empty($validated['shipping'])) {
                 $shippingData = $validated['shipping'];
 
