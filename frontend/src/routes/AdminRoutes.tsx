@@ -24,9 +24,12 @@ import ProductCreate from '../pages/admin/products/ProductCreate';
 
 import CouponList from '../pages/admin/coupons/CouponList';
 
+
 import BannerList from "../pages/admin/banner/BannerList";
 import BannerAdd from "../pages/admin/banner/BannerAdd";
 import BannerEdit from "../pages/admin/banner/BannerEdit";
+
+import OrderList from '../pages/admin/orders/OrderList';
 
 
 
@@ -61,10 +64,12 @@ const AdminRoutes: React.FC = () => {
 
         <Route path="coupons" element={<CouponList />} />
 
-         <Route path="/banner" element={<BannerList />} />
+
+        <Route path="/banner" element={<BannerList />} />
         <Route path="/banner/add/:bannerId" element={<BannerAdd />} />
         <Route path="/banner/edit/:id" element={<BannerEdit />} />
 
+        <Route path="orders" element={<OrderList />} />
       </Route>
     </Routes>
   );

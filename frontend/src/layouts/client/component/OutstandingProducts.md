@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+<!-- import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../../../api/api";
 
@@ -30,7 +30,6 @@ interface Product {
   category: BrandOrCategory | string;
   origin: BrandOrCategory | string;
   created_at: string;
-  image?: string | null;
   min_variant?: Variant | null;
   variants?: Variant[];
 }
@@ -38,7 +37,6 @@ interface Product {
 interface FlatVariant {
   vId: number;
   image: string | null;
-  productImage: string | null;
   regularPrice: number;
   salePrice?: number;
   effectivePrice: number;
@@ -106,7 +104,6 @@ const OutstandingVariants: React.FC = () => {
           all.push({
             vId: v.id,
             image: v.image,
-            productImage: p.image || null,
             regularPrice: goc,
             salePrice: km !== undefined && km < goc ? km : undefined,
             effectivePrice: effective,
@@ -172,7 +169,7 @@ const OutstandingVariants: React.FC = () => {
       return `${IMG_BASE}/${imagePath}`;
     };
 
-    const imageUrl = getImageUrl(v.productImage || v.image);
+    const imageUrl = getImageUrl(v.image);
 
     return (
       <Link
@@ -310,4 +307,4 @@ const OutstandingVariants: React.FC = () => {
   );
 };
 
-export default OutstandingVariants;
+export default OutstandingVariants; -->
