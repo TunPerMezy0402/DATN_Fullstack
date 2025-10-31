@@ -30,7 +30,7 @@ const API_URL =
   (import.meta as any).env?.VITE_API_URL ||
   (import.meta as any).env?.REACT_APP_API_URL ||
   (process as any).env?.REACT_APP_API_URL ||
-  "http://127.0.0.1:8000/api";
+  "http://127.0.0.1:8000/api/products";
 const ASSET_BASE = String(API_URL).replace(/\/api\/?$/, "");
 
 const raw = axios.create({ baseURL: API_URL, timeout: 20000 });
@@ -340,6 +340,19 @@ const ProductsPage: React.FC = () => {
               />
             </Space>
 
+            {/* Thương hiệu */}
+            <Space direction="vertical" size={6} style={{ width: "100%" }}>
+              <Text strong>Thương hiệu</Text>
+              <Select
+                allowClear
+                showSearch
+                placeholder="Chọn thương hiệu"
+                options={BRAND_OPTIONS.map((b) => ({ label: b, value: b }))}
+                value={brand ?? undefined}
+                onChange={(v) => setBrand(v ?? null)}
+              />
+            </Space>
+
             {/* Size */}
             <Space direction="vertical" size={6} style={{ width: "100%" }}>
               <Text strong>Size</Text>
@@ -365,6 +378,7 @@ const ProductsPage: React.FC = () => {
                 onChange={(v) => setColorText(v ?? null)}
               />
             </Space>
+
           </Space>
         </Card>
 
@@ -410,8 +424,8 @@ const ProductsPage: React.FC = () => {
                       discountPct
                         ? `-${discountPct}%`
                         : totalStock > 0
-                        ? `Tồn: ${totalStock}`
-                        : "Hết hàng"
+                          ? `Tồn: ${totalStock}`
+                          : "Hết hàng"
                     }
                     color={discountPct ? "red" : totalStock > 0 ? "blue" : "red"}
                   >
@@ -430,18 +444,19 @@ const ProductsPage: React.FC = () => {
                     >
                       <Space direction="vertical" size={8} style={{ width: "100%" }}>
                         <Text strong>{p.name}</Text>
-                          {(p as any).brand && (
-                            <Tag
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                navigate(`/products/${p.id}`);
-                              }}
-                              style={{ cursor: "pointer" }}
-                            >
-                              {(p as any).brand}
-                            </Tag>
-                          )}
+                        {(p as any).brand && (
+                          <Tag
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              navigate(`/products/${p.id}`);
+                            }}
+                            style={{ cursor: "pointer" }}
+                          >
+                            {(p as any).brand}
+                          </Tag>
+                        )}
+
                         <Space size={8} align="baseline">
                           <Title level={5} style={{ margin: 0 }}>
                             {showPrice !== null ? `${fmtVND(showPrice)} đ` : "—"}
@@ -452,7 +467,6 @@ const ProductsPage: React.FC = () => {
                             </Text>
                           )}
                         </Space>
-
                       </Space>
                     </Card>
                   </Badge.Ribbon>

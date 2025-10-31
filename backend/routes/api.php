@@ -67,12 +67,15 @@ Route::prefix('uploads')->middleware('auth:sanctum')->group(function () {
 // 🌐 CLIENT ROUTES
 // =====================================================================
 
-// Trang chủ
 Route::get('/', [HomeClientController::class, 'index']);
+
+Route::get('categories', [CategoryClientController::class, 'getCategoriesWithProducts']);
+
 
 // Sản phẩm
 Route::get('products', [ProductClientController::class, 'getAllProducts']);
 Route::get('products/{id}', [ProductClientController::class, 'getProductDetail']);
+// Trang chủ
 
 
 // Các route client chung
@@ -127,19 +130,20 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
 // Macro chuẩn CRUD cho Admin Resources
 Route::macro('adminApiResource', function ($prefix, $controller) {
     Route::prefix($prefix)
-        ->middleware(['auth:sanctum', 'admin'])
+        // ->middleware(['auth:sanctum', 'admin']) // ❌ comment dòng này
         ->name(str_replace('/', '.', $prefix) . '.')
         ->group(function () use ($controller) {
-            Route::get('/', [$controller, 'index']);                  // Danh sách
-            Route::get('/trash', [$controller, 'trash']);             // Danh sách đã xóa
-            Route::get('/{id}', [$controller, 'show']);              // Chi tiết
-            Route::post('/', [$controller, 'store']);                // Tạo mới
-            Route::match(['put', 'patch'], '/{id}', [$controller, 'update']); // Cập nhật
-            Route::delete('/{id}', [$controller, 'destroy']);        // Xóa mềm
-            Route::post('/{id}/restore', [$controller, 'restore']);  // Phục hồi
-            Route::delete('/{id}/force-delete', [$controller, 'forceDelete']); // Xóa vĩnh viễn
+            Route::get('/', [$controller, 'index']);
+            Route::get('/trash', [$controller, 'trash']);
+            Route::get('/{id}', [$controller, 'show']);
+            Route::post('/', [$controller, 'store']);
+            Route::match(['put', 'patch'], '/{id}', [$controller, 'update']);
+            Route::delete('/{id}', [$controller, 'destroy']);
+            Route::post('/{id}/restore', [$controller, 'restore']);
+            Route::delete('/{id}/force-delete', [$controller, 'forceDelete']);
         });
 });
+
 
 // Admin resources
 Route::adminApiResource('admin/users', UserController::class);
