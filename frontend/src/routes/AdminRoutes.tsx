@@ -30,6 +30,9 @@ import OrderEdit from '../pages/admin/orders/OrderEdit';
 
 
 
+import BannerList from "../pages/admin/banner/BannerList";
+import BannerAdd from "../pages/admin/banner/BannerAdd";
+import BannerEdit from "../pages/admin/banner/BannerEdit";
 
 
 
@@ -69,6 +72,9 @@ const AdminRoutes: React.FC = () => {
         <Route path="orders/:id/edit" element={<OrderEdit />} />
 
 
+         <Route path="banner" element={<BannerList />} />
+        <Route path="banner/add/:bannerId" element={<BannerAdd />} />
+        <Route path="banner/edit/:id" element={<BannerEdit />} />
 
       </Route>
     </Routes>

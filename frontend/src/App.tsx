@@ -8,7 +8,6 @@ import Login from './layouts/account/Login';
 import Register from './layouts/account/Register';
 import Unauthorized from './pages/Unauthorized';
 import authService from './services/authService';
-
 // Component wrapper để redirect nếu đã login
 const PublicRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const isAuthenticated = authService.isAuthenticated();
