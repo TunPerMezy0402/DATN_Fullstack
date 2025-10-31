@@ -7,7 +7,7 @@ const ServicesRow = () => {
       _id: "1",
       title: "Top 10 đôi giày thể thao đáng mua năm 2025",
       slug: "trends", // 👈 dùng slug để khớp với route /news/trends
-      thumbnail: "https://via.placeholder.com/400x250.png?text=Top+10+Giay+2025",
+      thumbnail: "https://shopgiaygiare.com/cdn1/images/202310/thumb_article/diem-danh-top-5-doi-giay-dat-nhat-the-gioi-hien-nay-thumb-1696133570.jpg",
       publishedAt: new Date().toISOString(),
       excerpt: "Khám phá những đôi giày hot nhất năm 2025 được giới trẻ săn đón.",
     },
@@ -15,7 +15,7 @@ const ServicesRow = () => {
       _id: "2",
       title: "Cách bảo quản giày thể thao đúng cách",
       slug: "tips", // 👈 tương ứng với /news/tips
-      thumbnail: "https://via.placeholder.com/400x250.png?text=Bao+Quan+Giay",
+      thumbnail: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ0JnPGjVaLZxuPqX1AXhJVI6v9yrTqhp16FWCRzA4uTN9XEq0K-ls9r59x0eDakOA0GMw&usqp=CAU",
       publishedAt: new Date().toISOString(),
       excerpt: "Mẹo nhỏ giúp bạn giữ đôi giày luôn mới và bền lâu hơn.",
     },
@@ -23,7 +23,7 @@ const ServicesRow = () => {
       _id: "3",
       title: "Xu hướng giày sneaker 2025",
       slug: "review", // 👈 tương ứng với /news/story
-      thumbnail: "https://via.placeholder.com/400x250.png?text=Xu+Huong+Sneaker",
+      thumbnail: "https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=800&q=80",
       publishedAt: new Date().toISOString(),
       excerpt: "Cùng điểm qua những mẫu sneaker đang “làm mưa làm gió” trong giới trẻ.",
     },
