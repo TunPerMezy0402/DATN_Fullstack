@@ -11,20 +11,29 @@ class OrderItem extends Model
 
     protected $fillable = [
         'order_id',
-        'product_variant_id',
+        'product_id',
+        'variant_id',
+        'product_name',
+        'product_image',
         'quantity',
         'price',
+        'size',
+        'color',
     ];
 
-    // ✅ Mỗi order item thuộc về một đơn hàng
     public function order()
     {
         return $this->belongsTo(Order::class);
     }
 
-    // ✅ Mỗi order item thuộc về một biến thể sản phẩm
     public function variant()
     {
-        return $this->belongsTo(ProductVariant::class, 'product_variant_id');
+        return $this->belongsTo(ProductVariant::class, 'variant_id');
+    }
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class, 'product_id');
     }
 }
+

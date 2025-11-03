@@ -12,8 +12,7 @@ class Order extends Model
     protected $table = 'orders';
 
     protected $fillable = [
-        'user_id', 'sku', 'total_amount', 'discount_amount', 'final_amount',
-        'coupon_id', 'coupon_code', 'status', 'payment_status', 'note'
+        'user_id', 'sku', 'total_amount', 'discount_amount', 'final_amount', 'status', 'payment_status', 'note'
     ];
 
     protected $dates = ['deleted_at']; // optional, Laravel tự cast deleted_at thành Carbon
@@ -38,10 +37,16 @@ class Order extends Model
         return $this->hasOne(Shipping::class, 'order_id');
     }
 
-    public function paymentTransactions()
+    /* public function paymentTransactions()
     {
         return $this->hasMany(PaymentTransaction::class, 'order_id');
     }
+ */
+    public function paymentTransaction()
+{
+    return $this->hasOne(PaymentTransaction::class, 'order_id');
+}
+
 
     public function returnRequests()
     {

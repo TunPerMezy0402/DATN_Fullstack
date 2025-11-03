@@ -38,6 +38,7 @@ class UserProfileController extends Controller
                 'email' => $user->email,
                 'phone' => $user->phone,
                 'image' => $imageUrl,
+                'role' => $user->role,
             ],
             'addresses' => $user->addresses,
         ]);

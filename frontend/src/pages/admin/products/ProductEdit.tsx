@@ -941,9 +941,6 @@ export default function ProductEdit() {
                                 <Text strong style={{ fontSize: 16 }}>
                                   Biến thể #{index + 1}
                                 </Text>
-                                {variant.id && (
-                                  <Tag color="blue">ID: {variant.id}</Tag>
-                                )}
                                 {!variant.id && (
                                   <Tag color="green">MỚI</Tag>
                                 )}

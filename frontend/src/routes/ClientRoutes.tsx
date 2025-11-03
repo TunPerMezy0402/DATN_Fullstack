@@ -60,7 +60,7 @@ const ClientRoutes = () => {
 
         <Route path="/cart" element={<CartList />} />
 
-        <Route path="/payment" element={<CheckoutPage />} />
+        <Route path="/checkout" element={<CheckoutPage />} />
 
         <Route path="/profile" element={<Profile />} />
 

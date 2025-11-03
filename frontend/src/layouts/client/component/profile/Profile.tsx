@@ -410,44 +410,45 @@ const Profile: React.FC = () => {
             className="mb-3"
             type="inner"
             title={
-              <div className="flex items-center gap-2">
-                <span>{`${addr.recipient_name} (${addr.phone})`}</span>
-                {addr.is_default && (
-                  <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
-                    Mặc định
-                  </span>
-                )}
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <span>{`${addr.recipient_name} (${addr.phone})`}</span>
+                  {addr.is_default && (
+                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
+                      Mặc định
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {!addr.is_default && (
+                    <Button
+                      type="default"
+                      icon={<CheckCircleOutlined />}
+                      onClick={() => handleSetDefault(addr.id)}
+                    >
+                      Đặt làm mặc định
+                    </Button>
+                  )}
+                  <Button onClick={() => handleEditAddress(addr)}>Sửa</Button>
+                  <Popconfirm
+                    title="Xóa địa chỉ"
+                    description="Bạn có chắc muốn xóa địa chỉ này?"
+                    onConfirm={() => handleDeleteAddress(addr.id)}
+                    okText="Xóa"
+                    cancelText="Hủy"
+                  >
+                    <Button danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </div>
               </div>
+
             }
           >
             <p>{renderFullAddress(addr)}</p>
             {addr.notes && (
               <p className="italic text-gray-600 mt-2">Ghi chú: {addr.notes}</p>
             )}
-
-            <Divider className="my-3" />
-
-            <div className="flex justify-end gap-3">
-              {!addr.is_default && (
-                <Button
-                  type="default"
-                  icon={<CheckCircleOutlined />}
-                  onClick={() => handleSetDefault(addr.id)}
-                >
-                  Đặt làm mặc định
-                </Button>
-              )}
-              <Button onClick={() => handleEditAddress(addr)}>Sửa</Button>
-              <Popconfirm
-                title="Xóa địa chỉ"
-                description="Bạn có chắc muốn xóa địa chỉ này?"
-                onConfirm={() => handleDeleteAddress(addr.id)}
-                okText="Xóa"
-                cancelText="Hủy"
-              >
-                <Button danger icon={<DeleteOutlined />} />
-              </Popconfirm>
-            </div>
           </Card>
         ))}
 

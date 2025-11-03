@@ -136,7 +136,7 @@ const Header: React.FC = () => {
   const navLinks = [
     { path: "/", label: "Trang chủ" },
     { path: "/products", label: "Sản phẩm" },
-    { path: "/blog", label: "Tin tức" },
+    { path: "/news", label: "Tin tức" },
     { path: "/compare", label: "So sánh" },
     { path: "/lien_he", label: "Liên hệ" },
   ];

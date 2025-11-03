@@ -26,13 +26,15 @@ const getAuthToken = () =>
 const API_URL = "http://127.0.0.1:8000/api";
 
 interface Color {
-    id: number;
     type: string;
+    value: string;
 }
+
 interface Size {
-    id: number;
     type: string;
+    value: string;
 }
+
 interface Product {
     id: number;
     name: string;
@@ -157,6 +159,7 @@ const CartList: React.FC = () => {
         fetchCart();
     }, []);
 
+
     if (!cart || cart.items.length === 0)
         return (
             <div className="p-10 text-center">
@@ -180,26 +183,34 @@ const CartList: React.FC = () => {
     const handleSelectAll = (checked: boolean) => {
         setSelectedItems(checked ? cart.items.map((i) => i.id) : []);
     };
-
     // 🛒 Lưu sản phẩm được chọn để đặt hàng
-    // 🛒 Lưu sản phẩm được chọn để đặt hàng
-
     const handleBuy = () => {
         if (selectedItems.length === 0) {
             message.warning("Chưa chọn sản phẩm nào để mua");
             return;
         }
 
-        const selectedProducts = cart.items.filter(item =>
+        // Lấy danh sách sản phẩm được chọn
+        const selectedProducts = cart.items.filter((item) =>
             selectedItems.includes(item.id)
         );
 
+        // ✅ Lưu dữ liệu sang localStorage
+        localStorage.setItem("selectedCartItems", JSON.stringify(selectedProducts));
+
+        // ✅ Tính tổng tiền
+        const total = selectedProducts.reduce(
+            (sum, i) =>
+                sum +
+                i.quantity *
+                parseFloat(i.variant.discount_price || i.variant.price || "0"),
+            0
+        );
+        localStorage.setItem("cartTotal", total.toString());
 
         // 🔄 Chuyển sang trang thanh toán
-        navigate("/payment");
+        navigate("/checkout");
     };
-
-
 
     // 🧾 Cấu hình cột bảng
     const columns = [
@@ -234,8 +245,9 @@ const CartList: React.FC = () => {
                         <Text strong>{item.variant.product?.name}</Text>
                         <br />
                         <Text type="secondary" style={{ fontSize: 13 }}>
-                            Màu: {item.variant.color?.type} | Size: {item.variant.size?.type}
+                            Màu: {item.variant.color?.value} | Size: {item.variant.size?.value}
                         </Text>
+
                     </div>
                 </Space>
             ),
