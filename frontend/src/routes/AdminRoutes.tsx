@@ -65,9 +65,10 @@ const AdminRoutes: React.FC = () => {
         <Route path="coupons" element={<CouponList />} />
 
 
-        <Route path="/banner" element={<BannerList />} />
-        <Route path="/banner/add/:bannerId" element={<BannerAdd />} />
-        <Route path="/banner/edit/:id" element={<BannerEdit />} />
+        <Route path="banner" element={<BannerList />} />
+        <Route path="banner/add/:bannerId" element={<BannerAdd />} />
+        <Route path="banner/edit/:id" element={<BannerEdit />} />
+ 
 
         <Route path="orders" element={<OrderList />} />
       </Route>
