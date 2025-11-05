@@ -18,7 +18,7 @@ import CheckoutPage from '../layouts/client/component/payment/CheckoutPage';
 
 import Profile from '../layouts/client/component/profile/Profile';
 
-
+import FavoritesPage from '../layouts/client/component/favorite/FavoritesPage';
 
 
 /* import CategoryPage from '../layouts/client/component/CategoryPage';
@@ -63,7 +63,7 @@ const ClientRoutes = () => {
         <Route path="/checkout" element={<CheckoutPage />} />
 
         <Route path="/profile" element={<Profile />} />
-
+<Route path="/favorites" element={<FavoritesPage />} />
         {/* 📰 Trang tin tức có sidebar + nội dung */}
         <Route path="news" element={<NewsLayout />}>
           <Route index element={<NewsListDemo />} /> {/* Trang danh sách demo */}
