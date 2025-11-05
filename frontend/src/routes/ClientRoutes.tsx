@@ -9,12 +9,7 @@ import OutstandingProducts from '../layouts/client/component/OutstandingProducts
 import ServicesRow from '../layouts/client/component//ServicesRow';
 import Trending from '../layouts/client/component/Trending';
 import ProductsPage from '../layouts/client/component/ProductsPage';
-import ProductDetail from '../layouts/client/component/ProductDetail';
-
-/* import CategoryPage from '../layouts/client/component/CategoryPage';
-import CategoryDetail from '../layouts/client/component/CategoryDetail'; */
-
-
+import Contact from '../layouts/client/component/Contact';
 
 const ClientRoutes = () => {
   return (
@@ -28,14 +23,10 @@ const ClientRoutes = () => {
         <Route path="outstandingproducts" element={<OutstandingProducts />} />
         <Route path="servicesrow" element={<ServicesRow />} />
         <Route path="trending" element={<Trending />} />
-
-{/*         <Route path="/categories" element={<CategoryPage />} />
-        <Route path="/categories/:id" element={<CategoryDetail />} /> */}
-
         <Route path="/products" element={<ProductsPage />} />
-        <Route path="/products/:id" element={<ProductDetail />} />
+        <Route path="/lien_he" element={<Contact />} />
 
-
+        {/* <Route path="contact" element={<Contact />} /> */}
       </Route>
     </Routes>
   );
