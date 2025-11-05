@@ -26,19 +26,33 @@ export interface IPaginatedResponse<T> {
 }
 
 // ================== CONFIG ==================
-const API_URL = "http://localhost:8000/api/admin/banners";
+const axiosInstance = axios.create({
+  baseURL: "http://localhost:8000/api/admin",
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// 🔑 Tự động thêm token vào mỗi request
+axiosInstance.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 // ================== SERVICES ==================
 export const getAllBanners = async (
   page: number = 1,
   perPage: number = 10
 ): Promise<IPaginatedResponse<IBanner>> => {
-  const res = await axios.get(`${API_URL}?page=${page}&per_page=${perPage}`);
+  const res = await axiosInstance.get(`/banners?page=${page}&per_page=${perPage}`);
   return res.data;
 };
 
 export const getBannerById = async (id: number): Promise<IBanner> => {
-  const res = await axios.get(`${API_URL}/${id}`);
+  const res = await axiosInstance.get(`/banners/${id}`);
   return res.data;
 };
 
@@ -46,7 +60,7 @@ export const createBanner = async (data: {
   title: string;
   is_active?: boolean;
 }): Promise<IBanner> => {
-  const res = await axios.post(API_URL, data);
+  const res = await axiosInstance.post("/banners", data);
   return res.data;
 };
 
@@ -54,10 +68,10 @@ export const updateBanner = async (
   id: number,
   data: Partial<IBanner>
 ): Promise<IBanner> => {
-  const res = await axios.put(`${API_URL}/${id}`, data);
+  const res = await axiosInstance.put(`/banners/${id}`, data);
   return res.data;
 };
 
 export const deleteBanner = async (id: number): Promise<void> => {
-  await axios.delete(`${API_URL}/${id}`);
+  await axiosInstance.delete(`/banners/${id}`);
 };
