@@ -63,7 +63,7 @@ const CategoryCreate: React.FC = () => {
         },
       });
 
-      message.success("✅ Thêm danh mục thành công!");
+      message.success(" Thêm danh mục thành công!");
       navigate("/admin/categories");
     } catch (e) {
       console.error("❌ Lỗi khi thêm danh mục:", e);

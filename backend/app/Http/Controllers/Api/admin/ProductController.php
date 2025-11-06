@@ -90,45 +90,73 @@ class ProductController extends Controller
     /* ====================== STORE ====================== */
 
     public function store(Request $req)
-    {
-        $data = $this->validateProduct($req, true);
+{
+    $data = $this->validateProduct($req, true);
 
-        return DB::transaction(function () use ($req, $data) {
-            // Product image (1 ảnh => cột image)
-            $productImage = $this->gatherProductImage($req, Arr::get($data, 'image'));
+    return DB::transaction(function () use ($req, $data) {
 
-            $product = Product::create([
-                'name' => $data['name'],
-                'sku' => $data['sku'] ?? null,
-                'category_id' => $data['category_id'] ?? null,
-                'description' => $data['description'] ?? null,
-                'origin' => $data['origin'] ?? null,
-                'brand' => $data['brand'] ?? null,
-                'image' => $productImage, // 'storage/img/product/xxx.jpg' | null
-                'variation_status' => !empty($data['variation_status']) ? 1 : 0,
-            ]);
+        // ====== Product image ======
+        $productImage = $this->gatherProductImage($req, Arr::get($data, 'image'));
 
-            // Variants
-            if (!empty($data['variants']) && is_array($data['variants'])) {
-                foreach ($data['variants'] as $i => $v) {
-                    $norm = $this->normalizeVariantInput($req, $v, $i, false, null);
-                    $this->assertAttributeType($norm['size_id'] ?? null, 'size');
-                    $this->assertAttributeType($norm['color_id'] ?? null, 'color');
-                    $this->assertDiscountNotGreater($norm['price'] ?? null, $norm['discount_price'] ?? null);
-
-                    $product->variants()->create($norm);
-                }
+        // Nếu có nhiều ảnh, lưu vào cột images dạng JSON
+        $productImages = [];
+        if ($req->hasFile('images')) {
+            foreach ($req->file('images') as $file) {
+                $path = $file->store('public/img/product');
+                $productImages[] = str_replace('public/', 'storage/', $path);
             }
+        }
 
-            $product->load([
-                'category:id,name',
-                'variants.size:id,value',
-                'variants.color:id,value',
-            ]);
+        $product = Product::create([
+            'name' => $data['name'],
+            'sku' => $data['sku'] ?? null,
+            'category_id' => $data['category_id'] ?? null,
+            'description' => $data['description'] ?? null,
+            'origin' => $data['origin'] ?? null,
+            'brand' => $data['brand'] ?? null,
+            'image' => $productImage,                 // Ảnh chính
+            'images' => !empty($productImages) ? json_encode($productImages) : null, // Mảng ảnh
+            'variation_status' => !empty($data['variation_status']) ? 1 : 0,
+        ]);
 
-            return response()->json($product, 201);
-        });
-    }
+        // ====== Variants ======
+        if (!empty($data['variants']) && is_array($data['variants'])) {
+            foreach ($data['variants'] as $i => $v) {
+
+                $norm = $this->normalizeVariantInput($req, $v, $i, false, null);
+                $this->assertAttributeType($norm['size_id'] ?? null, 'size');
+                $this->assertAttributeType($norm['color_id'] ?? null, 'color');
+                $this->assertDiscountNotGreater($norm['price'] ?? null, $norm['discount_price'] ?? null);
+
+                // Lưu nhiều ảnh cho variant
+                $variantImages = [];
+                if (!empty($v['images']) && is_array($v['images'])) {
+                    foreach ($v['images'] as $file) {
+                        if ($file instanceof \Illuminate\Http\UploadedFile) {
+                            $path = $file->store('public/img/variant');
+                            $variantImages[] = str_replace('public/', 'storage/', $path);
+                        }
+                    }
+                }
+
+                $norm['images'] = !empty($variantImages) ? json_encode($variantImages) : null;
+                $norm['image'] = $variantImages[0] ?? $norm['image'] ?? null; // ảnh thumbnail
+
+                $product->variants()->create($norm);
+            }
+        }
+
+        // Load quan hệ
+        $product->load([
+            'category:id,name',
+            'variants.size:id,value',
+            'variants.color:id,value',
+        ]);
+
+        return response()->json($product, 201);
+    });
+}
+
 
     /* ====================== UPDATE (UPSERT VARIANTS) ====================== */
 

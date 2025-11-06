@@ -11,96 +11,143 @@ use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
-    /**
-     * Danh sách đơn hàng
-     */
     public function index(Request $request)
-    {
-        $query = Order::with(['items', 'shipping', 'coupon'])
-            ->orderByDesc('created_at');
+{
+    // 🔹 Lấy danh sách đơn hàng (kèm user, items, shipping, coupon)
+    $query = Order::with(['user:id,name,phone,email', 'items', 'shipping', 'coupon'])
+        ->orderByDesc('created_at');
 
-        if ($request->has('status')) {
-            $query->where('status', $request->status);
-        }
-
-        return response()->json($query->paginate(10));
+    // Lọc theo trạng thái đơn hàng nếu có
+    if ($request->has('status')) {
+        $query->where('status', $request->status);
     }
 
-    /**
-     * Danh sách đã xóa
-     */
-    public function trash()
-    {
-        $orders = Order::onlyTrashed()
-            ->with(['items', 'shipping'])
-            ->orderByDesc('deleted_at')
-            ->paginate(10);
+    // 🔹 Phân trang
+    $orders = $query->paginate(10);
 
-        return response()->json($orders);
-    }
+    // 🔹 Thống kê tổng hợp
+    $stats = [
+        'total_orders' => Order::count(),
+        'total_revenue' => Order::where('payment_status', 'paid')->sum('final_amount'),
+        'pending_orders' => Order::where('status', 'pending')->count(),
+        'confirmed_orders' => Order::where('status', 'confirmed')->count(),
+        'shipped_orders' => Order::where('status', 'shipped')->count(),
+        'delivered_orders' => Order::where('status', 'delivered')->count(),
+        'cancelled_orders' => Order::where('status', 'cancelled')->count(),
+        'returned_orders' => Order::where('status', 'returned')->count(),
+        'unpaid_orders' => Order::where('payment_status', 'unpaid')->count(),
+        'refunded_orders' => Order::where('payment_status', 'refunded')->count(),
+    ];
 
- /**
- * Xem chi tiết đơn hàng (đầy đủ thông tin)
- */
+    // 🔹 Trả về JSON gồm danh sách và thống kê
+    return response()->json([
+        'data' => $orders,
+        'stats' => $stats,
+    ]);
+}
 public function show($id)
 {
     $order = Order::withTrashed()
         ->with([
-            'items',                 // chi tiết sản phẩm đã mua
-            'shipping',              // đơn vị vận chuyển
-            'coupon',                // mã giảm giá
-            'paymentTransactions',   // thanh toán
-            'cancelLogs',            // lịch sử hủy
-            'returnRequests'         // yêu cầu trả hàng
+            'user',
+            'items',
+            'shipping',
+            'coupon',
+            'paymentTransaction',
+            'cancelLogs',
+            'returnRequests',
         ])
         ->findOrFail($id);
 
+    // 🔹 Thông tin giao hàng
+    $shipping = $order->shipping;
+    $shippingData = null;
+    $fullAddress = null;
+
+    if ($shipping) {
+        // Ghép địa chỉ đầy đủ: "Số 9, Phường Cửa Đông, Quận Hoàn Kiếm, Thành phố Hà Nội"
+        $addressParts = array_filter([
+            $shipping->village,   // Số nhà / thôn
+            $shipping->commune,   // Phường / xã
+            $shipping->district,  // Quận / huyện
+            $shipping->city,  
+            $shipping->notes,      // Tỉnh / thành phố
+            // Tỉnh / thành phố
+        ]);
+
+        $fullAddress = implode(', ', $addressParts);
+
+        $shippingData = [
+            'id' => $shipping->id,
+            'sku' => $shipping->sku,
+            'shipping_name' => $shipping->shipping_name,
+            'shipping_phone' => $shipping->shipping_phone,
+            'shipping_status' => $shipping->shipping_status,
+            'city' => $shipping->city,
+            'district' => $shipping->district,
+            'commune' => $shipping->commune,
+            'village' => $shipping->village,
+            'notes' => $shipping->notes,
+            'shipper_name' => $shipping->shipper_name,
+            'shipper_phone' => $shipping->shipper_phone,
+            'full_address' => $fullAddress,
+        ];
+    }
+
+    // 🔹 Danh sách sản phẩm trong đơn
+    $items = $order->items->map(function ($item) {
+        return [
+            'id' => $item->id,
+            'order_id' => $item->order_id,
+            'product_id' => $item->product_id,
+            'variant_id' => $item->variant_id,
+            'product_name' => $item->product_name,
+            'product_image' => $item->product_image ? asset($item->product_image) : null,
+            'size' => $item->size ?? null,
+            'color' => $item->color ?? null,
+            'quantity' => $item->quantity,
+            'price' => $item->price,
+            'total' => (float)$item->price * (int)$item->quantity,
+        ];
+    });
+
+    // 🔹 Trả về JSON chi tiết đơn hàng
     return response()->json([
-        'order' => [
+        'data' => [
             'id' => $order->id,
-            'sku' => $order->sku,
             'user_id' => $order->user_id,
-            'status' => $order->status,
-            'payment_status' => $order->payment_status,
+            'sku' => $order->sku,
             'total_amount' => $order->total_amount,
             'discount_amount' => $order->discount_amount,
             'final_amount' => $order->final_amount,
-            'note' => $order->note,
+            'status' => $order->status,
+            'payment_status' => $order->payment_status,
+            'payment_method' => $order->payment_method,
+            'note' => $order->note, // 🟢 note ghi chú của khách hàng
             'created_at' => $order->created_at,
             'updated_at' => $order->updated_at,
-        ],
-        'coupon' => $order->coupon,
-        'items' => $order->items->map(function ($item) {
-            return [
-                'product_id' => $item->product_id,
-                'product_name' => $item->product_name,
-                'product_image' => $item->product_image,
-                'variant_id' => $item->variant_id,
-                'size' => $item->size,
-                'color' => $item->color,
-                'quantity' => $item->quantity,
-                'price' => $item->price,
-                'subtotal' => $item->quantity * $item->price,
-            ];
-        }),
-        'shipping' => $order->shipping ? [
-            'shipping_name' => $order->shipping->shipping_name,
-            'shipping_phone' => $order->shipping->shipping_phone,
-            'shipping_address_line' => $order->shipping->shipping_address_line,
-            'shipping_city' => $order->shipping->shipping_city,
-            'shipping_province' => $order->shipping->shipping_province,
-            'shipping_postal_code' => $order->shipping->shipping_postal_code,
-            'carrier' => $order->shipping->carrier,
-            'tracking_number' => $order->shipping->tracking_number,
-            'shipping_status' => $order->shipping->shipping_status,
-            'estimated_delivery' => $order->shipping->estimated_delivery,
-            'delivered_at' => $order->shipping->delivered_at,
-        ] : null,
-        'payments' => $order->paymentTransactions,
-        'cancel_logs' => $order->cancelLogs,
-        'return_requests' => $order->returnRequests,
+            'deleted_at' => $order->deleted_at,
+            'user' => $order->user ? [
+                'id' => $order->user->id,
+                'name' => $order->user->name,
+                'phone' => $order->user->phone,
+                'email' => $order->user->email,
+            ] : null,
+            'items' => $items,
+            'shipping' => $shippingData,
+            'coupon' => $order->coupon ? [
+                'id' => $order->coupon->id,
+                'code' => $order->coupon->code,
+                'discount_type' => $order->coupon->discount_type,
+                'discount_value' => $order->coupon->discount_value,
+            ] : null,
+            'payments' => $order->paymentTransaction,
+            'cancel_logs' => $order->cancelLogs,
+            'return_requests' => $order->returnRequests,
+        ]
     ]);
 }
+
 
     public function update(Request $request, $id)
     {
@@ -114,13 +161,11 @@ public function show($id)
 
         DB::beginTransaction();
         try {
-            // Cập nhật trạng thái đơn hàng
             $order->update(array_filter([
                 'status' => $validated['status'] ?? $order->status,
                 'payment_status' => $validated['payment_status'] ?? $order->payment_status,
             ]));
 
-            // Nếu có thông tin shipping → thêm hoặc cập nhật
             if (!empty($validated['shipping'])) {
                 $shippingData = $validated['shipping'];
 
@@ -150,38 +195,5 @@ public function show($id)
             DB::rollBack();
             return response()->json(['error' => $e->getMessage()], 500);
         }
-    }
-
-    /**
-     * Xóa mềm
-     */
-    public function destroy($id)
-    {
-        $order = Order::findOrFail($id);
-        $order->delete();
-
-        return response()->json(['message' => 'Đã xóa đơn hàng (soft delete) thành công']);
-    }
-
-    /**
-     * Khôi phục
-     */
-    public function restore($id)
-    {
-        $order = Order::onlyTrashed()->findOrFail($id);
-        $order->restore();
-
-        return response()->json(['message' => 'Khôi phục đơn hàng thành công']);
-    }
-
-    /**
-     * Xóa vĩnh viễn
-     */
-    public function forceDelete($id)
-    {
-        $order = Order::onlyTrashed()->findOrFail($id);
-        $order->forceDelete();
-
-        return response()->json(['message' => 'Đã xóa vĩnh viễn đơn hàng']);
     }
 }

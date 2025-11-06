@@ -226,17 +226,11 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
             className="admin-header-dropdown dropdown-menu dropdown-menu-end shadow"
             aria-labelledby="adminUserDropdown"
           >
-            <a className="admin-header-dropdown-item dropdown-item" href="#">
-              <i className="fas fa-user fa-sm fa-fw me-2 text-gray-400"></i>
-              Tài khoản
-            </a>
-            <a className="admin-header-dropdown-item dropdown-item" href="#">
-              <i className="fas fa-cogs fa-sm fa-fw me-2 text-gray-400"></i>
-              Cài đặt
-            </a>
-            <a className="admin-header-dropdown-item dropdown-item" href="#">
-              <i className="fas fa-list fa-sm fa-fw me-2 text-gray-400"></i>
-              Nhật ký hoạt động
+            <a
+              className="admin-header-dropdown-item dropdown-item"
+              href="http://localhost:3000/"
+            >
+              Trang người dùng
             </a>
             <div className="dropdown-divider"></div>
             <a

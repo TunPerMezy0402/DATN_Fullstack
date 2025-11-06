@@ -25,8 +25,16 @@ import ProductCreate from '../pages/admin/products/ProductCreate';
 import CouponList from '../pages/admin/coupons/CouponList';
 
 import OrderList from '../pages/admin/orders/OrderList';
+import OrderDetail from '../pages/admin/orders/OrderDetail';
+import OrderEdit from '../pages/admin/orders/OrderEdit';
 
 
+
+import BannerList from "../pages/admin/banner/BannerList";
+import BannerAdd from "../pages/admin/banner/BannerAdd";
+import BannerEdit from "../pages/admin/banner/BannerEdit";
+
+import Payment from "../pages/admin/vnpay/Transaction";
 
 
 
@@ -62,6 +70,15 @@ const AdminRoutes: React.FC = () => {
         <Route path="coupons" element={<CouponList />} />
 
         <Route path="orders" element={<OrderList />} />
+        <Route path="orders/:id" element={<OrderDetail />} />
+        <Route path="orders/:id/edit" element={<OrderEdit />} />
+
+
+         <Route path="banner" element={<BannerList />} />
+        <Route path="banner/add/:bannerId" element={<BannerAdd />} />
+        <Route path="banner/edit/:id" element={<BannerEdit />} />
+
+        <Route path="payment" element={<Payment />} />
 
 
       </Route>

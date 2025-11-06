@@ -207,7 +207,7 @@ const CategoryEdit: React.FC = () => {
         },
       });
 
-      message.success("✅ Cập nhật danh mục thành công!");
+      message.success("Cập nhật danh mục thành công!");
       navigate("/admin/categories");
     } catch (error) {
       console.error("Error updating category:", error);

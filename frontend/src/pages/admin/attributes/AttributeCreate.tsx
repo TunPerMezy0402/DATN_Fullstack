@@ -7,12 +7,14 @@ import {
   Typography,
   message,
   Space,
+  Select,
 } from "antd";
 import { SaveOutlined, ArrowLeftOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 
 const { Title } = Typography;
+const { Option } = Select;
 
 const AttributeCreate: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -25,15 +27,19 @@ const AttributeCreate: React.FC = () => {
       const token = localStorage.getItem("access_token");
       if (!token) {
         message.error("Không tìm thấy token trong localStorage!");
+        setLoading(false);
         return;
       }
 
+      // Chuẩn hóa type về lowercase
+      const payload = {
+        type: values.type.toLowerCase(),
+        value: values.value,
+      };
+
       await axios.post(
         "http://127.0.0.1:8000/api/admin/attributes",
-        {
-          type: values.type,
-          value: values.value,
-        },
+        payload,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -83,11 +89,12 @@ const AttributeCreate: React.FC = () => {
           <Form.Item
             label="Loại thuộc tính"
             name="type"
-            rules={[
-              { required: true, message: "Vui lòng nhập loại thuộc tính!" },
-            ]}
+            rules={[{ required: true, message: "Vui lòng chọn loại thuộc tính!" }]}
           >
-            <Input placeholder="Ví dụ: màu sắc, kích thước, chất liệu..." />
+            <Select placeholder="Chọn loại thuộc tính">
+              <Option value="size">Size</Option>
+              <Option value="color">Color</Option>
+            </Select>
           </Form.Item>
 
           <Form.Item

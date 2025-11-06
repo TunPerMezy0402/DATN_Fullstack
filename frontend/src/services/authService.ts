@@ -72,17 +72,34 @@ const authService = {
   /**
    * Đăng xuất
    */
+  /**
+   * Đăng xuất
+   */
   async logout(): Promise<void> {
     try {
-      await authApi.logout();
+      // Gọi API logout nếu backend có (nếu lỗi vẫn tiếp tục)
+      await authApi.logout().catch(() => {});
     } catch (error) {
       console.error("Logout API error:", error);
     } finally {
+      // ✅ Dù API có lỗi hay không vẫn xóa toàn bộ dữ liệu đăng nhập
       this.clearAuth();
-      // Đảm bảo xóa cả email đã ghi nhớ khi logout
+
+      // ✅ Xóa cả email ghi nhớ
       this.clearRememberedEmail();
+
+      // ✅ Xóa thêm cookie (phòng khi backend lưu token qua cookie)
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c
+          .replace(/^ +/, "")
+          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+
+      // ✅ Chuyển hướng bắt buộc về trang đăng nhập
+      window.location.href = "/login";
     }
   },
+
 
   /**
    * Quên mật khẩu
@@ -244,9 +261,6 @@ const authService = {
 // ======================= GOOGLE AUTH SERVICE =======================
 
 export const googleAuthService = {
-  /**
-   * Đăng nhập bằng Google
-   */
   async login(credential: string): Promise<AuthResponse> {
     try {
       const res = await googleAuthApi.login(credential);
@@ -257,10 +271,6 @@ export const googleAuthService = {
       throw error;
     }
   },
-
-  /**
-   * Đăng ký bằng Google
-   */
   async register(credential: string): Promise<{ message: string }> {
     try {
       const res = await googleAuthApi.register(credential);
@@ -271,9 +281,6 @@ export const googleAuthService = {
     }
   },
 
-  /**
-   * Xử lý Google OAuth callback (dùng chung cho login/register)
-   */
   handleCallback: async (
     credential: string,
     isRegister: boolean = false

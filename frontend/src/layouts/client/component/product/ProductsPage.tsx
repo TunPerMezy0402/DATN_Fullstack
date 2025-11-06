@@ -19,7 +19,7 @@ import {
   fetchProducts,
   parseImages,
   type Product,
-} from "../../../api/productApi";
+} from "../../../../api/productApi";
 import axios from "axios";
 
 const { useBreakpoint } = Grid;
@@ -30,7 +30,7 @@ const API_URL =
   (import.meta as any).env?.VITE_API_URL ||
   (import.meta as any).env?.REACT_APP_API_URL ||
   (process as any).env?.REACT_APP_API_URL ||
-  "http://127.0.0.1:8000/api";
+  "http://127.0.0.1:8000/api/products";
 const ASSET_BASE = String(API_URL).replace(/\/api\/?$/, "");
 
 const raw = axios.create({ baseURL: API_URL, timeout: 20000 });
@@ -379,16 +379,6 @@ const ProductsPage: React.FC = () => {
               />
             </Space>
 
-            {/* Trạng thái bán */}
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text strong>Trạng thái bán</Text>
-              <Radio.Group value={sellStatus} onChange={(e) => setSellStatus(e.target.value)}>
-                <Space wrap>
-                  <Radio.Button value="all">Tất cả</Radio.Button>
-                  <Radio.Button value="selling">Đang bán</Radio.Button>
-                </Space>
-              </Radio.Group>
-            </Space>
           </Space>
         </Card>
 
@@ -434,8 +424,8 @@ const ProductsPage: React.FC = () => {
                       discountPct
                         ? `-${discountPct}%`
                         : totalStock > 0
-                        ? `Tồn: ${totalStock}`
-                        : "Hết hàng"
+                          ? `Tồn: ${totalStock}`
+                          : "Hết hàng"
                     }
                     color={discountPct ? "red" : totalStock > 0 ? "blue" : "red"}
                   >
@@ -454,18 +444,6 @@ const ProductsPage: React.FC = () => {
                     >
                       <Space direction="vertical" size={8} style={{ width: "100%" }}>
                         <Text strong>{p.name}</Text>
-
-                        <Space size={8} align="baseline">
-                          <Title level={5} style={{ margin: 0 }}>
-                            {showPrice !== null ? `${fmtVND(showPrice)} đ` : "—"}
-                          </Title>
-                          {compareAt !== null && (
-                            <Text delete type="secondary">
-                              {fmtVND(compareAt)} đ
-                            </Text>
-                          )}
-                        </Space>
-
                         {(p as any).brand && (
                           <Tag
                             onClick={(e) => {
@@ -479,43 +457,16 @@ const ProductsPage: React.FC = () => {
                           </Tag>
                         )}
 
-                        {sList.length > 0 && (
-                          <Space wrap>
-                            {sList.map((s) => (
-                              <Tag
-                                key={`${p.id}-s-${s}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  navigate(`/products/${p.id}`);
-                                }}
-                                style={{ cursor: "pointer" }}
-                                color={undefined}
-                              >
-                                {s}
-                              </Tag>
-                            ))}
-                          </Space>
-                        )}
-
-                        {cList.length > 0 && (
-                          <Space wrap>
-                            {cList.map((c) => (
-                              <Tag
-                                key={`${p.id}-c-${c}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  navigate(`/products/${p.id}`);
-                                }}
-                                style={{ cursor: "pointer" }}
-                                color={undefined}
-                              >
-                                {c}
-                              </Tag>
-                            ))}
-                          </Space>
-                        )}
+                        <Space size={8} align="baseline">
+                          <Title level={5} style={{ margin: 0 }}>
+                            {showPrice !== null ? `${fmtVND(showPrice)} đ` : "—"}
+                          </Title>
+                          {compareAt !== null && (
+                            <Text delete type="secondary">
+                              {fmtVND(compareAt)} đ
+                            </Text>
+                          )}
+                        </Space>
                       </Space>
                     </Card>
                   </Badge.Ribbon>

@@ -17,7 +17,7 @@ import { SortDescendingOutlined } from "@ant-design/icons";
 
 interface Attribute {
   id: number;
-  type: string;        // tên thuộc tính
+  type: string;
   value: string;
   created_at: string;
   updated_at: string;
@@ -34,7 +34,6 @@ const AttributeList: React.FC = () => {
   const [editingAttr, setEditingAttr] = useState<Attribute | null>(null);
   const [selectedAttr, setSelectedAttr] = useState<Attribute | null>(null);
 
-  // 🔎 tìm kiếm + ⏱️ sắp xếp mới nhất
   const [searchText, setSearchText] = useState("");
   const [sortNewest, setSortNewest] = useState(true);
 
@@ -43,6 +42,19 @@ const AttributeList: React.FC = () => {
   const token = localStorage.getItem("access_token");
   const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
   const headers = { Authorization: `Bearer ${token}` };
+
+  // 🔹 Hàm hiển thị lỗi chi tiết
+  const showError = (err: any, defaultMsg: string) => {
+    if (axios.isAxiosError(err)) {
+      const apiMsg =
+        err.response?.data?.message || JSON.stringify(err.response?.data) || err.message;
+      console.error("❌ Lỗi Axios:", err.response?.data || err.message);
+      message.error(`${defaultMsg}: ${apiMsg}`);
+    } else {
+      console.error("❌ Lỗi không xác định:", err);
+      message.error(`${defaultMsg}: Lỗi không xác định`);
+    }
+  };
 
   // ✅ Lấy danh sách thuộc tính
   const fetchAttributes = async () => {
@@ -55,8 +67,7 @@ const AttributeList: React.FC = () => {
         res.data.data?.data || [];
       setAttributes(data);
     } catch (err) {
-      console.error("❌ Lỗi tải thuộc tính:", err);
-      message.error("Không thể tải thuộc tính!");
+      showError(err, "Không thể tải thuộc tính");
     } finally {
       setLoading(false);
     }
@@ -67,7 +78,7 @@ const AttributeList: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Lọc theo type + sắp xếp updated_at DESC khi bật "mới nhất"
+  // ✅ Lọc + sắp xếp
   const dataView = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     let list = attributes.filter((a) => a.type.toLowerCase().includes(q));
@@ -91,10 +102,18 @@ const AttributeList: React.FC = () => {
     setModalVisible(true);
   };
 
-  // ✅ Lưu (Thêm / Sửa)
+  // 🔹 Chuẩn hóa chữ cái đầu viết hoa, còn lại viết thường
+  const normalizeValue = (value: string) => {
+    if (!value) return "";
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  };
+
+  // ✅ Lưu (Thêm / Sửa) với hiển thị lỗi chi tiết và chuẩn hóa value
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
+      values.value = normalizeValue(values.value);
+
       if (editingAttr) {
         await axios.put(`${API_URL}/admin/attributes/${editingAttr.id}`, values, { headers });
         message.success("✅ Cập nhật thuộc tính thành công!");
@@ -105,20 +124,18 @@ const AttributeList: React.FC = () => {
       setModalVisible(false);
       fetchAttributes();
     } catch (err) {
-      console.error(err);
-      message.error("Không thể lưu thuộc tính!");
+      showError(err, "Không thể lưu thuộc tính");
     }
   };
 
-  // ✅ Xóa mềm
+  // ✅ Xóa mềm với hiển thị lỗi chi tiết
   const handleSoftDelete = async (id: number) => {
     try {
       await axios.delete(`${API_URL}/admin/attributes/${id}`, { headers });
       message.success("🗑️ Đã xóa mềm thuộc tính!");
       fetchAttributes();
     } catch (err) {
-      console.error(err);
-      message.error("Không thể xóa thuộc tính!");
+      showError(err, "Không thể xóa thuộc tính");
     }
   };
 
@@ -184,15 +201,11 @@ const AttributeList: React.FC = () => {
           justifyContent: "space-between",
         }}
       >
-        {/* Trái: Tìm kiếm + icon sắp xếp mới nhất */}
         <Space>
           <Input
             placeholder="Tìm theo tên thuộc tính..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            onPressEnter={(e) =>
-              setSearchText((e.target as HTMLInputElement).value)
-            }
             allowClear
             style={{ width: 320 }}
           />
@@ -206,13 +219,10 @@ const AttributeList: React.FC = () => {
               shape="circle"
               type={sortNewest ? "primary" : "default"}
               icon={<SortDescendingOutlined />}
-              aria-label="Sắp xếp theo mới nhất"
               onClick={() => setSortNewest((v) => !v)}
             />
           </Tooltip>
         </Space>
-
-        {/* Phải: nút Thêm */}
         <Button type="primary" onClick={() => openModal()}>
           + Thêm thuộc tính
         </Button>
@@ -252,7 +262,7 @@ const AttributeList: React.FC = () => {
             name="value"
             rules={[{ required: true, message: "Nhập giá trị!" }]}
           >
-            <Input placeholder="Ví dụ: Red, XL..." />
+            <Input placeholder="Ví dụ: Red, Xl..." />
           </Form.Item>
         </Form>
       </Modal>

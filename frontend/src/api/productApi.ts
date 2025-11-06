@@ -14,6 +14,16 @@ export interface Category {
   updated_at?: string;
 }
 
+export interface Size {
+  id: number;
+  value: string;
+}
+
+export interface Color {
+  id: number;
+  value: string;
+}
+
 export interface Variant {
   id: number;
   product_id: number;
@@ -24,29 +34,34 @@ export interface Variant {
   sku: Nullable<string>;
   price: Nullable<string>;
   discount_price: Nullable<string>;
+  quantity_sold?: Nullable<number>;
   stock_quantity: number;
   is_available: boolean;
   created_at: string;
   updated_at: string;
   deleted_at: Nullable<string>;
+  size?: Size;
+  color?: Color;
 }
 
 export interface Product {
   id: number;
   name: string;
+  sku: Nullable<string>;
   category_id: Nullable<number>;
   description: Nullable<string>;
-  sku: Nullable<string>;
   origin: Nullable<string>;
   brand: Nullable<string>;
-  price: Nullable<string>;
-  stock_quantity: number;
-  images: Nullable<string[] | string>;
-  discount_price: Nullable<string>;
-  variation_status: number; // 0 | 1 từ BE
+  image: Nullable<string>; // ✅ Thêm trường image
+  images: Nullable<string[] | string>; // FE/BE đều có thể trả mảng hoặc chuỗi JSON
+  price?: Nullable<string>;
+  discount_price?: Nullable<string>;
+  stock_quantity?: number;
+  variation_status: boolean | number; // true/false hoặc 0/1
   created_at: string;
   updated_at: string;
   deleted_at: Nullable<string>;
+  category?: Category;
   variants?: Variant[];
 }
 
@@ -57,23 +72,24 @@ export interface VariantCreatePayload {
   size_id: Nullable<number>;
   color_id: Nullable<number>;
   image: Nullable<string>;
-  images?: string[]; // luôn gửi mảng string hợp lệ
-  sku: Nullable<string>; // CHUỖI
-  price: Nullable<string>; // CHUỖI
-  discount_price: Nullable<string>; // CHUỖI
+  images?: string[];
+  sku: Nullable<string>;
+  price: Nullable<string>;
+  discount_price: Nullable<string>;
   stock_quantity: number;
   is_available: boolean;
 }
 
 export interface CreateProductDTO {
   name: string;
+  sku: Nullable<string>;
   category_id: Nullable<number>;
   description: Nullable<string>;
-  sku: Nullable<string>; // CHUỖI
   origin: Nullable<string>;
   brand: Nullable<string>;
-  images?: string[]; // mảng URL
-  variation_status: 0 | 1 | boolean; // FE cho phép boolean, BE nhận 0/1
+  image?: Nullable<string>; // ✅ có thể gửi ảnh chính
+  images?: string[];
+  variation_status: 0 | 1 | boolean;
   variants?: VariantCreatePayload[];
 }
 
@@ -111,7 +127,6 @@ const isNonEmpty = (s?: string | null) => !!s && s.trim() !== "";
 const nonnullStrArr = (arr?: (string | null | undefined)[]) =>
   (arr || []).filter((u) => isNonEmpty(u as any)) as string[];
 
-/** unwrap mảng từ nhiều dạng envelope khác nhau */
 function unwrapArray<T>(resData: any, fallback: T[]): T[] {
   if (Array.isArray(resData)) return resData as T[];
   if (Array.isArray(resData?.data)) return resData.data as T[];
@@ -119,12 +134,10 @@ function unwrapArray<T>(resData: any, fallback: T[]): T[] {
   return fallback;
 }
 
-/** unwrap object từ nhiều dạng envelope khác nhau */
 function unwrapObj<T>(resData: any): T {
   return (resData?.data ?? resData) as T;
 }
 
-/** Ép number | null an toàn cho category_id, size_id, color_id */
 const toNumberOrNull = (v: any): number | null => {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) {
@@ -133,12 +146,9 @@ const toNumberOrNull = (v: any): number | null => {
   return null;
 };
 
-/** Giữ money dạng string hoặc null (để đúng với DTO/DB hiện tại) */
 const normalizeMoneyString = (v: any): string | null => {
   if (v === null || v === undefined || v === "") return null;
-  // Nếu là số, convert thẳng sang string
   if (typeof v === "number" && Number.isFinite(v)) return String(v);
-  // Nếu là string có thể parse được thành số => giữ nguyên dạng string đã trim
   if (typeof v === "string" && v.trim() !== "") return v.trim();
   return null;
 };
@@ -171,16 +181,17 @@ export async function createProduct(payload: CreateProductDTO): Promise<Product>
   const normalized: CreateProductDTO = {
     ...payload,
     category_id: toNumberOrNull(payload.category_id),
-    images: nonnullStrArr(payload.images),
     variation_status: payload.variation_status ? 1 : 0,
+    images: nonnullStrArr(payload.images),
+    image: isNonEmpty(payload.image) ? payload.image : null,
     variants: (payload.variants || []).map((v) => ({
       size_id: toNumberOrNull(v.size_id),
       color_id: toNumberOrNull(v.color_id),
       image: isNonEmpty(v.image) ? (v.image as string) : null,
       images: nonnullStrArr(v.images),
-      sku: isNonEmpty(v.sku) ? (v.sku as string) : null, // CHUỖI
-      price: normalizeMoneyString(v.price), // CHUỖI
-      discount_price: normalizeMoneyString(v.discount_price), // CHUỖI
+      sku: isNonEmpty(v.sku) ? v.sku : null,
+      price: normalizeMoneyString(v.price),
+      discount_price: normalizeMoneyString(v.discount_price),
       stock_quantity: Number.isFinite(v.stock_quantity) ? v.stock_quantity : 0,
       is_available: !!v.is_available,
     })),
@@ -195,22 +206,23 @@ export async function updateProduct(id: number, payload: UpdateProductDTO): Prom
     ...payload,
     category_id:
       payload.category_id !== undefined ? toNumberOrNull(payload.category_id) : undefined,
-    images: payload.images ? nonnullStrArr(payload.images) : undefined,
     variation_status:
       typeof payload.variation_status === "boolean"
         ? payload.variation_status
           ? 1
           : 0
         : payload.variation_status,
+    images: payload.images ? nonnullStrArr(payload.images) : undefined,
+    image: payload.image && isNonEmpty(payload.image) ? payload.image : undefined,
     variants: payload.variants
       ? payload.variants.map((v) => ({
           size_id: toNumberOrNull(v.size_id),
           color_id: toNumberOrNull(v.color_id),
           image: isNonEmpty(v.image) ? (v.image as string) : null,
           images: nonnullStrArr(v.images),
-          sku: isNonEmpty(v.sku) ? (v.sku as string) : null, // CHUỖI
-          price: normalizeMoneyString(v.price), // CHUỖI
-          discount_price: normalizeMoneyString(v.discount_price), // CHUỖI
+          sku: isNonEmpty(v.sku) ? (v.sku as string) : null,
+          price: normalizeMoneyString(v.price),
+          discount_price: normalizeMoneyString(v.discount_price),
           stock_quantity: Number.isFinite(v.stock_quantity) ? v.stock_quantity : 0,
           is_available: !!v.is_available,
         }))
@@ -222,7 +234,7 @@ export async function updateProduct(id: number, payload: UpdateProductDTO): Prom
 }
 
 /* =======================
- * Delete / Trash / Restore
+ * Delete / Restore
  * ======================= */
 export async function deleteProduct(id: number): Promise<void> {
   await api.delete(`/admin/products/${id}`);
@@ -234,7 +246,6 @@ export async function fetchTrashedProducts(): Promise<Product[]> {
 }
 
 export async function restoreProduct(id: number): Promise<void> {
-  // Nếu BE dùng POST thay vì PATCH, đổi dòng dưới cho phù hợp
   await api.patch(`/admin/products/${id}/restore`);
 }
 
