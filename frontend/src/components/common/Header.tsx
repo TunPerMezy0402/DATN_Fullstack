@@ -62,6 +62,23 @@ const Header: React.FC = () => {
       }
     } else setUser(null);
   }, []);
+const [likedCount, setLikedCount] = useState<number>(0);
+
+useEffect(() => {
+  const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+  if (!token) { setLikedCount(0); return; }
+
+  fetch(`${BACKEND_ORIGIN}/api/user/liked-products`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+  })
+    .then(r => r.json())
+    .then(data => {
+      // API có thể trả mảng hoặc paginator {data: []}
+      const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+      setLikedCount(list.length || 0);
+    })
+    .catch(() => setLikedCount(0));
+}, [/* phụ thuộc vào khi user đăng nhập/đăng xuất thì bạn thêm biến ở đây nếu có */]);
 
   // Bổ sung: hàm tải profile mới nhất
   const loadProfile = useCallback(async () => {
@@ -193,6 +210,16 @@ const Header: React.FC = () => {
 
         {/* User + Cart */}
         <div className="flex items-center gap-4 flex-shrink-0">
+           {/* ❤ Yêu thích */}
+  {/* ❤ Yêu thích */}
+<div
+  onClick={() => navigate("/favorites")}
+  className="relative cursor-pointer hover:text-red-600 transition-colors"
+  title="Sản phẩm yêu thích"
+>
+  <i className="fas fa-heart text-xl text-red-500"></i>
+</div>
+
           {/* Giỏ hàng */}
           <div
             onClick={() => navigate("/cart")}

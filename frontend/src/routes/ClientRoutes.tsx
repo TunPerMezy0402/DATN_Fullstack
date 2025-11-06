@@ -27,6 +27,7 @@ import OrderUserDetail from '../layouts/client/component/order/OrderUserDetail';
 
 
 
+import FavoritesPage from '../layouts/client/component/favorite/FavoritesPage';
 
 
 /* import CategoryPage from '../layouts/client/component/CategoryPage';
@@ -80,6 +81,7 @@ const ClientRoutes = () => {
 
 
 
+<Route path="/favorites" element={<FavoritesPage />} />
         {/* 📰 Trang tin tức có sidebar + nội dung */}
         <Route path="news" element={<NewsLayout />}>
           <Route index element={<NewsListDemo />} /> {/* Trang danh sách demo */}
