@@ -97,7 +97,7 @@ const BannerList = () => {
     <div className="p-4 bg-white shadow rounded">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold">Danh sách Banner</h2>
-        <Button type="primary" onClick={() => navigate("/admin/banners/add")}>
+        <Button type="primary" onClick={() => navigate("/admin/banner/add")}>
           + Thêm mới
         </Button>
       </div>
