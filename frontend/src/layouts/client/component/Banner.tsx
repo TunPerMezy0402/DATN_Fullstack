@@ -1,66 +1,85 @@
-import React, { useState, memo } from "react";
+import React, { useEffect, useState, memo } from "react";
+import { useNavigate } from "react-router-dom";
+import { getAllBanners } from "../../../api/bannerApi";
 
 const Banner = () => {
-  const banners = [
-    {
-      id: 1,
-      title: "Giày thể thao mới nhất",
-      image: "",
-    },
-    {
-      id: 2,
-      title: "Giảm giá cực sốc 50%",
-      image: "",
-    },
-    {
-      id: 3,
-      title: "Sưu tập giày xuân 2025",
-      image: "",
-    },
-  ];
-
+  const [banners, setBanners] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
-  const prevSlide = () => {
-    setCurrentIndex((prev) => (prev - 1 + banners.length) % banners.length);
-  };
+  useEffect(() => {
+    const fetchBanners = async () => {
+      try {
+        const res = await getAllBanners();
+        const data = res.data || [];
 
-  const nextSlide = () => {
-    setCurrentIndex((prev) => (prev + 1) % banners.length);
-  };
+        // ✅ Lọc banner đang active
+        const active = data.filter((b) => b.is_active);
+
+        // ✅ Lấy ảnh đầu tiên từ images
+        const fixed = active.map((b) => ({
+          ...b,
+          image_url: b.images?.[0]?.image_url || null,
+        }));
+
+        setBanners(fixed);
+      } catch (err) {
+        console.error("Lỗi lấy banner:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBanners();
+  }, []);
+
+  useEffect(() => {
+    if (banners.length === 0) return;
+
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % banners.length);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [banners]);
+
+  if (loading || banners.length === 0) return null;
 
   const current = banners[currentIndex];
 
   return (
     <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
       <img
-        src={current.image}
+        src={current.image_url}
         alt={current.title}
-        className="w-full h-[500px] object-cover shadow transition-all duration-500 ease-in-out cursor-pointer rounded-xl"
+        className="w-full h-[500px] object-cover"
       />
 
-      {/* Nút chuyển trái */}
+      {/* Prev Button */}
       <button
-        onClick={prevSlide}
-        className="absolute top-1/2 left-4 transform -translate-y-1/2 bg-white/70 hover:bg-white text-black rounded-full w-10 h-10 flex items-center justify-center shadow z-20"
+        onClick={() =>
+          setCurrentIndex((prev) => (prev - 1 + banners.length) % banners.length)
+        }
+        className="absolute top-1/2 left-4 -translate-y-1/2 bg-white/70 rounded-full w-10 h-10 flex items-center justify-center"
       >
         &lt;
       </button>
 
-      {/* Nút chuyển phải */}
+      {/* Next Button */}
       <button
-        onClick={nextSlide}
-        className="absolute top-1/2 right-4 transform -translate-y-1/2 bg-white/70 hover:bg-white text-black rounded-full w-10 h-10 flex items-center justify-center shadow z-20"
+        onClick={() => setCurrentIndex((prev) => (prev + 1) % banners.length)}
+        className="absolute top-1/2 right-4 -translate-y-1/2 bg-white/70 rounded-full w-10 h-10 flex items-center justify-center"
       >
         &gt;
       </button>
 
-      {/* Dấu chấm slide */}
-      <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex gap-2 z-10">
+      {/* Indicators */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2">
         {banners.map((_, i) => (
           <span
             key={i}
-            className={`w-3 h-3 rounded-full transition-all duration-300 ${
+            className={`w-3 h-3 rounded-full ${
               i === currentIndex ? "bg-white" : "bg-white/50"
             }`}
           ></span>
