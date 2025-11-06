@@ -233,6 +233,7 @@ useEffect(() => {
             )}
           </div>
 
+<<<<<<< HEAD
           {/* User */}
           {user && localStorage.getItem("access_token") ? (
             <div className="relative">
@@ -333,6 +334,16 @@ useEffect(() => {
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-x-8 text-sm font-normal font-sans py-2">
             {navLinks.map((link) => (
+=======
+          {/* Center - Links */}
+          <div className="flex gap-x-8 text-sm font-normal font-sans">
+            {[{ path: "/", label: "Trang chủ" },
+              { path: "/products", label: "Sản phẩm" },
+              { path: "/blog", label: "Tin tức" },
+              { path: "/compare", label: "So sánh" },
+              { path: "/lien_he", label: "Liên hệ" },
+            ].map((link) => (
+>>>>>>> origin/qkhai
               <Link
                 key={link.path}
                 to={link.path}

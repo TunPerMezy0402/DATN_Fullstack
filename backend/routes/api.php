@@ -29,8 +29,38 @@ use App\Http\Controllers\Api\admin\ProductVariantController;
 use App\Http\Controllers\Api\admin\SupportTicketController;
 use App\Http\Controllers\Api\admin\WishlistController;
 use App\Http\Controllers\Api\admin\AddressBookController;
+
 use App\Http\Controllers\Api\admin\CouponController;
 use App\Http\Controllers\Api\admin\OrderController;
+
+
+use App\Http\Controllers\Api\Admin\BannerController;
+use App\Http\Controllers\Api\Admin\BannerImageController;
+use App\Http\Controllers\Api\Client\HomeBannerController;
+
+
+
+// Banner routes - Admin (có middleware auth)
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+	Route::get('banners/trash', [BannerController::class, 'trash']);
+	Route::post('banners/{id}/restore', [BannerController::class, 'restore']);
+	Route::delete('banners/{id}/force', [BannerController::class, 'forceDelete']);
+	Route::apiResource('banners', BannerController::class);
+
+	Route::get('banner-images/trash', [BannerImageController::class, 'trash']);
+	Route::post('banner-images/{id}/restore', [BannerImageController::class, 'restore']);
+	Route::delete('banner-images/{id}/force', [BannerImageController::class, 'forceDelete']);
+
+	Route::post('banners/{banner}/images', [BannerImageController::class, 'store']);
+	Route::match(['put','patch'], 'banner-images/{image}', [BannerImageController::class, 'update']);
+	Route::delete('banner-images/{image}', [BannerImageController::class, 'destroy']);
+});
+
+// Banner routes - Client (không cần auth)
+Route::get('banners/active', [HomeBannerController::class, 'active']);
+Route::get('banners', [HomeBannerController::class, 'index']);
+
+
 
 /*
 |--------------------------------------------------------------------------
@@ -41,9 +71,21 @@ use App\Http\Controllers\Api\admin\OrderController;
 |--------------------------------------------------------------------------
 */
 
+
 // =====================================================================
 // 🔐 AUTH ROUTES
 // =====================================================================
+
+
+
+
+
+
+
+
+// ----------------------
+
+
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
     Route::post('register', [AuthController::class, 'register']);
