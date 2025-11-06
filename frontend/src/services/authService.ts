@@ -261,9 +261,6 @@ const authService = {
 // ======================= GOOGLE AUTH SERVICE =======================
 
 export const googleAuthService = {
-  /**
-   * Đăng nhập bằng Google
-   */
   async login(credential: string): Promise<AuthResponse> {
     try {
       const res = await googleAuthApi.login(credential);
@@ -274,10 +271,6 @@ export const googleAuthService = {
       throw error;
     }
   },
-
-  /**
-   * Đăng ký bằng Google
-   */
   async register(credential: string): Promise<{ message: string }> {
     try {
       const res = await googleAuthApi.register(credential);
@@ -288,9 +281,6 @@ export const googleAuthService = {
     }
   },
 
-  /**
-   * Xử lý Google OAuth callback (dùng chung cho login/register)
-   */
   handleCallback: async (
     credential: string,
     isRegister: boolean = false

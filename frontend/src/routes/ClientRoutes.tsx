@@ -18,6 +18,14 @@ import CheckoutPage from '../layouts/client/component/payment/CheckoutPage';
 
 import Profile from '../layouts/client/component/profile/Profile';
 
+import Success from '../layouts/client/component/payment/Success';
+import InvoicePage from '../layouts/client/component/payment/InvoicePage';
+
+import OrderUser from '../layouts/client/component/order/OrderUser';
+import OrderUserDetail from '../layouts/client/component/order/OrderUserDetail';
+
+
+
 
 
 
@@ -29,9 +37,9 @@ import NewsLayout from "../layouts/NewsLayout"; // layout chứa sidebar + conte
 import NewsListDemo from "../pages/NewsListDemo";
 import NewsArticleTop10 from "../components/News/NewsArticleTop10";
 import NewsArticleTips from "../components/News/NewsArticleTips";
-import NewsArticleReview from "../components/News/NewsArticleReview"; // ✅ Xu hướng giày sneaker 2025
-import NewsArticlePromotion from "../components/News/NewsArticlePromotion"; // ✅ mới thêm
-import NewsArticleStory from "../components/News/NewsArticleStory"; // ✅ Xu hướng sneaker 2025
+import NewsArticleReview from "../components/News/NewsArticleReview"; 
+import NewsArticlePromotion from "../components/News/NewsArticlePromotion"; 
+import NewsArticleStory from "../components/News/NewsArticleStory"; 
 
 // ===============================================
 
@@ -63,6 +71,14 @@ const ClientRoutes = () => {
         <Route path="/checkout" element={<CheckoutPage />} />
 
         <Route path="/profile" element={<Profile />} />
+
+        <Route path="/payment/success" element={<Success />} />
+        <Route path="/payment/invoice" element={<InvoicePage />} />
+
+        <Route path="/orders" element={<OrderUser />} />
+        <Route path="/orders/:id" element={<OrderUserDetail />} />
+
+
 
         {/* 📰 Trang tin tức có sidebar + nội dung */}
         <Route path="news" element={<NewsLayout />}>

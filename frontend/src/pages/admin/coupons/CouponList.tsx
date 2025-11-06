@@ -369,9 +369,9 @@ const CouponList: React.FC = () => {
       align: "center" as const,
       render: (isActive: boolean) =>
         isActive ? (
-          <Badge status="success" text="Mã hiện" />
+          <Badge status="success" text="Hoạt động" />
         ) : (
-          <Badge status="error" text="Mã ẩn" />
+          <Badge status="error" text="Ngưng" />
         ),
     },
     {
@@ -441,7 +441,7 @@ const CouponList: React.FC = () => {
         <Col xs={24} sm={8}>
           <Card>
             <Statistic
-              title="Hiện"
+              title="Đang hoạt động"
               value={statistics.active}
               prefix={<CheckCircleOutlined />}
               valueStyle={{ color: "#52c41a" }}
@@ -451,7 +451,7 @@ const CouponList: React.FC = () => {
         <Col xs={24} sm={8}>
           <Card>
             <Statistic
-              title="Ẩn"
+              title="Ngừng hoạt động"
               value={statistics.inactive}
               prefix={<CloseCircleOutlined />}
               valueStyle={{ color: "#ff4d4f" }}
@@ -482,8 +482,8 @@ const CouponList: React.FC = () => {
               suffixIcon={<FilterOutlined />}
             >
               <Option value="all">Tất cả</Option>
-              <Option value="active">Mã Hiện</Option>
-              <Option value="inactive">Mã Ẩn</Option>
+              <Option value="active">Hoạt động</Option>
+              <Option value="inactive">Ngừng</Option>
             </Select>
           </Col>
           <Col xs={12} md={4}>
@@ -720,7 +720,7 @@ const CouponList: React.FC = () => {
             name="is_active"
             valuePropName="checked"
           >
-            <Switch checkedChildren="Hiện" unCheckedChildren="Ẩn" />
+            <Switch checkedChildren="Hoạt động" unCheckedChildren="Ngưng" />
           </Form.Item>
         </Form>
       </Modal>
@@ -836,9 +836,9 @@ const CouponList: React.FC = () => {
                 <Text type="secondary">Trạng thái</Text>
                 <div style={{ marginTop: 8 }}>
                   {selectedCoupon.is_active ? (
-                    <Badge status="success" text="Hiện" />
+                    <Badge status="success" text="Đang hoạt động" />
                   ) : (
-                    <Badge status="error" text="Ẩn" />
+                    <Badge status="error" text="Ngừng hoạt động" />
                   )}
                 </div>
               </div>

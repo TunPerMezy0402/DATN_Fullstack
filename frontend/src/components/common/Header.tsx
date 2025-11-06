@@ -248,12 +248,33 @@ const Header: React.FC = () => {
                     className="absolute bg-white shadow-lg rounded-lg w-48 mt-2 right-0 z-20 border border-gray-100"
                   >
                     <div className="py-2">
-                      <Link to="/profile" onClick={() => setShowUserMenu(false)} className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600">
+                      {/* Chỉ hiển thị khi userRole là admin */}
+                      {user.role === "admin" && (
+                        <Link
+                          to="/admin/dashboard"
+                          onClick={() => setShowUserMenu(false)}
+                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600"
+                        >
+                          <i className="fas fa-tools mr-2"></i> Quản trị Admin
+                        </Link>
+                      )}
+
+                      <Link
+                        to="/profile"
+                        onClick={() => setShowUserMenu(false)}
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600"
+                      >
                         <i className="far fa-user mr-2"></i> Thông tin cá nhân
                       </Link>
-                      <Link to="/orders" onClick={() => setShowUserMenu(false)} className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600">
+
+                      <Link
+                        to="/orders"
+                        onClick={() => setShowUserMenu(false)}
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600"
+                      >
                         <i className="fas fa-shopping-bag mr-2"></i> Đơn hàng của tôi
                       </Link>
+
                       <button
                         onClick={() => setShowLogoutConfirm(true)}
                         className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
@@ -261,6 +282,7 @@ const Header: React.FC = () => {
                         <i className="fas fa-sign-out-alt mr-2"></i> Đăng xuất
                       </button>
                     </div>
+
                   </motion.div>
                 )}
               </AnimatePresence>

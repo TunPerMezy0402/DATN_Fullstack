@@ -5,7 +5,7 @@ import {
   Row, Col, Card, Typography, Tag, Space, Image, Skeleton, Alert,
   Divider, Badge, InputNumber, Button, Breadcrumb, Tabs, Rate, message, Tooltip,
 } from "antd";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   ShoppingCartOutlined, HeartOutlined, HeartFilled, ShareAltOutlined,
   SafetyOutlined, TruckOutlined, SyncOutlined, CheckCircleOutlined,
@@ -119,6 +119,7 @@ const checkIsLiked = async (productId: number): Promise<boolean> => {
 // ============= COMPONENT =============
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [product, setProduct] = useState<Product | null>(null);
@@ -158,6 +159,24 @@ const ProductDetail: React.FC = () => {
   const allSizes = unique((product?.variants ?? []).map((v) => textOf(v.size)).filter(Boolean));
   const allColors = unique((product?.variants ?? []).map((v) => textOf(v.color)).filter(Boolean));
 
+  // 🆕 Tự động chọn biến thể rẻ nhất khi load sản phẩm
+  useEffect(() => {
+    if (!product || !product.variants || product.variants.length === 0) return;
+
+    // Tìm biến thể có giá rẻ nhất (ưu tiên discount_price, không thì lấy price)
+    const cheapestVariant = product.variants.reduce((cheapest, current) => {
+      const currentPrice = toNum(current.discount_price || current.price) ?? Infinity;
+      const cheapestPrice = toNum(cheapest.discount_price || cheapest.price) ?? Infinity;
+      return currentPrice < cheapestPrice ? current : cheapest;
+    });
+
+    // Set màu và size của biến thể rẻ nhất
+    if (cheapestVariant) {
+      setSelectedColor(textOf(cheapestVariant.color));
+      setSelectedSize(textOf(cheapestVariant.size));
+    }
+  }, [product]);
+
   useEffect(() => {
     if (!product) return;
     const found = product.variants?.find(
@@ -196,7 +215,29 @@ const ProductDetail: React.FC = () => {
 
   useEffect(() => setSelectedImage(undefined), [activeVariant]);
 
-  // Actions
+  // Validation Functions
+  const validateSelection = (): boolean => {
+    const hasColorOptions = allColors.length > 0;
+    const hasSizeOptions = allSizes.length > 0;
+
+    if (hasColorOptions && !selectedColor) {
+      message.warning("Vui lòng chọn màu sắc");
+      return false;
+    }
+
+    if (hasSizeOptions && !selectedSize) {
+      message.warning("Vui lòng chọn kích thước");
+      return false;
+    }
+
+    if ((hasColorOptions || hasSizeOptions) && !activeVariant) {
+      message.warning("Vui lòng chọn đầy đủ thông tin sản phẩm");
+      return false;
+    }
+
+    return true;
+  };
+
   const validateQuantity = (value: number | null): boolean => {
     if (!value || value < 1) {
       message.warning("Số lượng phải lớn hơn 0");
@@ -209,45 +250,83 @@ const ProductDetail: React.FC = () => {
     return true;
   };
 
-const handleAddToCart = async () => {
-  if (!validateQuantity(quantity)) return;
-
-  try {
-    const response = await axios.post(
-      "http://127.0.0.1:8000/api/cart/add",
-      {
-        variant_id: activeVariant?.id,
-        quantity: quantity,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("access_token") || localStorage.getItem("token")}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    console.log("🛒 API Response:", response.data);
-    message.success(response.data.message || "Đã thêm vào giỏ hàng!");
-  } catch (error: unknown) {
-    // ✅ Khai báo kiểu lỗi rõ ràng
-    if (axios.isAxiosError(error)) {
-      const err = error as AxiosError<{ message?: string }>;
-      message.error(err.response?.data?.message || "Không thể thêm vào giỏ hàng");
-      console.error("❌ Lỗi API:", err.response?.data);
-    } else if (error instanceof Error) {
-      message.error(error.message);
-      console.error("❌ Lỗi khác:", error.message);
-    } else {
-      message.error("Lỗi không xác định");
-      console.error("❌ Lỗi không xác định:", error);
-    }
-  }
-};
-
-  const handleBuyNow = () => {
+  // Action Handlers
+  const handleAddToCart = async () => {
+    if (!validateSelection()) return;
     if (!validateQuantity(quantity)) return;
-    console.log("💳 BUY_NOW", { product_id: product?.id, variant_id: activeVariant?.id, quantity, color: selectedColor, size: selectedSize });
+
+    try {
+      const response = await axios.post(
+        `${API_URL}/cart/add`,
+        {
+          variant_id: activeVariant?.id,
+          quantity: quantity,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${getAuthToken()}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("🛒 API Response:", response.data);
+      message.success(response.data.message || "Đã thêm vào giỏ hàng!");
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        const err = error as AxiosError<{ message?: string }>;
+        message.error(err.response?.data?.message || "Không thể thêm vào giỏ hàng");
+        console.error("❌ Lỗi API:", err.response?.data);
+      } else if (error instanceof Error) {
+        message.error(error.message);
+        console.error("❌ Lỗi khác:", error.message);
+      } else {
+        message.error("Lỗi không xác định");
+        console.error("❌ Lỗi không xác định:", error);
+      }
+    }
+  };
+
+  // 🆕 Sửa lại handleBuyNow theo format giỏ hàng
+  const handleBuyNow = () => {
+    if (!validateSelection()) return;
+    if (!validateQuantity(quantity)) return;
+
+    // Tạo dữ liệu theo format CartItem từ giỏ hàng
+    const selectedProduct = {
+      id: Date.now(), // Tạo ID tạm thời
+      quantity: quantity,
+      variant: {
+        id: activeVariant.id,
+        sku: activeVariant.sku || "",
+        image: activeVariant.image,
+        price: activeVariant.price,
+        discount_price: activeVariant.discount_price,
+        stock_quantity: activeVariant.stock_quantity,
+        product: {
+          id: product!.id,
+          name: product!.name,
+        },
+        color: {
+          type: "color",
+          value: selectedColor || "",
+        },
+        size: {
+          type: "size",
+          value: selectedSize || "",
+        },
+      },
+    };
+
+    // Lưu vào localStorage giống như CartList
+    localStorage.setItem("selectedCartItems", JSON.stringify([selectedProduct]));
+
+    // Tính tổng tiền
+    const total = quantity * parseFloat(activeVariant.discount_price || activeVariant.price || "0");
+    localStorage.setItem("cartTotal", total.toString());
+
+    // Chuyển sang trang checkout
+    navigate("/checkout");
   };
 
   const handleQuantityChange = (value: number | null) => {
@@ -278,7 +357,7 @@ const handleAddToCart = async () => {
     }
   };
 
-  // Render
+  // Render Loading
   if (loading) {
     return (
       <div style={{ padding: "16px 24px", maxWidth: 1200, margin: "0 auto" }}>
@@ -287,6 +366,7 @@ const handleAddToCart = async () => {
     );
   }
 
+  // Render Error
   if (error || !product) {
     return (
       <div style={{ padding: "16px 24px" }}>
@@ -295,6 +375,7 @@ const handleAddToCart = async () => {
     );
   }
 
+  // Main Render
   return (
     <div style={{ background: "#f8f9fa", minHeight: "100vh", paddingBottom: 32 }}>
       {/* Header */}
@@ -450,8 +531,6 @@ const handleAddToCart = async () => {
                   </div>
                 )}
 
-                {/* Stock */}
-
                 <Divider style={{ margin: "4px 0" }} />
 
                 {/* Quantity & Actions */}
@@ -459,7 +538,7 @@ const handleAddToCart = async () => {
                   <Space direction="vertical" size={10} style={{ width: "100%" }}>
                     {/* Quantity Selector */}
                     <Space size={8}>
-                      Số lượng:
+                      <Text strong style={{ fontSize: 13 }}>Số lượng:</Text>
                       <Button
                         size="middle"
                         icon={<MinusOutlined />}
@@ -499,14 +578,14 @@ const handleAddToCart = async () => {
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <Button
                         type="primary"
-                        size="middle"
+                        size="large"
                         icon={<ShoppingCartOutlined />}
                         onClick={handleAddToCart}
                         disabled={!inStock}
                         style={{
                           flex: 1,
-                          height: 38,
-                          fontSize: 13,
+                          height: 42,
+                          fontSize: 14,
                           fontWeight: "600",
                           borderRadius: 6,
                         }}
@@ -514,13 +593,13 @@ const handleAddToCart = async () => {
                         Thêm vào giỏ
                       </Button>
                       <Button
-                        size="middle"
+                        size="large"
                         onClick={handleBuyNow}
                         disabled={!inStock}
                         style={{
                           flex: 1,
-                          height: 38,
-                          fontSize: 13,
+                          height: 42,
+                          fontSize: 14,
                           fontWeight: "600",
                           borderRadius: 6,
                           background: inStock ? "#10b981" : undefined,
@@ -531,7 +610,6 @@ const handleAddToCart = async () => {
                         Mua ngay
                       </Button>
                     </div>
-
                   </Space>
                 </div>
               </Space>

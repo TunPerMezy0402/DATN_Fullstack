@@ -1,81 +1,132 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Form, Input, Select, Button, Divider, message, Typography, Descriptions } from "antd";
+import {
+  Card,
+  Form,
+  Select,
+  Button,
+  message,
+  Spin,
+  Typography,
+  Space,
+  Row,
+  Col,
+  Input,
+  Alert,
+  Steps,
+  Divider,
+} from "antd";
+import {
+  ArrowLeftOutlined,
+  SaveOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  LoadingOutlined,
+} from "@ant-design/icons";
 import axios from "axios";
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { Option } = Select;
-
-interface Shipping {
-  shipping_name?: string;
-  shipping_phone?: string;
-  shipping_address_line?: string;
-  shipping_city?: string;
-  shipping_province?: string;
-  shipping_postal_code?: string;
-  carrier?: string;
-  tracking_number?: string;
-  shipping_status?: string;
-}
 
 interface Order {
   id: number;
-  sku?: string;
-  user?: { id?: number; name?: string; phone?: string; email?: string };
+  sku: string;
   status: string;
   payment_status: string;
-  shipping?: Shipping;
+  shipping: {
+    id: number;
+    shipping_status: string;
+    shipper_name?: string | null;
+    shipper_phone?: string | null;
+  };
 }
 
 const API_URL = "http://127.0.0.1:8000/api";
 const token = localStorage.getItem("access_token") || "";
 
-const statusMap: Record<string, string> = {
-  pending: "Đang chờ",
-  confirmed: "Xác nhận",
-  shipped: "Đang giao",
-  delivered: "Đã giao",
-  completed: "Hoàn tất",
-  cancelled: "Đã hủy",
-  returned: "Trả lại",
-};
+// Định nghĩa các bước trạng thái đơn hàng theo thứ tự
+const ORDER_STATUS_STEPS = [
+  { value: "pending", label: "Đang chờ", step: 0 },
+  { value: "confirmed", label: "Đã xác nhận", step: 1 },
+  { value: "shipped", label: "Đang giao", step: 2 },
+  { value: "delivered", label: "Đã giao", step: 3 },
+  { value: "completed", label: "Hoàn tất", step: 4 },
+];
 
-const paymentMap: Record<string, string> = {
-  unpaid: "Chưa thanh toán",
-  paid: "Đã thanh toán",
-  refunded: "Đã hoàn tiền",
-  failed: "Thanh toán thất bại",
-};
+// Trạng thái đặc biệt (không theo flow)
+const SPECIAL_STATUSES = [
+  { value: "cancelled", label: "Đã hủy" },
+  { value: "returned", label: "Trả lại" },
+];
+
+// Trạng thái thanh toán
+const PAYMENT_STATUSES = [
+  { value: "unpaid", label: "Chưa thanh toán", color: "default" },
+  { value: "pending", label: "Đang chờ xử lý", color: "gold" },
+  { value: "paid", label: "Đã thanh toán", color: "green" },
+  { value: "failed", label: "Thanh toán thất bại", color: "red" },
+  { value: "refunded", label: "Đã hoàn tiền", color: "orange" },
+];
+
+// Trạng thái vận chuyển
+const SHIPPING_STATUS_STEPS = [
+  { value: "pending", label: "Chờ xử lý", step: 0 },
+  { value: "in_transit", label: "Đang vận chuyển", step: 1 },
+  { value: "delivered", label: "Đã giao hàng", step: 2 },
+];
+
+const SHIPPING_SPECIAL_STATUSES = [
+  { value: "failed", label: "Giao thất bại" },
+  { value: "returned", label: "Đã hoàn hàng" },
+];
 
 const OrderUpdate: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const [order, setOrder] = useState<Order | null>(null);
-  const [form] = Form.useForm();
   const navigate = useNavigate();
+  const [form] = Form.useForm();
+  const [order, setOrder] = useState<Order | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [currentOrderStep, setCurrentOrderStep] = useState(0);
+  const [currentShippingStep, setCurrentShippingStep] = useState(0);
+  const [showShipperInfo, setShowShipperInfo] = useState(false);
 
+  // Lấy thông tin đơn hàng
   const fetchOrder = async () => {
     try {
+      setLoading(true);
       const res = await axios.get(`${API_URL}/admin/orders-admin/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Backend returns shape: { order: {...}, items: [...], shipping: {...}, ... }
-      const payload = res.data || {};
-      const merged: Order = {
-        id: payload.order?.id,
-        sku: payload.order?.sku,
-        user: payload.user ?? undefined,
-        status: payload.order?.status,
-        payment_status: payload.order?.payment_status,
-        shipping: payload.shipping ?? undefined,
-      } as Order;
-      setOrder(merged);
+      const orderData = res.data.data;
+      setOrder(orderData);
+
+      // Set giá trị form
       form.setFieldsValue({
-        status: merged.status,
-        payment_status: merged.payment_status,
-        shipping: merged.shipping,
+        status: orderData.status,
+        payment_status: orderData.payment_status,
+        shipping_status: orderData.shipping.shipping_status,
+        shipper_name: orderData.shipping.shipper_name,
+        shipper_phone: orderData.shipping.shipper_phone,
       });
-    } catch {
-      message.error("Không tải được đơn hàng");
+
+      // Tính step hiện tại
+      const orderStep = ORDER_STATUS_STEPS.find((s) => s.value === orderData.status);
+      const shippingStep = SHIPPING_STATUS_STEPS.find(
+        (s) => s.value === orderData.shipping.shipping_status
+      );
+
+      setCurrentOrderStep(orderStep?.step ?? -1);
+      setCurrentShippingStep(shippingStep?.step ?? -1);
+
+      // Hiển thị shipper info nếu đang vận chuyển
+      setShowShipperInfo(orderData.shipping.shipping_status === "in_transit");
+    } catch (error) {
+      console.error(error);
+      message.error("Không thể tải thông tin đơn hàng!");
+      navigate("/orders");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -83,61 +134,392 @@ const OrderUpdate: React.FC = () => {
     fetchOrder();
   }, [id]);
 
-  const handleUpdate = async () => {
-    try {
-      const values = await form.validateFields();
-      await axios.put(`${API_URL}/admin/orders-admin/${id}`, values, {
-        headers: { Authorization: `Bearer ${token}` },
+  // Validate chỉ được chuyển từng bước
+  const validateOrderStatus = (_: any, value: string) => {
+    if (!order) return Promise.resolve();
+
+    const currentStep = ORDER_STATUS_STEPS.find((s) => s.value === order.status);
+    const newStep = ORDER_STATUS_STEPS.find((s) => s.value === value);
+
+    // Cho phép chuyển sang trạng thái đặc biệt
+    if (SPECIAL_STATUSES.some((s) => s.value === value)) {
+      return Promise.resolve();
+    }
+
+    // Kiểm tra nếu là bước tiếp theo hoặc giữ nguyên
+    if (
+      currentStep &&
+      newStep &&
+      (newStep.step === currentStep.step || newStep.step === currentStep.step + 1)
+    ) {
+      return Promise.resolve();
+    }
+
+    return Promise.reject(
+      new Error("Chỉ được chuyển sang bước tiếp theo hoặc trạng thái đặc biệt!")
+    );
+  };
+
+  const validateShippingStatus = (_: any, value: string) => {
+    if (!order) return Promise.resolve();
+
+    const currentStep = SHIPPING_STATUS_STEPS.find(
+      (s) => s.value === order.shipping.shipping_status
+    );
+    const newStep = SHIPPING_STATUS_STEPS.find((s) => s.value === value);
+
+    // Cho phép chuyển sang trạng thái đặc biệt
+    if (SHIPPING_SPECIAL_STATUSES.some((s) => s.value === value)) {
+      return Promise.resolve();
+    }
+
+    if (
+      currentStep &&
+      newStep &&
+      (newStep.step === currentStep.step || newStep.step === currentStep.step + 1)
+    ) {
+      return Promise.resolve();
+    }
+
+    return Promise.reject(
+      new Error("Chỉ được chuyển sang bước tiếp theo hoặc trạng thái đặc biệt!")
+    );
+  };
+
+  // Xử lý khi thay đổi trạng thái vận chuyển
+  const handleShippingStatusChange = (value: string) => {
+    setShowShipperInfo(value === "in_transit");
+    
+    // Reset shipper info nếu không phải đang vận chuyển
+    if (value !== "in_transit") {
+      form.setFieldsValue({
+        shipper_name: null,
+        shipper_phone: null,
       });
-      message.success("Cập nhật thành công");
-      navigate("/admin/orders");
-    } catch {
-      message.error("Cập nhật thất bại");
     }
   };
 
-  if (!order) return <div>Đang tải...</div>;
+  // Submit form
+  const handleSubmit = async (values: any) => {
+    try {
+      setSubmitting(true);
+
+      const updateData: any = {
+        status: values.status,
+        payment_status: values.payment_status,
+        shipping_status: values.shipping_status,
+      };
+
+      // Thêm thông tin shipper nếu đang vận chuyển
+      if (values.shipping_status === "in_transit") {
+        updateData.shipper_name = values.shipper_name;
+        updateData.shipper_phone = values.shipper_phone;
+      }
+
+      await axios.put(`${API_URL}/admin/orders-admin/${id}`, updateData, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      message.success("Cập nhật đơn hàng thành công!");
+      navigate(`/admin/orders/${id}`);
+    } catch (error: any) {
+      console.error(error);
+      message.error(
+        error.response?.data?.message || "Cập nhật đơn hàng thất bại!"
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "100px 0" }}>
+        <Spin size="large" tip="Đang tải thông tin..." />
+      </div>
+    );
+  }
+
+  if (!order) return null;
 
   return (
-    <div style={{ padding: 24 }}>
-      <Title level={3}>Cập nhật đơn hàng #{order.id}</Title>
-      
-      <Divider>Thông tin khách hàng</Divider>
-      <Descriptions column={2} bordered size="small" style={{ marginBottom: 24 }}>
-        <Descriptions.Item label="Tên khách hàng">{order.user?.name || "-"}</Descriptions.Item>
-        <Descriptions.Item label="Số điện thoại">{order.user?.phone || "-"}</Descriptions.Item>
-        <Descriptions.Item label="Email">{order.user?.email || "-"}</Descriptions.Item>
-      </Descriptions>
+    <div style={{ padding: "24px", backgroundColor: "#f0f2f5", minHeight: "100vh" }}>
+      {/* Header */}
+      <Card style={{ marginBottom: 24, borderRadius: 8 }}>
+        <Row justify="space-between" align="middle">
+          <Col>
+            <Space>
+              <Button
+                icon={<ArrowLeftOutlined />}
+                onClick={() => navigate(`/orders/${id}`)}
+              >
+                Quay lại
+              </Button>
+              <Title level={3} style={{ margin: 0 }}>
+                Cập nhật đơn hàng #{order.sku}
+              </Title>
+            </Space>
+          </Col>
+        </Row>
+      </Card>
 
-      <Form form={form} layout="vertical">
-        <Form.Item label="Trạng thái" name="status">
-          <Select>
-            {Object.entries(statusMap).map(([key, val]) => (
-              <Option key={key} value={key}>{val}</Option>
-            ))}
-          </Select>
-        </Form.Item>
-        <Form.Item label="Thanh toán" name="payment_status">
-          <Select>
-            {Object.entries(paymentMap).map(([key, val]) => (
-              <Option key={key} value={key}>{val}</Option>
-            ))}
-          </Select>
-        </Form.Item>
+      <Row gutter={[24, 24]}>
+        {/* Form cập nhật */}
+        <Col xs={24} lg={16}>
+          <Card title="Thông tin cập nhật" style={{ borderRadius: 8 }}>
+            <Alert
+              message="Lưu ý"
+              description="Bạn chỉ có thể chuyển trạng thái sang bước tiếp theo hoặc chuyển sang trạng thái đặc biệt (Đã hủy, Trả lại)."
+              type="info"
+              showIcon
+              style={{ marginBottom: 24 }}
+            />
 
-        <Divider>Thông tin vận chuyển</Divider>
-        <Form.Item label="Người nhận" name={["shipping", "shipping_name"]}><Input /></Form.Item>
-        <Form.Item label="SĐT" name={["shipping", "shipping_phone"]}><Input /></Form.Item>
-        <Form.Item label="Địa chỉ" name={["shipping", "shipping_address_line"]}><Input /></Form.Item>
-        <Form.Item label="Thành phố" name={["shipping", "shipping_city"]}><Input /></Form.Item>
-        <Form.Item label="Tỉnh/Quận" name={["shipping", "shipping_province"]}><Input /></Form.Item>
-        <Form.Item label="Mã bưu chính" name={["shipping", "shipping_postal_code"]}><Input /></Form.Item>
-        <Form.Item label="Đơn vị vận chuyển" name={["shipping", "carrier"]}><Input /></Form.Item>
-        <Form.Item label="Tracking" name={["shipping", "tracking_number"]}><Input /></Form.Item>
-        <Form.Item label="Trạng thái vận chuyển" name={["shipping", "shipping_status"]}><Input /></Form.Item>
+            <Form
+              form={form}
+              layout="vertical"
+              onFinish={handleSubmit}
+              autoComplete="off"
+            >
+              {/* Trạng thái đơn hàng */}
+              <Form.Item
+                label={<Text strong>Trạng thái đơn hàng</Text>}
+                name="status"
+                rules={[
+                  { required: true, message: "Vui lòng chọn trạng thái!" },
+                  { validator: validateOrderStatus },
+                ]}
+              >
+                <Select
+                  size="large"
+                  placeholder="Chọn trạng thái đơn hàng"
+                  suffixIcon={<ClockCircleOutlined />}
+                >
+                  <Option disabled style={{ backgroundColor: "#f5f5f5", fontWeight: "bold" }}>
+                    Trạng thái theo quy trình
+                  </Option>
+                  {ORDER_STATUS_STEPS.map((status) => (
+                    <Option
+                      key={status.value}
+                      value={status.value}
+                      disabled={
+                        currentOrderStep >= 0 && status.step < currentOrderStep
+                      }
+                    >
+                      {status.label}
+                      {status.step === currentOrderStep && " (Hiện tại)"}
+                      {currentOrderStep >= 0 && status.step < currentOrderStep && " ✓"}
+                    </Option>
+                  ))}
+                  <Option disabled style={{ backgroundColor: "#f5f5f5", fontWeight: "bold" }}>
+                    Trạng thái đặc biệt
+                  </Option>
+                  {SPECIAL_STATUSES.map((status) => (
+                    <Option key={status.value} value={status.value}>
+                      {status.label}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
 
-        <Button type="primary" onClick={handleUpdate}>Cập nhật</Button>
-      </Form>
+              {/* Trạng thái thanh toán */}
+              <Form.Item
+                label={<Text strong>Trạng thái thanh toán</Text>}
+                name="payment_status"
+                rules={[
+                  { required: true, message: "Vui lòng chọn trạng thái thanh toán!" },
+                ]}
+              >
+                <Select size="large" placeholder="Chọn trạng thái thanh toán">
+                  {PAYMENT_STATUSES.map((status) => (
+                    <Option key={status.value} value={status.value}>
+                      {status.label}
+                      {status.value === order.payment_status && " (Hiện tại)"}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+
+              <Divider />
+
+              {/* Trạng thái vận chuyển */}
+              <Form.Item
+                label={<Text strong>Trạng thái vận chuyển</Text>}
+                name="shipping_status"
+                rules={[
+                  { required: true, message: "Vui lòng chọn trạng thái vận chuyển!" },
+                  { validator: validateShippingStatus },
+                ]}
+              >
+                <Select
+                  size="large"
+                  placeholder="Chọn trạng thái vận chuyển"
+                  onChange={handleShippingStatusChange}
+                >
+                  <Option disabled style={{ backgroundColor: "#f5f5f5", fontWeight: "bold" }}>
+                    Trạng thái theo quy trình
+                  </Option>
+                  {SHIPPING_STATUS_STEPS.map((status) => (
+                    <Option
+                      key={status.value}
+                      value={status.value}
+                      disabled={
+                        currentShippingStep >= 0 &&
+                        status.step < currentShippingStep
+                      }
+                    >
+                      {status.label}
+                      {status.step === currentShippingStep && " (Hiện tại)"}
+                      {currentShippingStep >= 0 &&
+                        status.step < currentShippingStep &&
+                        " ✓"}
+                    </Option>
+                  ))}
+                  <Option disabled style={{ backgroundColor: "#f5f5f5", fontWeight: "bold" }}>
+                    Trạng thái đặc biệt
+                  </Option>
+                  {SHIPPING_SPECIAL_STATUSES.map((status) => (
+                    <Option key={status.value} value={status.value}>
+                      {status.label}
+                    </Option>
+                  ))}
+                </Select>
+              </Form.Item>
+
+              {/* Thông tin người giao hàng - hiện khi đang vận chuyển */}
+              {showShipperInfo && (
+                <Card
+                  title="Thông tin người giao hàng"
+                  style={{
+                    marginBottom: 24,
+                    backgroundColor: "#f6ffed",
+                    borderColor: "#b7eb8f",
+                  }}
+                  size="small"
+                >
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        label="Tên người giao hàng"
+                        name="shipper_name"
+                        rules={[
+                          {
+                            required: showShipperInfo,
+                            message: "Vui lòng nhập tên người giao hàng!",
+                          },
+                        ]}
+                      >
+                        <Input
+                          size="large"
+                          placeholder="Nhập tên shipper"
+                          maxLength={100}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item
+                        label="Số điện thoại"
+                        name="shipper_phone"
+                        rules={[
+                          {
+                            required: showShipperInfo,
+                            message: "Vui lòng nhập số điện thoại!",
+                          },
+                          {
+                            pattern: /^[0-9]{10,11}$/,
+                            message: "Số điện thoại không hợp lệ (10-11 số)!",
+                          },
+                        ]}
+                      >
+                        <Input
+                          size="large"
+                          placeholder="Nhập số điện thoại"
+                          maxLength={11}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Card>
+              )}
+
+              {/* Buttons */}
+              <Form.Item style={{ marginTop: 32, marginBottom: 0 }}>
+                <Space size="middle">
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    size="large"
+                    icon={<SaveOutlined />}
+                    loading={submitting}
+                  >
+                    Lưu thay đổi
+                  </Button>
+                  <Button
+                    size="large"
+                    onClick={() => navigate(`/orders/${id}`)}
+                    disabled={submitting}
+                  >
+                    Hủy
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          </Card>
+        </Col>
+
+        {/* Sidebar - Tiến trình */}
+        <Col xs={24} lg={8}>
+          {/* Tiến trình đơn hàng */}
+          <Card title="Tiến trình đơn hàng" style={{ marginBottom: 24, borderRadius: 8 }}>
+            <Steps
+              direction="vertical"
+              current={currentOrderStep}
+              items={ORDER_STATUS_STEPS.map((step, index) => ({
+                title: step.label,
+                status:
+                  index < currentOrderStep
+                    ? "finish"
+                    : index === currentOrderStep
+                    ? "process"
+                    : "wait",
+                icon:
+                  index < currentOrderStep ? (
+                    <CheckCircleOutlined />
+                  ) : index === currentOrderStep ? (
+                    <LoadingOutlined />
+                  ) : (
+                    <ClockCircleOutlined />
+                  ),
+              }))}
+            />
+          </Card>
+
+          {/* Tiến trình vận chuyển */}
+          <Card title="Tiến trình vận chuyển" style={{ borderRadius: 8 }}>
+            <Steps
+              direction="vertical"
+              current={currentShippingStep}
+              items={SHIPPING_STATUS_STEPS.map((step, index) => ({
+                title: step.label,
+                status:
+                  index < currentShippingStep
+                    ? "finish"
+                    : index === currentShippingStep
+                    ? "process"
+                    : "wait",
+                icon:
+                  index < currentShippingStep ? (
+                    <CheckCircleOutlined />
+                  ) : index === currentShippingStep ? (
+                    <LoadingOutlined />
+                  ) : (
+                    <ClockCircleOutlined />
+                  ),
+              }))}
+            />
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 };

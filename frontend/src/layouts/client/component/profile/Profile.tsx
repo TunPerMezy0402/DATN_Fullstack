@@ -36,6 +36,14 @@ const getAuthToken = () =>
   localStorage.getItem("access_token") || localStorage.getItem("token");
 
 const Profile: React.FC = () => {
+
+  const [editing, setEditing] = useState({
+    name: false,
+    phone: false,
+  });
+
+  const [hasChanges, setHasChanges] = useState(false);
+
   const [form] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [addressForm] = Form.useForm();
@@ -340,39 +348,72 @@ const Profile: React.FC = () => {
               layout="vertical"
               onFinish={handleUpdateProfile}
               className="flex flex-col gap-4"
+              onValuesChange={() => setHasChanges(true)}
             >
+              {/* Họ và tên */}
               <Form.Item
-                label="Họ và tên"
+                label={
+                  <div className="flex justify-between items-center">
+                    <span className="mr-3">Họ và tên</span>
+                    <EditOutlined
+                      onClick={() =>
+                        setEditing((prev) => ({ ...prev, name: !prev.name }))
+                      }
+                      className="cursor-pointer text-gray-500 hover:text-blue-500"
+                    />
+                  </div>
+                }
                 name="name"
                 rules={[{ required: true, message: "Vui lòng nhập họ tên" }]}
               >
-                <Input placeholder="Nhập họ và tên" />
+                <Input
+                  placeholder="Nhập họ và tên"
+                  disabled={!editing.name}
+                />
               </Form.Item>
 
+              {/* Email */}
               <Form.Item label="Email" name="email">
                 <Input disabled />
               </Form.Item>
 
+              {/* Số điện thoại */}
               <Form.Item
-                label="Số điện thoại"
+                label={
+                  <div className="flex justify-between items-center">
+                    <span className="mr-3">Số điện thoại</span>
+                    <EditOutlined
+                      onClick={() =>
+                        setEditing((prev) => ({ ...prev, phone: !prev.phone }))
+                      }
+                      className="cursor-pointer text-gray-500 hover:text-blue-500"
+                    />
+                  </div>
+                }
                 name="phone"
                 rules={[
                   { required: true, message: "Nhập số điện thoại" },
                   { pattern: /^\d{10}$/, message: "Số điện thoại phải gồm 10 chữ số" },
                 ]}
               >
-                <Input placeholder="Nhập số điện thoại" />
+                <Input
+                  placeholder="Nhập số điện thoại"
+                  disabled={!editing.phone}
+                />
               </Form.Item>
 
+              {/* Nút hành động */}
               <div className="flex flex-col md:flex-row gap-3 mt-2">
                 <Button
-                  type="primary"
-                  icon={<SaveOutlined />}
-                  htmlType="submit"
-                  className="flex-1"
-                >
-                  Lưu thay đổi
-                </Button>
+  type="primary"
+  icon={<SaveOutlined />}
+  htmlType="submit"
+  className="flex-1"
+  disabled={!hasChanges || loading}
+  loading={loading}
+>
+  Lưu thay đổi
+</Button>
                 <Button
                   icon={<LockOutlined />}
                   onClick={() => setPasswordModal(true)}
@@ -382,6 +423,7 @@ const Profile: React.FC = () => {
                 </Button>
               </div>
             </Form>
+
           </div>
         </div>
       </Card>
