@@ -32,12 +32,13 @@ const getAuthToken = () =>
 
 const STATUS_TABS = [
   { key: "all", label: "Tất cả" },
+  { key: "failed", label: "Chờ thanh toán" },
   { key: "pending", label: "Chờ xác nhận" },
-  { key: "confirmed", label: "Vận chuyển" },
-  { key: "shipped", label: "Chờ giao hàng" },
+  { key: "confirmed", label: "Đã xác nhận" },
+  { key: "shipped", label: "Đang giao hàng" },
   { key: "completed", label: "Hoàn thành" },
   { key: "cancelled", label: "Đã hủy" },
-  { key: "returned", label: "Trả hàng/Hoàn tiền" },
+  { key: "returned", label: "Trả hàng" },
 ];
 
 const OrderUser: React.FC = () => {

@@ -33,21 +33,35 @@ const axiosInstance = axios.create({
   },
 });
 
-// 🔑 Tự động thêm token vào mỗi request
-axiosInstance.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// 🔑 Hàm tiện ích lấy token
+const getAuthToken = (): string | null => {
+  return (
+    localStorage.getItem("access_token") ||
+    localStorage.getItem("token") ||
+    null
+  );
+};
+
+// 🔒 Tự động thêm token vào mỗi request
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = getAuthToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 // ================== SERVICES ==================
 export const getAllBanners = async (
   page: number = 1,
   perPage: number = 10
 ): Promise<IPaginatedResponse<IBanner>> => {
-  const res = await axiosInstance.get(`/banners?page=${page}&per_page=${perPage}`);
+  const res = await axiosInstance.get(
+    `/banners?page=${page}&per_page=${perPage}`
+  );
   return res.data;
 };
 

@@ -59,6 +59,7 @@ const ClientRoutes = () => {
         <Route path="services-row" element={<ServicesRow />} />
         <Route path="trending" element={<Trending />} />
         <Route path="products" element={<ProductsPage />} />
+        <Route path="products/category/:id" element={<ProductsPage />} />
         <Route path="products/:id" element={<ProductDetail />} />
 
 {/*         <Route path="/categories" element={<CategoryPage />} />

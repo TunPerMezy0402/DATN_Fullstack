@@ -51,34 +51,39 @@ const ORDER_STATUS_STEPS = [
   { value: "shipped", label: "Đang giao", step: 2 },
   { value: "delivered", label: "Đã giao", step: 3 },
   { value: "completed", label: "Hoàn tất", step: 4 },
+  { value: "returned", label: "Trả lại", step: 5 },
+  { value: "cancelled", label: "Đã hủy", step: 6 },
 ];
 
-// Trạng thái đặc biệt (không theo flow)
-const SPECIAL_STATUSES = [
-  { value: "cancelled", label: "Đã hủy" },
-  { value: "returned", label: "Trả lại" },
-];
-
-// Trạng thái thanh toán
-const PAYMENT_STATUSES = [
-  { value: "unpaid", label: "Chưa thanh toán", color: "default" },
-  { value: "pending", label: "Đang chờ xử lý", color: "gold" },
-  { value: "paid", label: "Đã thanh toán", color: "green" },
-  { value: "failed", label: "Thanh toán thất bại", color: "red" },
-  { value: "refunded", label: "Đã hoàn tiền", color: "orange" },
-];
-
-// Trạng thái vận chuyển
 const SHIPPING_STATUS_STEPS = [
   { value: "pending", label: "Chờ xử lý", step: 0 },
   { value: "in_transit", label: "Đang vận chuyển", step: 1 },
   { value: "delivered", label: "Đã giao hàng", step: 2 },
+  { value: "failed", label: "Giao thất bại", step: 3 },
+  { value: "returning", label: "Đang hoàn hàng về kho", step: 4 },
+  { value: "returned", label: "Đã hoàn hàng", step: 5 },
 ];
 
-const SHIPPING_SPECIAL_STATUSES = [
-  { value: "failed", label: "Giao thất bại" },
-  { value: "returned", label: "Đã hoàn hàng" },
-];
+// Map đồng bộ: Trạng thái đơn hàng → Trạng thái vận chuyển
+const ORDER_TO_SHIPPING_MAP: Record<string, string> = {
+  pending: "pending",
+  confirmed: "pending",
+  shipped: "in_transit",
+  delivered: "delivered",
+  completed: "delivered",
+  returned: "returned",
+  cancelled: "pending",
+};
+
+// Map đồng bộ: Trạng thái vận chuyển → Trạng thái đơn hàng
+const SHIPPING_TO_ORDER_MAP: Record<string, string> = {
+  pending: "confirmed",
+  in_transit: "shipped",
+  delivered: "delivered",
+  failed: "confirmed",
+  returning: "returned",
+  returned: "returned",
+};
 
 const OrderUpdate: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -134,23 +139,21 @@ const OrderUpdate: React.FC = () => {
     fetchOrder();
   }, [id]);
 
-  // Validate chỉ được chuyển từng bước
+  // Validate trạng thái đơn hàng - chỉ được chuyển tiếp hoặc sang trạng thái đặc biệt
   const validateOrderStatus = (_: any, value: string) => {
     if (!order) return Promise.resolve();
 
     const currentStep = ORDER_STATUS_STEPS.find((s) => s.value === order.status);
     const newStep = ORDER_STATUS_STEPS.find((s) => s.value === value);
 
-    // Cho phép chuyển sang trạng thái đặc biệt
-    if (SPECIAL_STATUSES.some((s) => s.value === value)) {
-      return Promise.resolve();
-    }
+    if (!currentStep || !newStep) return Promise.resolve();
 
-    // Kiểm tra nếu là bước tiếp theo hoặc giữ nguyên
+    // Cho phép: giữ nguyên, chuyển tiếp 1 bước, hoặc chuyển sang returned/cancelled
     if (
-      currentStep &&
-      newStep &&
-      (newStep.step === currentStep.step || newStep.step === currentStep.step + 1)
+      newStep.step === currentStep.step ||
+      newStep.step === currentStep.step + 1 ||
+      value === "returned" ||
+      value === "cancelled"
     ) {
       return Promise.resolve();
     }
@@ -160,6 +163,7 @@ const OrderUpdate: React.FC = () => {
     );
   };
 
+  // Validate trạng thái vận chuyển - chỉ được chuyển tiếp
   const validateShippingStatus = (_: any, value: string) => {
     if (!order) return Promise.resolve();
 
@@ -168,28 +172,68 @@ const OrderUpdate: React.FC = () => {
     );
     const newStep = SHIPPING_STATUS_STEPS.find((s) => s.value === value);
 
-    // Cho phép chuyển sang trạng thái đặc biệt
-    if (SHIPPING_SPECIAL_STATUSES.some((s) => s.value === value)) {
-      return Promise.resolve();
-    }
+    if (!currentStep || !newStep) return Promise.resolve();
 
+    // Cho phép: giữ nguyên hoặc chuyển tiếp 1 bước
     if (
-      currentStep &&
-      newStep &&
-      (newStep.step === currentStep.step || newStep.step === currentStep.step + 1)
+      newStep.step === currentStep.step ||
+      newStep.step === currentStep.step + 1
     ) {
       return Promise.resolve();
     }
 
     return Promise.reject(
-      new Error("Chỉ được chuyển sang bước tiếp theo hoặc trạng thái đặc biệt!")
+      new Error("Chỉ được chuyển sang bước tiếp theo!")
     );
+  };
+
+  // Xử lý khi thay đổi trạng thái đơn hàng
+  const handleOrderStatusChange = (value: string) => {
+    // Đồng bộ sang trạng thái vận chuyển
+    const newShippingStatus = ORDER_TO_SHIPPING_MAP[value];
+
+    if (newShippingStatus) {
+      form.setFieldsValue({ shipping_status: newShippingStatus });
+
+      // Cập nhật step hiển thị
+      const shippingStep = SHIPPING_STATUS_STEPS.find(
+        (s) => s.value === newShippingStatus
+      );
+      if (shippingStep) {
+        setCurrentShippingStep(shippingStep.step);
+      }
+
+      // Hiển thị/ẩn form shipper
+      setShowShipperInfo(newShippingStatus === "in_transit");
+
+      // Reset shipper info nếu không phải đang vận chuyển
+      if (newShippingStatus !== "in_transit") {
+        form.setFieldsValue({
+          shipper_name: null,
+          shipper_phone: null,
+        });
+      }
+    }
   };
 
   // Xử lý khi thay đổi trạng thái vận chuyển
   const handleShippingStatusChange = (value: string) => {
+    // Đồng bộ sang trạng thái đơn hàng
+    const newOrderStatus = SHIPPING_TO_ORDER_MAP[value];
+
+    if (newOrderStatus) {
+      form.setFieldsValue({ status: newOrderStatus });
+
+      // Cập nhật step hiển thị
+      const orderStep = ORDER_STATUS_STEPS.find((s) => s.value === newOrderStatus);
+      if (orderStep) {
+        setCurrentOrderStep(orderStep.step);
+      }
+    }
+
+    // Hiển thị/ẩn form shipper
     setShowShipperInfo(value === "in_transit");
-    
+
     // Reset shipper info nếu không phải đang vận chuyển
     if (value !== "in_transit") {
       form.setFieldsValue({
@@ -201,36 +245,39 @@ const OrderUpdate: React.FC = () => {
 
   // Submit form
   const handleSubmit = async (values: any) => {
-    try {
-      setSubmitting(true);
+  try {
+    setSubmitting(true);
 
-      const updateData: any = {
-        status: values.status,
-        payment_status: values.payment_status,
+    const updateData: any = {
+      status: values.status,
+      payment_status: values.payment_status,
+      shipping: {
         shipping_status: values.shipping_status,
-      };
+      },
+    };
 
-      // Thêm thông tin shipper nếu đang vận chuyển
-      if (values.shipping_status === "in_transit") {
-        updateData.shipper_name = values.shipper_name;
-        updateData.shipper_phone = values.shipper_phone;
-      }
-
-      await axios.put(`${API_URL}/admin/orders-admin/${id}`, updateData, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      message.success("Cập nhật đơn hàng thành công!");
-      navigate(`/admin/orders/${id}`);
-    } catch (error: any) {
-      console.error(error);
-      message.error(
-        error.response?.data?.message || "Cập nhật đơn hàng thất bại!"
-      );
-    } finally {
-      setSubmitting(false);
+    // Thêm thông tin shipper nếu đang vận chuyển
+    if (values.shipping_status === "in_transit") {
+      updateData.shipping.shipper_name = values.shipper_name;
+      updateData.shipping.shipper_phone = values.shipper_phone;
     }
-  };
+
+    await axios.put(`${API_URL}/admin/orders-admin/${id}`, updateData, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    message.success("Cập nhật đơn hàng thành công!");
+    navigate(`/admin/orders/${id}`);
+  } catch (error: any) {
+    console.error(error);
+    message.error(
+      error.response?.data?.message || "Cập nhật đơn hàng thất bại!"
+    );
+  } finally {
+    setSubmitting(false);
+  }
+};
+
 
   if (loading) {
     return (
@@ -268,8 +315,8 @@ const OrderUpdate: React.FC = () => {
         <Col xs={24} lg={16}>
           <Card title="Thông tin cập nhật" style={{ borderRadius: 8 }}>
             <Alert
-              message="Lưu ý"
-              description="Bạn chỉ có thể chuyển trạng thái sang bước tiếp theo hoặc chuyển sang trạng thái đặc biệt (Đã hủy, Trả lại)."
+              message="Lưu ý quan trọng"
+              description="Trạng thái đơn hàng và trạng thái vận chuyển sẽ TỰ ĐỘNG ĐỒNG BỘ với nhau. Khi bạn thay đổi một trong hai, trạng thái còn lại sẽ được cập nhật tương ứng (ví dụ: Đang giao ↔ Đang vận chuyển, Hoàn tất ↔ Đã giao hàng)."
               type="info"
               showIcon
               style={{ marginBottom: 24 }}
@@ -294,10 +341,15 @@ const OrderUpdate: React.FC = () => {
                   size="large"
                   placeholder="Chọn trạng thái đơn hàng"
                   suffixIcon={<ClockCircleOutlined />}
+                  onChange={handleOrderStatusChange}
                 >
-                  <Option disabled style={{ backgroundColor: "#f5f5f5", fontWeight: "bold" }}>
+                  <Option
+                    disabled
+                    style={{ backgroundColor: "#f5f5f5", fontWeight: "bold" }}
+                  >
                     Trạng thái theo quy trình
                   </Option>
+
                   {ORDER_STATUS_STEPS.map((status) => (
                     <Option
                       key={status.value}
@@ -309,32 +361,6 @@ const OrderUpdate: React.FC = () => {
                       {status.label}
                       {status.step === currentOrderStep && " (Hiện tại)"}
                       {currentOrderStep >= 0 && status.step < currentOrderStep && " ✓"}
-                    </Option>
-                  ))}
-                  <Option disabled style={{ backgroundColor: "#f5f5f5", fontWeight: "bold" }}>
-                    Trạng thái đặc biệt
-                  </Option>
-                  {SPECIAL_STATUSES.map((status) => (
-                    <Option key={status.value} value={status.value}>
-                      {status.label}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-
-              {/* Trạng thái thanh toán */}
-              <Form.Item
-                label={<Text strong>Trạng thái thanh toán</Text>}
-                name="payment_status"
-                rules={[
-                  { required: true, message: "Vui lòng chọn trạng thái thanh toán!" },
-                ]}
-              >
-                <Select size="large" placeholder="Chọn trạng thái thanh toán">
-                  {PAYMENT_STATUSES.map((status) => (
-                    <Option key={status.value} value={status.value}>
-                      {status.label}
-                      {status.value === order.payment_status && " (Hiện tại)"}
                     </Option>
                   ))}
                 </Select>
@@ -373,14 +399,6 @@ const OrderUpdate: React.FC = () => {
                       {currentShippingStep >= 0 &&
                         status.step < currentShippingStep &&
                         " ✓"}
-                    </Option>
-                  ))}
-                  <Option disabled style={{ backgroundColor: "#f5f5f5", fontWeight: "bold" }}>
-                    Trạng thái đặc biệt
-                  </Option>
-                  {SHIPPING_SPECIAL_STATUSES.map((status) => (
-                    <Option key={status.value} value={status.value}>
-                      {status.label}
                     </Option>
                   ))}
                 </Select>
@@ -469,30 +487,6 @@ const OrderUpdate: React.FC = () => {
 
         {/* Sidebar - Tiến trình */}
         <Col xs={24} lg={8}>
-          {/* Tiến trình đơn hàng */}
-          <Card title="Tiến trình đơn hàng" style={{ marginBottom: 24, borderRadius: 8 }}>
-            <Steps
-              direction="vertical"
-              current={currentOrderStep}
-              items={ORDER_STATUS_STEPS.map((step, index) => ({
-                title: step.label,
-                status:
-                  index < currentOrderStep
-                    ? "finish"
-                    : index === currentOrderStep
-                    ? "process"
-                    : "wait",
-                icon:
-                  index < currentOrderStep ? (
-                    <CheckCircleOutlined />
-                  ) : index === currentOrderStep ? (
-                    <LoadingOutlined />
-                  ) : (
-                    <ClockCircleOutlined />
-                  ),
-              }))}
-            />
-          </Card>
 
           {/* Tiến trình vận chuyển */}
           <Card title="Tiến trình vận chuyển" style={{ borderRadius: 8 }}>
@@ -505,8 +499,8 @@ const OrderUpdate: React.FC = () => {
                   index < currentShippingStep
                     ? "finish"
                     : index === currentShippingStep
-                    ? "process"
-                    : "wait",
+                      ? "process"
+                      : "wait",
                 icon:
                   index < currentShippingStep ? (
                     <CheckCircleOutlined />

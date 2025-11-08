@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Order;
 use App\Models\PaymentTransaction;
 use App\Models\Coupon;
+use App\Models\ProductVariant;
+use App\Models\CartItem;
 
 class PaymentController extends Controller
 {
@@ -33,6 +35,14 @@ class PaymentController extends Controller
                 ], 400);
             }
 
+            // Kiểm tra payment method
+            if ($order->payment_method !== 'vnpay') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Đơn hàng này không sử dụng VNPay'
+                ], 400);
+            }
+
             $amount = $order->final_amount;
             
             // Validate số tiền theo quy định VNPay
@@ -52,13 +62,12 @@ class PaymentController extends Controller
             $vnp_ReturnUrl = config('services.vnpay.return_url');
 
             // Build input data
-            $vnp_TxnRef = $order->id . '_' . time(); // Thêm timestamp để tránh trùng
+            $vnp_TxnRef = $order->id . '_' . time();
             $vnp_OrderInfo = "Thanh toan don hang #{$order->id}";
             $vnp_OrderType = "other";
-            $vnp_Amount = $amount * 100; // VNPay yêu cầu nhân 100
+            $vnp_Amount = $amount * 100;
             $vnp_Locale = "vn";
-            /* $vnp_BankCode = $request->bank_code ?? ""; */
-            $vnp_BankCode = "NCB";
+            $vnp_BankCode = $request->bank_code ?? "";
             $vnp_IpAddr = $request->ip();
 
             $inputData = [
@@ -76,15 +85,12 @@ class PaymentController extends Controller
                 "vnp_TxnRef" => $vnp_TxnRef,
             ];
 
-            // Thêm bank code nếu có
             if (!empty($vnp_BankCode)) {
                 $inputData['vnp_BankCode'] = $vnp_BankCode;
             }
 
-            // Sort theo alphabet
             ksort($inputData);
 
-            // Build hash data (QUAN TRỌNG: phải urlencode cả key và value)
             $hashData = '';
             $query = '';
             foreach ($inputData as $key => $value) {
@@ -92,10 +98,7 @@ class PaymentController extends Controller
                 $query .= ($query ? '&' : '') . urlencode($key) . '=' . urlencode($value);
             }
 
-            // Tạo secure hash
             $vnpSecureHash = hash_hmac('sha512', $hashData, $vnp_HashSecret);
-
-            // Final URL
             $vnp_Url = $vnp_Url . '?' . $query . '&vnp_SecureHash=' . $vnpSecureHash;
 
             Log::info('VNPay Payment URL Generated', [
@@ -139,7 +142,6 @@ class PaymentController extends Controller
         unset($inputData['vnp_SecureHash']);
         unset($inputData['vnp_SecureHashType']);
 
-        // Sort và build hash (PHẢI GIỐNG VỚI LÚC TẠO URL)
         ksort($inputData);
         $hashdata = '';
         foreach ($inputData as $key => $value) {
@@ -152,12 +154,17 @@ class PaymentController extends Controller
                 'calculated' => $secureHash,
                 'received' => $vnp_SecureHash
             ]);
-            return response()->json(['RspCode' => '97', 'Message' => 'Invalid signature']);
+            return response()->json([
+                'RspCode' => '97', 
+                'Message' => 'Chữ ký không hợp lệ',
+                'Status' => 'error',
+                'Detail' => 'Xác thực chữ ký thất bại. Vui lòng liên hệ bộ phận hỗ trợ.'
+            ]);
         }
 
         // 2. Lấy thông tin
         $txnRef = $input['vnp_TxnRef'] ?? null;
-        $orderId = explode('_', $txnRef)[0] ?? null; // Tách order_id từ txnRef
+        $orderId = explode('_', $txnRef)[0] ?? null;
         $responseCode = $input['vnp_ResponseCode'] ?? '';
         $vnpAmount = isset($input['vnp_Amount']) ? intval($input['vnp_Amount']) / 100 : 0;
         $transactionNo = $input['vnp_TransactionNo'] ?? '';
@@ -167,118 +174,253 @@ class PaymentController extends Controller
         $payDate = $input['vnp_PayDate'] ?? '';
 
         // 3. Kiểm tra đơn hàng
-        $order = Order::find($orderId);
+        $order = Order::with('items')->find($orderId);
         if (!$order) {
             Log::warning('VNPay IPN: Order not found', ['order_id' => $orderId]);
             return response()->json(['RspCode' => '01', 'Message' => 'Order not found']);
         }
 
-        // 4. Kiểm tra transaction đã xử lý chưa (idempotency)
+        // 4. ✅ IDEMPOTENCY: Kiểm tra transaction đã xử lý chưa
         if ($transactionNo) {
-            $existingTransaction = PaymentTransaction::where('transaction_code', $transactionNo)->first();
+            $existingTransaction = PaymentTransaction::where('order_id', $orderId)
+                ->where('transaction_code', $transactionNo)
+                ->first();
+                
             if ($existingTransaction) {
-                Log::info('VNPay IPN: Transaction already processed', [
+                Log::info('VNPay IPN: Transaction already processed (idempotency)', [
                     'transaction_code' => $transactionNo,
-                    'transaction_id' => $existingTransaction->id
+                    'transaction_id' => $existingTransaction->id,
+                    'status' => $existingTransaction->status
                 ]);
-                return response()->json(['RspCode' => '02', 'Message' => 'Order already confirmed']);
+                return response()->json(['RspCode' => '00', 'Message' => 'Transaction already processed']);
             }
         }
 
-        // 5. Kiểm tra số tiền (cho phép sai lệch 1đ do làm tròn)
+        // 5. Kiểm tra số tiền
         if (abs($vnpAmount - $order->final_amount) > 1) {
-            Log::warning('VNPay IPN: Amount mismatch', [
+            Log::error('VNPay IPN: Amount mismatch - REJECTED', [
                 'order_id' => $orderId,
                 'vnp_amount' => $vnpAmount,
                 'order_amount' => $order->final_amount
             ]);
+            return response()->json([
+                'RspCode' => '04', 
+                'Message' => 'Invalid amount'
+            ]);
         }
 
-        // 6. Xử lý transaction trong DB transaction
+        // 6. Xử lý transaction
         DB::beginTransaction();
         try {
             if ($responseCode === '00') {
-                // ✅ Thanh toán thành công
+                // ✅ THANH TOÁN THÀNH CÔNG
                 $paidAt = $payDate ? \DateTime::createFromFormat('YmdHis', $payDate) : now();
                 
-                $transaction = PaymentTransaction::create([
-                    'order_id' => $orderId,
-                    'transaction_code' => $transactionNo,
-                    'amount' => $vnpAmount,
-                    'status' => 'success',
-                    'payment_method' => 'vnpay',
-                    'bank_code' => $bankCode,
-                    'response_code' => $responseCode,
-                    'paid_at' => $paidAt,
-                    'transaction_info' => [
-                        'vnp_TxnRef' => $txnRef,
-                        'vnp_TransactionNo' => $transactionNo,
-                        'vnp_BankCode' => $bankCode,
-                        'vnp_BankTranNo' => $bankTranNo,
-                        'vnp_CardType' => $cardType,
-                        'vnp_PayDate' => $payDate,
-                        'vnp_ResponseCode' => $responseCode,
-                        'vnp_Amount' => $vnpAmount,
-                        'vnp_OrderInfo' => $input['vnp_OrderInfo'] ?? '',
-                        'vnp_TransactionStatus' => $input['vnp_TransactionStatus'] ?? '',
-                        'full_ipn_data' => $input,
-                        'processed_at' => now()->toDateTimeString(),
-                    ],
-                ]);
+                // Tìm transaction pending hiện tại và cập nhật
+                $transaction = PaymentTransaction::where('order_id', $orderId)
+                    ->where('status', 'pending')
+                    ->first();
 
-                // Cập nhật order
+                if ($transaction) {
+                    // Cập nhật transaction hiện có
+                    $transaction->update([
+                        'transaction_code' => $transactionNo,
+                        'amount' => $vnpAmount,
+                        'status' => 'success',
+                        'bank_code' => $bankCode,
+                        'response_code' => $responseCode,
+                        'paid_at' => $paidAt,
+                        'transaction_info' => [
+                            'vnp_TxnRef' => $txnRef,
+                            'vnp_TransactionNo' => $transactionNo,
+                            'vnp_BankCode' => $bankCode,
+                            'vnp_BankTranNo' => $bankTranNo,
+                            'vnp_CardType' => $cardType,
+                            'vnp_PayDate' => $payDate,
+                            'vnp_ResponseCode' => $responseCode,
+                            'vnp_Amount' => $vnpAmount,
+                            'vnp_OrderInfo' => $input['vnp_OrderInfo'] ?? '',
+                            'vnp_TransactionStatus' => $input['vnp_TransactionStatus'] ?? '',
+                            'full_ipn_data' => $input,
+                            'processed_at' => now()->toDateTimeString(),
+                        ],
+                    ]);
+                } else {
+                    // Tạo mới nếu chưa có (fallback)
+                    $transaction = PaymentTransaction::create([
+                        'order_id' => $orderId,
+                        'transaction_code' => $transactionNo,
+                        'amount' => $vnpAmount,
+                        'status' => 'success',
+                        'payment_method' => 'vnpay',
+                        'bank_code' => $bankCode,
+                        'response_code' => $responseCode,
+                        'paid_at' => $paidAt,
+                        'transaction_info' => [
+                            'vnp_TxnRef' => $txnRef,
+                            'vnp_TransactionNo' => $transactionNo,
+                            'vnp_BankCode' => $bankCode,
+                            'vnp_BankTranNo' => $bankTranNo,
+                            'vnp_CardType' => $cardType,
+                            'vnp_PayDate' => $payDate,
+                            'vnp_ResponseCode' => $responseCode,
+                            'vnp_Amount' => $vnpAmount,
+                            'vnp_OrderInfo' => $input['vnp_OrderInfo'] ?? '',
+                            'vnp_TransactionStatus' => $input['vnp_TransactionStatus'] ?? '',
+                            'full_ipn_data' => $input,
+                            'processed_at' => now()->toDateTimeString(),
+                        ],
+                    ]);
+                }
+
+                // ✅ CẬP NHẬT ORDER
                 $order->payment_status = 'paid';
-                $order->status = 'confirmed';
+                $order->status = 'confirmed'; // Đã thanh toán, chờ xử lý
                 $order->paid_at = $paidAt;
                 $order->save();
 
-                // Đánh dấu coupon đã dùng (nếu có)
+                // ✅ TRỪ STOCK (vì lúc tạo đơn VNPay chưa trừ)
+                foreach ($order->items as $item) {
+                    if ($item->variant_id) {
+                        $variant = ProductVariant::lockForUpdate()->find($item->variant_id);
+                        if ($variant) {
+                            // Kiểm tra stock trước khi trừ
+                            if ($variant->stock_quantity < $item->quantity) {
+                                Log::error('VNPay IPN: Insufficient stock after payment', [
+                                    'variant_id' => $variant->id,
+                                    'required' => $item->quantity,
+                                    'available' => $variant->stock_quantity,
+                                    'order_id' => $orderId
+                                ]);
+                                
+                                // Rollback và thông báo lỗi
+                                DB::rollBack();
+                                return response()->json([
+                                    'RspCode' => '99',
+                                    'Message' => 'Insufficient stock'
+                                ]);
+                            }
+
+                            $variant->decrement('stock_quantity', $item->quantity);
+                            
+                            Log::info('Stock decreased after VNPay payment', [
+                                'variant_id' => $variant->id,
+                                'quantity' => $item->quantity,
+                                'remaining' => $variant->fresh()->stock_quantity,
+                                'order_id' => $orderId,
+                            ]);
+                        }
+                    }
+                }
+
+                // ✅ Đánh dấu coupon đã dùng
                 if ($order->coupon_id) {
                     $coupon = Coupon::find($order->coupon_id);
-                    if ($coupon) {
+                    if ($coupon && !$coupon->used) {
                         $coupon->used = true;
                         $coupon->save();
+                        
+                        Log::info('Coupon marked as used after VNPay payment', [
+                            'coupon_id' => $coupon->id,
+                            'coupon_code' => $coupon->code,
+                            'order_id' => $orderId
+                        ]);
                     }
+                }
+
+                // ✅ Xóa cart items
+                $variantIds = $order->items->pluck('variant_id')->filter()->unique();
+                if ($variantIds->isNotEmpty()) {
+                    CartItem::whereIn('variant_id', $variantIds)
+                        ->whereHas('cart', fn($q) => $q->where('user_id', $order->user_id))
+                        ->delete();
+                        
+                    Log::info('Cart items cleared after VNPay payment', [
+                        'order_id' => $orderId,
+                        'user_id' => $order->user_id
+                    ]);
+                }
+
+                // ✅ Cập nhật shipping status
+                if ($order->shipping) {
+                    $order->shipping->shipping_status = 'pending';
+                    $order->shipping->save();
                 }
 
                 Log::info('VNPay IPN: Payment successful', [
                     'order_id' => $orderId,
                     'transaction_id' => $transaction->id,
-                    'transaction_code' => $transactionNo,
-                    'amount' => $vnpAmount,
+                    'transaction_status' => 'success',
+                    'order_status' => 'confirmed',
+                    'payment_status' => 'paid',
                 ]);
                 
                 DB::commit();
                 return response()->json(['RspCode' => '00', 'Message' => 'Success']);
                 
             } else {
-                // ❌ Thanh toán thất bại
-                $transaction = PaymentTransaction::create([
-                    'order_id' => $orderId,
-                    'transaction_code' => $transactionNo ?: 'FAILED_' . $orderId . '_' . time(),
-                    'amount' => $vnpAmount,
-                    'status' => 'failed',
-                    'payment_method' => 'vnpay',
-                    'bank_code' => $bankCode,
-                    'response_code' => $responseCode,
-                    'transaction_info' => [
-                        'vnp_TxnRef' => $txnRef,
-                        'vnp_ResponseCode' => $responseCode,
-                        'vnp_TransactionNo' => $transactionNo,
-                        'vnp_BankCode' => $bankCode,
-                        'error_message' => $this->getVNPayErrorMessage($responseCode),
-                        'full_ipn_data' => $input,
-                        'processed_at' => now()->toDateTimeString(),
-                    ],
-                ]);
+                // ❌ THANH TOÁN THẤT BẠI
+                
+                // Tìm transaction pending và cập nhật
+                $transaction = PaymentTransaction::where('order_id', $orderId)
+                    ->where('status', 'pending')
+                    ->first();
 
+                if ($transaction) {
+                    $transaction->update([
+                        'transaction_code' => $transactionNo ?: 'FAILED_' . $orderId . '_' . time(),
+                        'amount' => $vnpAmount,
+                        'status' => 'failed',
+                        'bank_code' => $bankCode,
+                        'response_code' => $responseCode,
+                        'transaction_info' => [
+                            'vnp_TxnRef' => $txnRef,
+                            'vnp_ResponseCode' => $responseCode,
+                            'vnp_TransactionNo' => $transactionNo,
+                            'vnp_BankCode' => $bankCode,
+                            'error_message' => $this->getVNPayErrorMessage($responseCode),
+                            'full_ipn_data' => $input,
+                            'processed_at' => now()->toDateTimeString(),
+                        ],
+                    ]);
+                } else {
+                    $transaction = PaymentTransaction::create([
+                        'order_id' => $orderId,
+                        'transaction_code' => $transactionNo ?: 'FAILED_' . $orderId . '_' . time(),
+                        'amount' => $vnpAmount,
+                        'status' => 'failed',
+                        'payment_method' => 'vnpay',
+                        'bank_code' => $bankCode,
+                        'response_code' => $responseCode,
+                        'transaction_info' => [
+                            'vnp_TxnRef' => $txnRef,
+                            'vnp_ResponseCode' => $responseCode,
+                            'vnp_TransactionNo' => $transactionNo,
+                            'vnp_BankCode' => $bankCode,
+                            'error_message' => $this->getVNPayErrorMessage($responseCode),
+                            'full_ipn_data' => $input,
+                            'processed_at' => now()->toDateTimeString(),
+                        ],
+                    ]);
+                }
+
+                // ✅ CẬP NHẬT ORDER
                 $order->payment_status = 'failed';
+                $order->status = 'payment_failed';
                 $order->save();
+
+                // ✅ KHÔNG CẦN HOÀN STOCK (vì chưa trừ)
+                Log::info('VNPay payment failed - no stock to restore', [
+                    'order_id' => $orderId,
+                    'reason' => 'Stock was not deducted on order creation'
+                ]);
 
                 Log::warning('VNPay IPN: Payment failed', [
                     'order_id' => $orderId,
                     'response_code' => $responseCode,
-                    'transaction_id' => $transaction->id,
+                    'transaction_status' => 'failed',
+                    'order_status' => 'payment_failed',
+                    'payment_status' => 'failed',
                     'error' => $this->getVNPayErrorMessage($responseCode),
                 ]);
                 
@@ -296,12 +438,14 @@ class PaymentController extends Controller
     }
 
     /**
-     * Return URL - Xử lý khi user quay lại từ VNPay
+     * Return URL từ VNPay
      */
     public function vnpay_return(Request $request)
     {
         $input = $request->all();
         $vnp_HashSecret = config('services.vnpay.hash_secret');
+
+        Log::info('VNPay Return URL called', $input);
 
         // Verify signature
         $vnp_SecureHash = $input['vnp_SecureHash'] ?? '';
@@ -319,31 +463,67 @@ class PaymentController extends Controller
         if ($secureHash !== $vnp_SecureHash) {
             return response()->json([
                 'success' => false,
-                'message' => 'Chữ ký không hợp lệ'
+                'status' => 'error',
+                'message' => 'Xác thực không thành công',
+                'detail' => 'Chữ ký giao dịch không hợp lệ. Vui lòng liên hệ bộ phận hỗ trợ nếu số tiền đã bị trừ khỏi tài khoản.'
             ], 400);
         }
 
         $txnRef = $input['vnp_TxnRef'] ?? null;
         $orderId = explode('_', $txnRef)[0] ?? null;
         $responseCode = $input['vnp_ResponseCode'] ?? '';
+        $amount = isset($input['vnp_Amount']) ? intval($input['vnp_Amount']) / 100 : 0;
+        $bankCode = $input['vnp_BankCode'] ?? '';
+        $bankTranNo = $input['vnp_BankTranNo'] ?? '';
+        $transactionNo = $input['vnp_TransactionNo'] ?? '';
 
-        $order = Order::find($orderId);
+        $order = Order::with('transactions')->find($orderId);
         if (!$order) {
             return response()->json([
                 'success' => false,
-                'message' => 'Không tìm thấy đơn hàng'
+                'status' => 'not_found',
+                'message' => 'Không tìm thấy đơn hàng',
+                'detail' => 'Mã đơn hàng không tồn tại trong hệ thống.'
             ], 404);
         }
 
-        // Trả về thông tin để frontend xử lý
-        return response()->json([
-            'success' => true,
-            'data' => [
+        $isSuccess = $responseCode === '00';
+        $status = $isSuccess ? 'success' : 'failed';
+        $message = $this->getVNPayErrorMessage($responseCode);
+        
+        // Log transaction for reference
+        if ($isSuccess) {
+            Log::info('VNPay Return - Payment Successful', [
+                'order_id' => $orderId,
+                'amount' => $amount,
+                'transaction_no' => $transactionNo,
+                'bank_code' => $bankCode,
+                'bank_tran_no' => $bankTranNo
+            ]);
+        } else {
+            Log::warning('VNPay Return - Payment Failed', [
                 'order_id' => $orderId,
                 'response_code' => $responseCode,
-                'message' => $this->getVNPayErrorMessage($responseCode),
+                'message' => $message
+            ]);
+        }
+
+        return response()->json([
+            'success' => $isSuccess,
+            'status' => $status,
+            'message' => $isSuccess ? 'Thanh toán thành công' : 'Thanh toán thất bại',
+            'detail' => $message,
+            'data' => [
+                'order_id' => $orderId,
+                'order_code' => $order->code,
+                'amount' => $amount,
+                'transaction_no' => $transactionNo,
+                'bank_code' => $bankCode,
+                'payment_method' => 'VNPay',
+                'paid_at' => now()->toDateTimeString(),
+                'response_code' => $responseCode,
                 'payment_status' => $order->payment_status,
-                'amount' => $order->final_amount,
+                'order_status' => $order->status,
             ]
         ]);
     }
@@ -354,7 +534,7 @@ class PaymentController extends Controller
     public function check_payment_status($orderId)
     {
         try {
-            $order = Order::with(['latestTransaction'])->findOrFail($orderId);
+            $order = Order::with(['paymentTransaction'])->findOrFail($orderId);
             
             return response()->json([
                 'success' => true,
@@ -364,14 +544,14 @@ class PaymentController extends Controller
                     'status' => $order->status,
                     'final_amount' => $order->final_amount,
                     'paid_at' => $order->paid_at,
-                    'transaction' => $order->latestTransaction ? [
-                        'id' => $order->latestTransaction->id,
-                        'transaction_code' => $order->latestTransaction->transaction_code,
-                        'status' => $order->latestTransaction->status,
-                        'amount' => $order->latestTransaction->amount,
-                        'payment_method' => $order->latestTransaction->payment_method,
-                        'bank_code' => $order->latestTransaction->bank_code,
-                        'paid_at' => $order->latestTransaction->paid_at,
+                    'transaction' => $order->paymentTransaction ? [
+                        'id' => $order->paymentTransaction->id,
+                        'transaction_code' => $order->paymentTransaction->transaction_code,
+                        'status' => $order->paymentTransaction->status,
+                        'amount' => $order->paymentTransaction->amount,
+                        'payment_method' => $order->paymentTransaction->payment_method,
+                        'bank_code' => $order->paymentTransaction->bank_code,
+                        'paid_at' => $order->paymentTransaction->paid_at,
                     ] : null,
                 ]
             ]);
@@ -384,7 +564,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * Lấy danh sách transactions của order
+     * Lấy danh sách giao dịch của đơn hàng
      */
     public function get_order_transactions($orderId)
     {
@@ -408,7 +588,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * [ADMIN] Lấy tất cả transactions
+     * Lấy tất cả giao dịch (admin)
      */
     public function get_all_transactions(Request $request)
     {
@@ -416,17 +596,14 @@ class PaymentController extends Controller
             $query = PaymentTransaction::with('order')
                 ->orderBy('created_at', 'desc');
 
-            // Filter by status
             if ($request->has('status')) {
                 $query->where('status', $request->status);
             }
 
-            // Filter by payment method
             if ($request->has('payment_method')) {
                 $query->where('payment_method', $request->payment_method);
             }
 
-            // Filter by date range
             if ($request->has('from_date')) {
                 $query->whereDate('created_at', '>=', $request->from_date);
             }
@@ -459,26 +636,70 @@ class PaymentController extends Controller
     }
 
     /**
-     * Helper: Lấy message lỗi VNPay
+     * Lấy thông điệp lỗi VNPay
      */
     private function getVNPayErrorMessage($code)
     {
         $messages = [
-            '00' => 'Giao dịch thành công',
-            '07' => 'Trừ tiền thành công. Giao dịch bị nghi ngờ (liên quan tới lừa đảo, giao dịch bất thường).',
-            '09' => 'Thẻ/Tài khoản chưa đăng ký dịch vụ InternetBanking.',
-            '10' => 'Xác thực thông tin không đúng quá 3 lần.',
-            '11' => 'Đã hết hạn chờ thanh toán.',
-            '12' => 'Thẻ/Tài khoản bị khóa.',
-            '13' => 'Nhập sai mật khẩu xác thực giao dịch (OTP).',
-            '24' => 'Khách hàng hủy giao dịch.',
-            '51' => 'Tài khoản không đủ số dư.',
-            '65' => 'Tài khoản đã vượt quá hạn mức giao dịch trong ngày.',
-            '75' => 'Ngân hàng thanh toán đang bảo trì.',
-            '79' => 'Nhập sai mật khẩu thanh toán quá số lần quy định.',
-            '99' => 'Lỗi không xác định.',
+            '00' => [
+                'short' => 'Giao dịch thành công',
+                'detail' => 'Thanh toán của bạn đã được xử lý thành công. Đơn hàng đang được xử lý.'
+            ],
+            '07' => [
+                'short' => 'Giao dịch đang được xử lý',
+                'detail' => 'Giao dịch của bạn đang được xử lý. Vui lòng kiểm tra lại sau ít phút hoặc liên hệ bộ phận hỗ trợ nếu cần thiết.'
+            ],
+            '09' => [
+                'short' => 'Thẻ/Tài khoản chưa đăng ký Internet Banking',
+                'detail' => 'Thẻ hoặc tài khoản của bạn chưa đăng ký dịch vụ Internet Banking. Vui lòng kiểm tra lại hoặc chọn phương thức thanh toán khác.'
+            ],
+            '10' => [
+                'short' => 'Xác thực thất bại',
+                'detail' => 'Bạn đã nhập sai thông tin xác thực quá số lần cho phép. Vui lòng thử lại sau ít phút.'
+            ],
+            '11' => [
+                'short' => 'Hết hạn thanh toán',
+                'detail' => 'Đã hết thời gian cho phép thanh toán. Vui lòng thực hiện lại giao dịch.'
+            ],
+            '12' => [
+                'short' => 'Thẻ/Tài khoản bị khóa',
+                'detail' => 'Thẻ hoặc tài khoản của bạn đã bị khóa. Vui lòng liên hệ ngân hàng để biết thêm chi tiết.'
+            ],
+            '13' => [
+                'short' => 'Sai OTP',
+                'detail' => 'Mã OTP xác thực không chính xác. Vui lòng thử lại.'
+            ],
+            '24' => [
+                'short' => 'Đã hủy thanh toán',
+                'detail' => 'Bạn đã hủy giao dịch thanh toán. Nếu cần hỗ trợ, vui lòng liên hệ bộ phận chăm sóc khách hàng.'
+            ],
+            '51' => [
+                'short' => 'Số dư không đủ',
+                'detail' => 'Tài khoản của bạn không đủ số dư để thực hiện giao dịch. Vui lòng kiểm tra lại số dư tài khoản.'
+            ],
+            '65' => [
+                'short' => 'Vượt hạn mức giao dịch',
+                'detail' => 'Tài khoản của bạn đã vượt quá hạn mức giao dịch trong ngày. Vui lòng thử lại vào ngày mai hoặc liên hệ ngân hàng để biết thêm chi tiết.'
+            ],
+            '75' => [
+                'short' => 'Ngân hàng đang bảo trì',
+                'detail' => 'Ngân hàng thanh toán đang trong thời gian bảo trì. Vui lòng thử lại sau ít phút hoặc chọn phương thức thanh toán khác.'
+            ],
+            '79' => [
+                'short' => 'Nhập sai mật khẩu quá số lần',
+                'detail' => 'Bạn đã nhập sai mật khẩu thanh toán quá số lần cho phép. Vui lòng thử lại sau ít phút.'
+            ],
+            '99' => [
+                'short' => 'Lỗi không xác định',
+                'detail' => 'Đã xảy ra lỗi trong quá trình xử lý. Vui lòng thử lại hoặc liên hệ bộ phận hỗ trợ nếu vấn đề vẫn còn.'
+            ],
         ];
 
-        return $messages[$code] ?? 'Lỗi không xác định';
+        $defaultMessage = [
+            'short' => 'Lỗi không xác định',
+            'detail' => 'Đã xảy ra lỗi trong quá trình xử lý. Mã lỗi: ' . $code
+        ];
+
+        return $messages[$code] ?? $defaultMessage;
     }
 }

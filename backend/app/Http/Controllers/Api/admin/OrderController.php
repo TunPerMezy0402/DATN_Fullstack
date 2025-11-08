@@ -72,7 +72,6 @@ public function show($id)
             $shipping->district,  // Quận / huyện
             $shipping->city,  
             $shipping->notes,      // Tỉnh / thành phố
-            // Tỉnh / thành phố
         ]);
 
         $fullAddress = implode(', ', $addressParts);
@@ -123,7 +122,7 @@ public function show($id)
             'status' => $order->status,
             'payment_status' => $order->payment_status,
             'payment_method' => $order->payment_method,
-            'note' => $order->note, // 🟢 note ghi chú của khách hàng
+            'note' => $order->note,
             'created_at' => $order->created_at,
             'updated_at' => $order->updated_at,
             'deleted_at' => $order->deleted_at,
@@ -171,16 +170,10 @@ public function show($id)
 
                 $shipping = Shipping::firstOrNew(['order_id' => $order->id]);
                 $shipping->fill([
-                    'shipping_name' => $shippingData['shipping_name'] ?? $shipping->shipping_name,
-                    'shipping_phone' => $shippingData['shipping_phone'] ?? $shipping->shipping_phone,
-                    'shipping_address_line' => $shippingData['shipping_address_line'] ?? $shipping->shipping_address_line,
-                    'shipping_city' => $shippingData['shipping_city'] ?? $shipping->shipping_city,
-                    'shipping_province' => $shippingData['shipping_province'] ?? $shipping->shipping_province,
-                    'shipping_postal_code' => $shippingData['shipping_postal_code'] ?? $shipping->shipping_postal_code,
-                    'carrier' => $shippingData['carrier'] ?? $shipping->carrier,
-                    'tracking_number' => $shippingData['tracking_number'] ?? $shipping->tracking_number,
                     'shipping_status' => $shippingData['shipping_status'] ?? $shipping->shipping_status,
-                    'estimated_delivery' => $shippingData['estimated_delivery'] ?? $shipping->estimated_delivery,
+                    'shipper_name' => $shippingData['shipper_name'] ?? $shipping->shipper_name,
+                    'shipper_phone' => $shippingData['shipper_phone'] ?? $shipping->shipper_phone,
+
                 ]);
                 $shipping->save();
             }

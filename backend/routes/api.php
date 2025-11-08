@@ -42,18 +42,18 @@ use App\Http\Controllers\Api\Client\HomeBannerController;
 
 // Banner routes - Admin (có middleware auth)
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
-	Route::get('banners/trash', [BannerController::class, 'trash']);
-	Route::post('banners/{id}/restore', [BannerController::class, 'restore']);
-	Route::delete('banners/{id}/force', [BannerController::class, 'forceDelete']);
-	Route::apiResource('banners', BannerController::class);
+    Route::get('banners/trash', [BannerController::class, 'trash']);
+    Route::post('banners/{id}/restore', [BannerController::class, 'restore']);
+    Route::delete('banners/{id}/force', [BannerController::class, 'forceDelete']);
+    Route::apiResource('banners', BannerController::class);
 
-	Route::get('banner-images/trash', [BannerImageController::class, 'trash']);
-	Route::post('banner-images/{id}/restore', [BannerImageController::class, 'restore']);
-	Route::delete('banner-images/{id}/force', [BannerImageController::class, 'forceDelete']);
+    Route::get('banner-images/trash', [BannerImageController::class, 'trash']);
+    Route::post('banner-images/{id}/restore', [BannerImageController::class, 'restore']);
+    Route::delete('banner-images/{id}/force', [BannerImageController::class, 'forceDelete']);
 
-	Route::post('banners/{banner}/images', [BannerImageController::class, 'store']);
-	Route::match(['put','patch'], 'banner-images/{image}', [BannerImageController::class, 'update']);
-	Route::delete('banner-images/{image}', [BannerImageController::class, 'destroy']);
+    Route::post('banners/{banner}/images', [BannerImageController::class, 'store']);
+    Route::match(['put', 'patch'], 'banner-images/{image}', [BannerImageController::class, 'update']);
+    Route::delete('banner-images/{image}', [BannerImageController::class, 'destroy']);
 });
 
 // Banner routes - Client (không cần auth)
@@ -157,6 +157,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [OrderClientController::class, 'show']);
         Route::post('/', [OrderClientController::class, 'store']);
         Route::get('/{id}/payment-status', [OrderClientController::class, 'paymentStatus']);
+        Route::post('/{id}/cancel', [OrderClientController::class, 'cancel']); // ✅ thêm dòng này
     });
 
 });
@@ -212,31 +213,31 @@ Route::get('/vnpay/return', [PaymentController::class, 'vnpay_return'])->name('v
 // ==================== AUTHENTICATED ROUTES ====================
 
 Route::middleware('auth:sanctum')->group(function () {
-    
+
     // Tạo payment URL cho VNPay
     Route::post('/vnpay_payment', [PaymentController::class, 'vnpay_payment'])
         ->name('payment.vnpay');
-    
+
     // Kiểm tra trạng thái thanh toán
     Route::get('/payment/status/{orderId}', [PaymentController::class, 'check_payment_status'])
         ->name('payment.status');
-    
+
     // Lấy danh sách transactions của một order
     Route::get('/orders/{orderId}/transactions', [PaymentController::class, 'get_order_transactions'])
         ->name('payment.order.transactions');
-    
+
 });
 
 // ==================== ADMIN ROUTES ====================
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
-    
+
     // Lấy tất cả transactions (có filter)
     Route::get('/transactions', [PaymentController::class, 'get_all_transactions'])
         ->name('admin.transactions.index');
-    
+
     // Xuất báo cáo transactions
     Route::get('/transactions/export', [PaymentController::class, 'export_transactions'])
         ->name('admin.transactions.export');
-    
+
 });

@@ -10,10 +10,11 @@ import {
   Row,
   Col,
   Space,
-  Timeline,
   Tag,
   Divider,
   Steps,
+  Modal,
+  Input,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -23,13 +24,16 @@ import {
   ClockCircleOutlined,
   TruckOutlined,
   HomeOutlined,
+  CloseCircleOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import { provinces, districts, wards } from "vietnam-provinces";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-const { Text, Title } = Typography;
+const { Text, Title, Paragraph } = Typography;
+const { TextArea } = Input;
 
 interface OrderItem {
   id: number;
@@ -113,22 +117,6 @@ const orderStatusColors: Record<string, string> = {
   returned: "volcano",
 };
 
-const paymentStatusMap: Record<string, string> = {
-  unpaid: "Chưa thanh toán",
-  paid: "Đã thanh toán",
-  refunded: "Đã hoàn tiền",
-  failed: "Thất bại",
-  pending: "Đang xử lý",
-};
-
-const paymentStatusColors: Record<string, string> = {
-  unpaid: "default",
-  paid: "green",
-  refunded: "orange",
-  failed: "red",
-  pending: "gold",
-};
-
 const shippingStatusMap: Record<string, string> = {
   pending: "Chờ xử lý",
   in_transit: "Đang vận chuyển",
@@ -143,10 +131,9 @@ const paymentMethodMap: Record<string, string> = {
 };
 
 const paymentMethodColors: Record<string, string> = {
-  cod: "red",
+  cod: "orange",
   vnpay: "green",
 };
-
 
 // Timeline steps
 const getOrderSteps = (status: string) => {
@@ -172,13 +159,15 @@ const OrderUserDetail: React.FC = () => {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [printing, setPrinting] = useState(false);
+  const [cancelModalVisible, setCancelModalVisible] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   const fetchOrder = async () => {
     try {
       setLoading(true);
       const token = getAuthToken();
-      // Không cần truyền user_id nữa, API tự lấy từ token
       const res = await axios.get(`${API_URL}/orders/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -196,6 +185,40 @@ const OrderUserDetail: React.FC = () => {
     fetchOrder();
   }, [id]);
 
+  // Kiểm tra có thể hủy đơn hàng không
+  const canCancelOrder = (status: string) => {
+    const nonCancellableStatuses = ["shipped", "delivered", "completed", "cancelled", "returned"];
+    return !nonCancellableStatuses.includes(status);
+  };
+
+  // Xử lý hủy đơn hàng
+  const handleCancelOrder = async () => {
+    if (!cancelReason.trim()) {
+      message.warning("Vui lòng nhập lý do hủy đơn!");
+      return;
+    }
+
+    try {
+      setCancelling(true);
+      const token = getAuthToken();
+      await axios.post(
+        `${API_URL}/orders/${id}/cancel`,
+        { reason: cancelReason },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      message.success("Hủy đơn hàng thành công!");
+      setCancelModalVisible(false);
+      setCancelReason("");
+      fetchOrder();
+    } catch (error: any) {
+      console.error(error);
+      message.error(error.response?.data?.message || "Không thể hủy đơn hàng!");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   // In hóa đơn ra PDF
   const handlePrintPDF = async () => {
     if (!invoiceRef.current || !order) return;
@@ -204,7 +227,6 @@ const OrderUserDetail: React.FC = () => {
       setPrinting(true);
       message.loading({ content: "Đang tạo hóa đơn PDF...", key: "print" });
 
-      // Chụp nội dung thành canvas
       const canvas = await html2canvas(invoiceRef.current, {
         scale: 2,
         useCORS: true,
@@ -213,13 +235,12 @@ const OrderUserDetail: React.FC = () => {
       });
 
       const imgData = canvas.toDataURL("image/png");
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 297; // A4 height in mm
+      const imgWidth = 210;
+      const pageHeight = 297;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       
-      // Tạo PDF
       const pdf = new jsPDF({
-        orientation: imgHeight > pageHeight ? "portrait" : "portrait",
+        orientation: "portrait",
         unit: "mm",
         format: "a4",
       });
@@ -227,11 +248,9 @@ const OrderUserDetail: React.FC = () => {
       let heightLeft = imgHeight;
       let position = 0;
 
-      // Thêm trang đầu tiên
       pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
 
-      // Thêm các trang tiếp theo nếu nội dung dài
       while (heightLeft > 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
@@ -239,9 +258,7 @@ const OrderUserDetail: React.FC = () => {
         heightLeft -= pageHeight;
       }
 
-      // Tải xuống PDF
       pdf.save(`Hoa-don-${order.sku}.pdf`);
-
       message.success({ content: "Tải hóa đơn PDF thành công!", key: "print" });
     } catch (error) {
       console.error(error);
@@ -281,39 +298,96 @@ const OrderUserDetail: React.FC = () => {
   ].filter(Boolean);
   const fullAddress = addressParts.join(", ");
 
+  // Tính toán phí ship và giảm giá
+  const shippingFee = 30000;
+  const totalAmount = parseFloat(order.total_amount);
+  const finalAmount = parseFloat(order.final_amount);
+  const freeShippingThreshold = 500000;
+  const isFreeShipping = totalAmount >= freeShippingThreshold;
+  
+  let couponDiscount = 0;
+  if (isFreeShipping) {
+    couponDiscount = totalAmount - finalAmount;
+  } else {
+    couponDiscount = totalAmount + shippingFee - finalAmount;
+  }
+
   return (
-    <div style={{ padding: "24px", backgroundColor: "#f5f5f5", minHeight: "100vh" }}>
-      {/* Header */}
-      <Card style={{ marginBottom: 24, borderRadius: 8 }}>
+    <div style={{ padding: "24px", backgroundColor: "#f0f2f5", minHeight: "100vh" }}>
+      {/* Header với gradient */}
+      <Card 
+        style={{ 
+          marginBottom: 24, 
+          borderRadius: 12,
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          border: "none",
+        }}
+        bodyStyle={{ padding: "24px" }}
+      >
         <Row justify="space-between" align="middle">
           <Col>
-            <Space>
+            <Space size="large">
               <Button
                 icon={<ArrowLeftOutlined />}
                 onClick={() => navigate("/orders")}
+                size="large"
+                style={{ 
+                  backgroundColor: "rgba(255,255,255,0.2)", 
+                  border: "none",
+                  color: "white",
+                }}
               >
                 Quay lại
               </Button>
-              <Title level={3} style={{ margin: 0 }}>
-                Chi tiết đơn hàng
-              </Title>
+              <div>
+                <Title level={3} style={{ margin: 0, color: "white" }}>
+                  Chi tiết đơn hàng
+                </Title>
+                <Text style={{ color: "rgba(255,255,255,0.9)", fontSize: 16 }}>
+                  Mã đơn: <strong>{order.sku}</strong>
+                </Text>
+              </div>
             </Space>
           </Col>
           <Col>
-            <Button
-              type="primary"
-              icon={<FilePdfOutlined />}
-              size="large"
-              onClick={handlePrintPDF}
-              loading={printing}
-            >
-              Tải hóa đơn PDF
-            </Button>
+            <Space size="middle">
+              {canCancelOrder(order.status) && (
+                <Button
+                  danger
+                  icon={<CloseCircleOutlined />}
+                  size="large"
+                  onClick={() => setCancelModalVisible(true)}
+                  style={{ 
+                    height: 45,
+                    fontSize: 16,
+                    fontWeight: 500,
+                  }}
+                >
+                  Hủy đơn hàng
+                </Button>
+              )}
+              <Button
+                type="primary"
+                icon={<FilePdfOutlined />}
+                size="large"
+                onClick={handlePrintPDF}
+                loading={printing}
+                style={{ 
+                  backgroundColor: "#52c41a",
+                  borderColor: "#52c41a",
+                  height: 45,
+                  fontSize: 16,
+                  fontWeight: 500,
+                }}
+              >
+                Tải hóa đơn PDF
+              </Button>
+            </Space>
           </Col>
         </Row>
       </Card>
 
-      {/* Invoice Content - Phần này sẽ được export ra JPG */}
+      {/* Invoice Content */}
       <div ref={invoiceRef}>
         <Row gutter={[24, 24]}>
           {/* Cột trái */}
@@ -322,40 +396,39 @@ const OrderUserDetail: React.FC = () => {
             <Card
               title={
                 <Space>
-                  <ShoppingOutlined />
-                  <span>Thông tin đơn hàng</span>
+                  <ShoppingOutlined style={{ fontSize: 20, color: "#1890ff" }} />
+                  <span style={{ fontSize: 18, fontWeight: 600 }}>Thông tin đơn hàng</span>
                 </Space>
               }
-              style={{ marginBottom: 24, borderRadius: 8 }}
+              style={{ 
+                marginBottom: 24, 
+                borderRadius: 12,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+              }}
             >
-              <Descriptions column={2} bordered>
-                <Descriptions.Item label="Mã đơn hàng" span={2}>
-                  <Text strong style={{ fontSize: 16, color: "#1890ff" }}>
-                    {order.sku}
-                  </Text>
-                </Descriptions.Item>
+              <Descriptions column={{ xs: 1, sm: 2 }} bordered>
                 <Descriptions.Item label="Ngày đặt hàng" span={2}>
-                  {formatDate(order.created_at)}
+                  <Text strong>{formatDate(order.created_at)}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label="Hình thức thanh toán">
-  <Tag color={paymentMethodColors[order.payment_method] || "default"}>
-    {paymentMethodMap[order.payment_method] || order.payment_method}
-  </Tag>
-</Descriptions.Item>
-
                 <Descriptions.Item label="Trạng thái đơn hàng">
-                  <Tag color={orderStatusColors[order.status] || "default"}>
+                  <Tag 
+                    color={orderStatusColors[order.status] || "default"}
+                    style={{ fontSize: 14, padding: "4px 12px", fontWeight: 500 }}
+                  >
                     {orderStatusMap[order.status] || order.status}
                   </Tag>
                 </Descriptions.Item>
-                <Descriptions.Item label="Thanh toán">
-                  <Tag color={paymentStatusColors[order.payment_status] || "default"}>
-                    {paymentStatusMap[order.payment_status] || order.payment_status}
+                <Descriptions.Item label="Hình thức thanh toán">
+                  <Tag 
+                    color={paymentMethodColors[order.payment_method] || "default"}
+                    style={{ fontSize: 14, padding: "4px 12px", fontWeight: 500 }}
+                  >
+                    {paymentMethodMap[order.payment_method] || order.payment_method}
                   </Tag>
                 </Descriptions.Item>
                 {order.note && (
                   <Descriptions.Item label="Ghi chú" span={2}>
-                    {order.note}
+                    <Paragraph style={{ margin: 0 }}>{order.note}</Paragraph>
                   </Descriptions.Item>
                 )}
               </Descriptions>
@@ -363,8 +436,14 @@ const OrderUserDetail: React.FC = () => {
 
             {/* Chi tiết sản phẩm */}
             <Card
-              title="Chi tiết sản phẩm"
-              style={{ marginBottom: 24, borderRadius: 8 }}
+              title={
+                <span style={{ fontSize: 18, fontWeight: 600 }}>Chi tiết sản phẩm</span>
+              }
+              style={{ 
+                marginBottom: 24, 
+                borderRadius: 12,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+              }}
             >
               {order.items.map((item, index) => (
                 <div key={item.id}>
@@ -375,49 +454,49 @@ const OrderUserDetail: React.FC = () => {
                           src={`http://127.0.0.1:8000/${item.product_image}`}
                           alt={item.product_name}
                           style={{
-                            width: 80,
-                            height: 80,
+                            width: 90,
+                            height: 90,
                             objectFit: "cover",
-                            borderRadius: 8,
-                            border: "1px solid #f0f0f0",
+                            borderRadius: 12,
+                            border: "2px solid #f0f0f0",
                           }}
                         />
                       ) : (
                         <div
                           style={{
-                            width: 80,
-                            height: 80,
+                            width: 90,
+                            height: 90,
                             backgroundColor: "#f5f5f5",
-                            borderRadius: 8,
+                            borderRadius: 12,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                           }}
                         >
-                          <ShoppingOutlined style={{ fontSize: 32, color: "#ccc" }} />
+                          <ShoppingOutlined style={{ fontSize: 36, color: "#ccc" }} />
                         </div>
                       )}
                     </Col>
                     <Col flex={1}>
-                      <Text strong style={{ fontSize: 16, display: "block" }}>
+                      <Text strong style={{ fontSize: 17, display: "block", marginBottom: 8 }}>
                         {item.product_name}
                       </Text>
-                      <Space size="large" style={{ marginTop: 8 }}>
+                      <Space size="large">
                         {item.size && (
-                          <Text type="secondary">Size: {item.size}</Text>
+                          <Tag color="blue">Size: {item.size}</Tag>
                         )}
                         {item.color && (
-                          <Text type="secondary">Màu: {item.color}</Text>
+                          <Tag color="purple">Màu: {item.color}</Tag>
                         )}
                       </Space>
                       <div style={{ marginTop: 8 }}>
-                        <Text type="secondary">
-                          {item.quantity} × {parseFloat(item.price).toLocaleString("vi-VN")}₫
+                        <Text type="secondary" style={{ fontSize: 15 }}>
+                          Số lượng: <strong>{item.quantity}</strong> × {parseFloat(item.price).toLocaleString("vi-VN")}₫
                         </Text>
                       </div>
                     </Col>
                     <Col>
-                      <Text strong style={{ fontSize: 16, color: "#52c41a" }}>
+                      <Text strong style={{ fontSize: 18, color: "#ff4d4f" }}>
                         {item.total.toLocaleString("vi-VN")}₫
                       </Text>
                     </Col>
@@ -426,66 +505,90 @@ const OrderUserDetail: React.FC = () => {
                 </div>
               ))}
 
-              <Divider />
+              <Divider style={{ margin: "24px 0", borderColor: "#d9d9d9" }} />
               
               {/* Tổng tiền */}
-              <Row justify="end">
-                <Col>
-                  <Space direction="vertical" align="end" size="small">
-                    <div>
-                      <Text type="secondary">Tạm tính: </Text>
-                      <Text strong style={{ fontSize: 16 }}>
-                        {parseFloat(order.total_amount).toLocaleString("vi-VN")}₫
-                      </Text>
-                    </div>
-                    <div>
-                      <Text type="secondary">Phí vận chuyển: </Text>
-                      <Text strong style={{ fontSize: 16 }}>
-                        0₫
-                      </Text>
-                    </div>
-                    <Divider style={{ margin: "8px 0" }} />
-                    <div>
-                      <Text strong style={{ fontSize: 18 }}>Tổng cộng: </Text>
-                      <Text strong style={{ fontSize: 20, color: "#ff4d4f" }}>
-                        {parseFloat(order.final_amount).toLocaleString("vi-VN")}₫
-                      </Text>
-                    </div>
-                  </Space>
-                </Col>
-              </Row>
+              <div style={{ backgroundColor: "#fafafa", padding: 20, borderRadius: 8 }}>
+                <Row justify="end">
+                  <Col>
+                    <Space direction="vertical" align="end" size="middle" style={{ width: "100%" }}>
+                      <div style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 60 }}>
+                        <Text style={{ fontSize: 16 }}>Tạm tính:</Text>
+                        <Text strong style={{ fontSize: 16 }}>
+                          {totalAmount.toLocaleString("vi-VN")}₫
+                        </Text>
+                      </div>
+                      <div style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 60 }}>
+                        <Text style={{ fontSize: 16 }}>Phí vận chuyển:</Text>
+                        {isFreeShipping ? (
+                          <Text strong style={{ fontSize: 16, color: "#52c41a" }}>
+                            Miễn phí
+                          </Text>
+                        ) : (
+                          <Text strong style={{ fontSize: 16 }}>
+                            {shippingFee.toLocaleString("vi-VN")}₫
+                          </Text>
+                        )}
+                      </div>
+                      {couponDiscount > 0 && (
+                        <div style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 60 }}>
+                          <Text style={{ fontSize: 16 }}>Mã giảm giá:</Text>
+                          <Text strong style={{ fontSize: 16, color: "#ff4d4f" }}>
+                            - {couponDiscount.toLocaleString("vi-VN")}₫
+                          </Text>
+                        </div>
+                      )}
+                      <Divider style={{ margin: "8px 0" }} />
+                      <div style={{ width: "100%", display: "flex", justifyContent: "space-between", gap: 60 }}>
+                        <Text strong style={{ fontSize: 20 }}>Tổng cộng:</Text>
+                        <Text strong style={{ fontSize: 24, color: "#ff4d4f" }}>
+                          {finalAmount.toLocaleString("vi-VN")}₫
+                        </Text>
+                      </div>
+                    </Space>
+                  </Col>
+                </Row>
+              </div>
             </Card>
 
             {/* Thông tin vận chuyển */}
             <Card
-              title="Thông tin vận chuyển"
-              style={{ borderRadius: 8 }}
+              title={
+                <Space>
+                  <TruckOutlined style={{ fontSize: 20, color: "#52c41a" }} />
+                  <span style={{ fontSize: 18, fontWeight: 600 }}>Thông tin vận chuyển</span>
+                </Space>
+              }
+              style={{ 
+                borderRadius: 12,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+              }}
             >
               <Descriptions column={1} bordered>
                 <Descriptions.Item label="Mã vận đơn">
-                  <Text strong>{s?.sku || "—"}</Text>
+                  <Text strong style={{ fontSize: 15 }}>{s?.sku || "—"}</Text>
                 </Descriptions.Item>
                 <Descriptions.Item label="Người nhận">
-                  <Text strong>{s?.shipping_name || "—"}</Text>
+                  <Text strong style={{ fontSize: 15 }}>{s?.shipping_name || "—"}</Text>
                 </Descriptions.Item>
                 <Descriptions.Item label="Số điện thoại">
-                  {s?.shipping_phone || "—"}
+                  <Text style={{ fontSize: 15 }}>{s?.shipping_phone || "—"}</Text>
                 </Descriptions.Item>
                 <Descriptions.Item label="Địa chỉ">
-                  {fullAddress || "—"}
+                  <Text style={{ fontSize: 15 }}>{fullAddress || "—"}</Text>
                 </Descriptions.Item>
                 <Descriptions.Item label="Trạng thái giao hàng">
-                  <Tag color="blue">
+                  <Tag color="cyan" style={{ fontSize: 14, padding: "4px 12px" }}>
                     {shippingStatusMap[s?.shipping_status] || s?.shipping_status || "—"}
                   </Tag>
                 </Descriptions.Item>
                 {s?.shipper_name && (
                   <>
                     <Descriptions.Item label="Người giao hàng">
-                      {s.shipper_name}
+                      <Text style={{ fontSize: 15 }}>{s.shipper_name}</Text>
                     </Descriptions.Item>
                     <Descriptions.Item label="SĐT Shipper">
-                      {s.shipper_phone || "—"}
+                      <Text style={{ fontSize: 15 }}>{s.shipper_phone || "—"}</Text>
                     </Descriptions.Item>
                   </>
                 )}
@@ -497,32 +600,46 @@ const OrderUserDetail: React.FC = () => {
           <Col xs={24} lg={8}>
             {/* Thông tin khách hàng */}
             <Card
-              title="Thông tin khách hàng"
-              style={{ marginBottom: 24, borderRadius: 8 }}
+              title={
+                <span style={{ fontSize: 18, fontWeight: 600 }}>Thông tin khách hàng</span>
+              }
+              style={{ 
+                marginBottom: 24, 
+                borderRadius: 12,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+              }}
             >
-              <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+              <Space direction="vertical" size="large" style={{ width: "100%" }}>
                 <div>
-                  <Text type="secondary">Họ tên:</Text>
+                  <Text type="secondary" style={{ fontSize: 14 }}>Họ tên</Text>
                   <br />
-                  <Text strong style={{ fontSize: 16 }}>
+                  <Text strong style={{ fontSize: 17 }}>
                     {order.user?.name}
                   </Text>
                 </div>
                 <div>
-                  <Text type="secondary">Số điện thoại:</Text>
+                  <Text type="secondary" style={{ fontSize: 14 }}>Số điện thoại</Text>
                   <br />
-                  <Text>{order.user?.phone}</Text>
+                  <Text style={{ fontSize: 16 }}>{order.user?.phone}</Text>
                 </div>
                 <div>
-                  <Text type="secondary">Email:</Text>
+                  <Text type="secondary" style={{ fontSize: 14 }}>Email</Text>
                   <br />
-                  <Text>{order.user?.email}</Text>
+                  <Text style={{ fontSize: 16 }}>{order.user?.email}</Text>
                 </div>
               </Space>
             </Card>
 
             {/* Tiến trình đơn hàng */}
-            <Card title="Tiến trình đơn hàng" style={{ borderRadius: 8 }}>
+            <Card 
+              title={
+                <span style={{ fontSize: 18, fontWeight: 600 }}>Tiến trình đơn hàng</span>
+              }
+              style={{ 
+                borderRadius: 12,
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+              }}
+            >
               <Steps
                 direction="vertical"
                 current={
@@ -534,10 +651,19 @@ const OrderUserDetail: React.FC = () => {
               />
 
               {(order.status === "cancelled" || order.status === "returned") && (
-                <div style={{ marginTop: 16, padding: 12, backgroundColor: "#fff2e8", borderRadius: 8 }}>
-                  <Text type="warning" strong>
-                    {order.status === "cancelled" ? "⚠️ Đơn hàng đã bị hủy" : "⚠️ Đơn hàng đã được trả lại"}
-                  </Text>
+                <div style={{ 
+                  marginTop: 24, 
+                  padding: 16, 
+                  backgroundColor: "#fff2e8", 
+                  borderRadius: 8,
+                  border: "1px solid #ffbb96",
+                }}>
+                  <Space>
+                    <ExclamationCircleOutlined style={{ color: "#ff7a45", fontSize: 18 }} />
+                    <Text strong style={{ color: "#d4380d", fontSize: 15 }}>
+                      {order.status === "cancelled" ? "Đơn hàng đã bị hủy" : "Đơn hàng đã được trả lại"}
+                    </Text>
+                  </Space>
                 </div>
               )}
             </Card>
@@ -546,15 +672,85 @@ const OrderUserDetail: React.FC = () => {
       </div>
 
       {/* Footer info */}
-      <Card style={{ marginTop: 24, textAlign: "center", borderRadius: 8 }}>
-        <Text type="secondary">
-          Cảm ơn bạn đã mua hàng! Nếu có bất kỳ thắc mắc nào, vui lòng liên hệ với chúng tôi.
-        </Text>
-        <br />
-        <Text type="secondary">
-          Hotline: 1900-xxxx | Email: support@shop.com
-        </Text>
+      <Card 
+        style={{ 
+          marginTop: 24, 
+          textAlign: "center", 
+          borderRadius: 12,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+          backgroundColor: "#fafafa",
+        }}
+      >
+        <Space direction="vertical" size="small">
+          <Text style={{ fontSize: 16 }}>
+            🎉 Cảm ơn bạn đã mua hàng!
+          </Text>
+          <Text type="secondary" style={{ fontSize: 15 }}>
+            Nếu có bất kỳ thắc mắc nào, vui lòng liên hệ với chúng tôi
+          </Text>
+          <Divider style={{ margin: "12px 0" }} />
+          <Space split={<Divider type="vertical" />}>
+            <Text strong style={{ fontSize: 15 }}>📞 Hotline: 1900-xxxx</Text>
+            <Text strong style={{ fontSize: 15 }}>✉️ Email: support@shop.com</Text>
+          </Space>
+        </Space>
       </Card>
+
+      {/* Modal hủy đơn hàng */}
+      <Modal
+        title={
+          <Space>
+            <ExclamationCircleOutlined style={{ color: "#ff4d4f", fontSize: 24 }} />
+            <span style={{ fontSize: 18 }}>Xác nhận hủy đơn hàng</span>
+          </Space>
+        }
+        open={cancelModalVisible}
+        onCancel={() => {
+          setCancelModalVisible(false);
+          setCancelReason("");
+        }}
+        footer={[
+          <Button 
+            key="back" 
+            onClick={() => {
+              setCancelModalVisible(false);
+              setCancelReason("");
+            }}
+            size="large"
+          >
+            Đóng
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            danger
+            loading={cancelling}
+            onClick={handleCancelOrder}
+            icon={<CloseCircleOutlined />}
+            size="large"
+          >
+            Xác nhận hủy
+          </Button>,
+        ]}
+        width={600}
+      >
+        <Divider style={{ margin: "16px 0" }} />
+        <Paragraph style={{ fontSize: 15, marginBottom: 16 }}>
+          Bạn có chắc chắn muốn hủy đơn hàng <Text strong style={{ color: "#1890ff" }}>{order.sku}</Text>?
+        </Paragraph>
+        <Paragraph type="secondary" style={{ fontSize: 14, marginBottom: 20 }}>
+          ⚠️ Lưu ý: Sau khi hủy, đơn hàng sẽ không thể khôi phục.
+        </Paragraph>
+        <TextArea
+          placeholder="Vui lòng nhập lý do hủy đơn hàng..."
+          value={cancelReason}
+          onChange={(e) => setCancelReason(e.target.value)}
+          rows={4}
+          maxLength={500}
+          showCount
+          style={{ fontSize: 15 }}
+        />
+      </Modal>
     </div>
   );
 };

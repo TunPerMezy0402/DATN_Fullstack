@@ -289,7 +289,7 @@ const CheckoutPage: React.FC = () => {
       district: selectedAddr.district,
       commune: selectedAddr.commune,
       village: selectedAddr.village || "",
-      shipping_notes: selectedAddr.notes || "",
+      notes: selectedAddr.notes || "",
       payment_method: method,
       shipping_fee: shipping,
       coupon_code: coupon?.code || null,
@@ -403,7 +403,7 @@ const CheckoutPage: React.FC = () => {
             </Space>
             <div style={{ marginTop: 4 }}>
               <Text type="secondary" style={{ fontSize: 13 }}>
-                {[addr.village, addr.commune, addr.district, addr.city].filter(Boolean).join(", ")}
+                {[addr.notes, addr.village, addr.commune, addr.district, addr.city].filter(Boolean).join(", ")}
               </Text>
             </div>
           </div>
@@ -577,7 +577,7 @@ const CheckoutPage: React.FC = () => {
                     <Text strong>{selectedAddr?.recipient_name}</Text>
                     <Text>{selectedAddr?.phone}</Text>
                     <Text type="secondary">
-                      {[selectedAddr?.village, selectedAddr?.commune, selectedAddr?.district, selectedAddr?.city]
+                      {[selectedAddr?.notes,selectedAddr?.village, selectedAddr?.commune, selectedAddr?.district, selectedAddr?.city]
                         .filter(Boolean)
                         .join(", ")}
                     </Text>

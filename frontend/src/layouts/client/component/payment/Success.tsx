@@ -51,6 +51,7 @@ interface OrderStatus {
   payment_status: string;
   status: string;
   final_amount: number;
+  sku : string;
   paid_at?: string;
   transaction?: {
     id: number;
@@ -197,7 +198,7 @@ const PaymentSuccessPage: React.FC = () => {
               type="primary"
               size="large"
               icon={<ShoppingOutlined />}
-              onClick={() => (window.location.href = "/orders")}
+              onClick={() => (window.location.href = `/orders/${orderStatus?.order_id}`)}
               key="orders"
             >
               Xem đơn hàng
@@ -225,32 +226,11 @@ const PaymentSuccessPage: React.FC = () => {
           >
             <Descriptions column={1} bordered>
               <Descriptions.Item label="Mã đơn hàng">
-                <Text strong>#{orderStatus.order_id}</Text>
+                <Text strong>#{orderStatus.sku}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Trạng thái đơn hàng">
                 <Tag color={orderStatus.status === "confirmed" ? "green" : "blue"}>
                   {orderStatus.status === "confirmed" ? "Đã xác nhận" : "Chờ xác nhận"}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="Trạng thái thanh toán">
-                <Tag
-                  color={
-                    orderStatus.payment_status === "paid"
-                      ? "success"
-                      : orderStatus.payment_status === "pending"
-                      ? "processing"
-                      : orderStatus.payment_status === "failed"
-                      ? "error"
-                      : "default"
-                  }
-                >
-                  {orderStatus.payment_status === "paid"
-                    ? "Đã thanh toán"
-                    : orderStatus.payment_status === "pending"
-                    ? "Đang xử lý"
-                    : orderStatus.payment_status === "failed"
-                    ? "Thất bại"
-                    : "Chưa thanh toán"}
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="Tổng tiền">
@@ -280,23 +260,6 @@ const PaymentSuccessPage: React.FC = () => {
                       {orderStatus.transaction.bank_code}
                     </Descriptions.Item>
                   )}
-                  <Descriptions.Item label="Trạng thái giao dịch">
-                    <Tag
-                      color={
-                        orderStatus.transaction.status === "success"
-                          ? "success"
-                          : orderStatus.transaction.status === "pending"
-                          ? "processing"
-                          : "error"
-                      }
-                    >
-                      {orderStatus.transaction.status === "success"
-                        ? "Thành công"
-                        : orderStatus.transaction.status === "pending"
-                        ? "Đang xử lý"
-                        : "Thất bại"}
-                    </Tag>
-                  </Descriptions.Item>
                 </>
               )}
             </Descriptions>

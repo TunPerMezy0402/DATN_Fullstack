@@ -14,7 +14,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   fetchProducts,
   parseImages,
@@ -119,10 +119,10 @@ const priceForDisplay = (
 
   if (variants.length > 0) {
     const variantDiscounts = variants
-      .map((v) => toNum(v?.discount_price))
+      .map((v: any) => toNum(v?.discount_price))
       .filter((x): x is number => x !== null);
     const variantPrices = variants
-      .map((v) => toNum(v?.price))
+      .map((v: any) => toNum(v?.price))
       .filter((x): x is number => x !== null);
 
     if (variantDiscounts.length > 0) {
@@ -154,6 +154,7 @@ const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
 const ProductsPage: React.FC = () => {
   const screens = useBreakpoint();
   const navigate = useNavigate();
+  const { id: categoryId } = useParams<{ id?: string }>();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -191,6 +192,11 @@ const ProductsPage: React.FC = () => {
           : catsRes.data?.data?.data || catsRes.data?.data || [];
         setCategories(catsRaw.map((c: any) => ({ value: Number(c.id), label: c.name })));
 
+        // Set category từ URL nếu có
+        if (categoryId) {
+          setCatId(Number(categoryId));
+        }
+
         setError(null);
       } catch (e: any) {
         console.error(e);
@@ -205,7 +211,7 @@ const ProductsPage: React.FC = () => {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [categoryId]);
 
   // brands + options size/color động
   const BRAND_OPTIONS = useMemo(
@@ -336,7 +342,15 @@ const ProductsPage: React.FC = () => {
                 optionFilterProp="label"
                 options={categories}
                 value={catId ?? undefined}
-                onChange={(v) => setCatId(v ?? null)}
+                onChange={(v) => {
+                  setCatId(v ?? null);
+                  // Cập nhật URL khi chọn category
+                  if (v) {
+                    navigate(`/products/category/${v}`, { replace: true });
+                  } else {
+                    navigate(`/products`, { replace: true });
+                  }
+                }}
               />
             </Space>
 
