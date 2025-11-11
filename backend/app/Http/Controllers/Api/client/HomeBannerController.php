@@ -15,7 +15,7 @@ class HomeBannerController extends Controller
 		$banner = Banner::active()
 			->with(['images' => function ($q) {
 				$q->where('is_active', true)
-				  ->orderBy('sort_order', 'asc');
+				  ->orderBy('id', 'asc');
 			}])
 			->first();
 
@@ -38,7 +38,7 @@ class HomeBannerController extends Controller
 	{
 		$query = Banner::query()->with(['images' => function ($q) {
 			$q->where('is_active', true)
-			  ->orderBy('sort_order', 'asc');
+			  ->orderBy('id', 'asc');
 		}]);
 
 		// Filter by active status if provided
