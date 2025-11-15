@@ -77,7 +77,6 @@ interface Order {
   sku: string;
   total_amount: string;
   final_amount: string;
-  status: string;
   payment_status: string;
   payment_method: string;
   note?: string;
@@ -98,26 +97,7 @@ const getDistrictName = (code?: string) =>
 const getWardName = (code?: string) =>
   wards.find((w) => w.code === code)?.name || "";
 
-// Map trạng thái đơn hàng
-const orderStatusMap: Record<string, string> = {
-  pending: "Đang chờ",
-  confirmed: "Đã xác nhận",
-  shipped: "Đang giao",
-  delivered: "Đã giao",
-  completed: "Hoàn tất",
-  cancelled: "Đã hủy",
-  returned: "Trả lại",
-};
 
-const orderStatusColors: Record<string, string> = {
-  pending: "gold",
-  confirmed: "blue",
-  shipped: "cyan",
-  delivered: "green",
-  completed: "success",
-  cancelled: "red",
-  returned: "volcano",
-};
 
 // Map trạng thái thanh toán
 const paymentStatusMap: Record<string, string> = {
@@ -163,27 +143,6 @@ const paymentMethodColors: Record<string, string> = {
   vnpay: "green",
 };
 
-// Timeline cho trạng thái đơn hàng
-const getOrderTimeline = (status: string) => {
-  const steps = [
-    { key: "pending", label: "Đang chờ" },
-    { key: "confirmed", label: "Đã xác nhận" },
-    { key: "shipped", label: "Đang giao" },
-    { key: "delivered", label: "Đã giao" },
-    { key: "completed", label: "Hoàn tất" },
-  ];
-
-  const statusIndex = steps.findIndex((s) => s.key === status);
-
-  return steps.map((step, index) => ({
-    ...step,
-    color: index <= statusIndex ? "green" : "gray",
-    dot:
-      index === statusIndex ? (
-        <Avatar size="small" style={{ backgroundColor: "#52c41a" }} />
-      ) : undefined,
-  }));
-};
 
 const OrderDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -443,17 +402,6 @@ const OrderDetail: React.FC = () => {
               >
                 {fullAddress || "—"}
               </Descriptions.Item>
-              <Descriptions.Item label="Người giao hàng">
-                {s?.shipper_name || "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="SĐT Shipper">
-                {s?.shipper_phone || "—"}
-              </Descriptions.Item>
-              <Descriptions.Item label="Trạng thái giao hàng">
-                <Tag color={shippingStatusColors[s?.shipping_status] || "default"}>
-                  {shippingStatusMap[s?.shipping_status] || s?.shipping_status || "—"}
-                </Tag>
-              </Descriptions.Item>
             </Descriptions>
           </Card>
         </Col>
@@ -480,13 +428,10 @@ const OrderDetail: React.FC = () => {
 
               <div>
                 <Text type="secondary">Trạng thái hiện tại:</Text>
-                <br />
-                <Tag
-                  color={orderStatusColors[order.status] || "default"}
-                  style={{ marginTop: 8, fontSize: 14, padding: "4px 12px" }}
-                >
-                  {orderStatusMap[order.status] || order.status}
+                <Tag color={shippingStatusColors[s?.shipping_status] || "default"}>
+                  {shippingStatusMap[s?.shipping_status] || s?.shipping_status || "—"}
                 </Tag>
+                <br />
               </div>
 
               <div>
@@ -510,24 +455,6 @@ const OrderDetail: React.FC = () => {
                 </div>
               )}
             </Space>
-          </Card>
-
-          {/* Timeline tiến trình */}
-          <Card title="Tiến trình đơn hàng" style={{ borderRadius: 8 }}>
-            <Timeline
-              items={getOrderTimeline(order.status).map((step) => ({
-                color: step.color,
-                dot: step.dot,
-                children: (
-                  <Text
-                    strong={step.key === order.status}
-                    type={step.color === "gray" ? "secondary" : undefined}
-                  >
-                    {step.label}
-                  </Text>
-                ),
-              }))}
-            />
           </Card>
         </Col>
       </Row>

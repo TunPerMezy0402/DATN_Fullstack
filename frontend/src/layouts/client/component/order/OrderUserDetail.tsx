@@ -26,6 +26,7 @@ import {
   HomeOutlined,
   CloseCircleOutlined,
   ExclamationCircleOutlined,
+  SyncOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import { provinces, districts, wards } from "vietnam-provinces";
@@ -60,6 +61,7 @@ interface Shipping {
   shipping_name: string;
   shipping_phone: string;
   shipping_status: string;
+  reason: string;
   city: string;
   district: string;
   commune: string;
@@ -74,7 +76,6 @@ interface Order {
   sku: string;
   total_amount: string;
   final_amount: string;
-  status: string;
   payment_status: string;
   payment_method: string;
   note?: string;
@@ -96,25 +97,12 @@ const getDistrictName = (code?: string) =>
 const getWardName = (code?: string) =>
   wards.find((w) => w.code === code)?.name || "";
 
-// Map trạng thái
-const orderStatusMap: Record<string, string> = {
-  pending: "Chờ xác nhận",
-  confirmed: "Đã xác nhận",
-  shipped: "Đang giao",
-  delivered: "Đã giao",
-  completed: "Hoàn thành",
-  cancelled: "Đã hủy",
-  returned: "Trả hàng",
-};
-
-const orderStatusColors: Record<string, string> = {
-  pending: "gold",
-  confirmed: "blue",
-  shipped: "cyan",
-  delivered: "green",
-  completed: "success",
-  cancelled: "red",
-  returned: "volcano",
+const paymentStatusMap: Record<string, string> = {
+  unpaid: "Chưa thanh toán",
+  paid: "Đã thanh toán",
+  refund_processing: "Đang hoàn tiền",
+  refunded: "Đã hoàn tiền",
+  failed: "Thanh toán thất bại",
 };
 
 const shippingStatusMap: Record<string, string> = {
@@ -123,6 +111,8 @@ const shippingStatusMap: Record<string, string> = {
   delivered: "Đã giao hàng",
   failed: "Giao thất bại",
   returned: "Đã hoàn hàng",
+  none: "Đã hủy",
+  nodone: "Chưa thanh toán",
 };
 
 const paymentMethodMap: Record<string, string> = {
@@ -135,21 +125,41 @@ const paymentMethodColors: Record<string, string> = {
   vnpay: "green",
 };
 
-// Timeline steps
-const getOrderSteps = (status: string) => {
+const paymentStatusColors: Record<string, string> = {
+  unpaid: "orange",
+  paid: "green",
+  refund_processing: "purple",
+  refunded: "blue",
+  failed: "red",
+};
+
+const shippingStatusColors: Record<string, string> = {
+  pending: "orange",
+  in_transit: "blue",
+  delivered: "green",
+  failed: "red",
+  returned: "purple",
+  none: "default",
+  nodone: "yellow",
+};
+
+// Timeline steps cho shipping_status
+const getShippingSteps = (shippingStatus: string) => {
   const allSteps = [
-    { key: "pending", title: "Chờ xác nhận", icon: <ClockCircleOutlined /> },
-    { key: "confirmed", title: "Đã xác nhận", icon: <CheckCircleOutlined /> },
-    { key: "shipped", title: "Đang giao", icon: <TruckOutlined /> },
-    { key: "delivered", title: "Đã giao", icon: <HomeOutlined /> },
-    { key: "completed", title: "Hoàn thành", icon: <CheckCircleOutlined /> },
+    { key: "pending", title: "Chờ xử lý", icon: <ClockCircleOutlined /> },
+    { key: "in_transit", title: "Đang vận chuyển", icon: <TruckOutlined /> },
+    { key: "delivered", title: "Đã giao hàng", icon: <HomeOutlined /> },
   ];
 
-  const currentIndex = allSteps.findIndex((s) => s.key === status);
-  
+  const statusIndex = allSteps.findIndex((s) => s.key === shippingStatus);
+
   return allSteps.map((step, index) => ({
     ...step,
-    status: (index < currentIndex ? "finish" : index === currentIndex ? "process" : "wait") as "finish" | "process" | "wait",
+    status: (index < statusIndex 
+      ? "finish" 
+      : index === statusIndex 
+        ? "process" 
+        : "wait") as "finish" | "process" | "wait",
   }));
 };
 
@@ -162,6 +172,10 @@ const OrderUserDetail: React.FC = () => {
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [returnModalVisible, setReturnModalVisible] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
+  const [returning, setReturning] = useState(false);
+  const [repaying, setRepaying] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
   const fetchOrder = async () => {
@@ -171,7 +185,16 @@ const OrderUserDetail: React.FC = () => {
       const res = await axios.get(`${API_URL}/orders/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setOrder(res.data.data);
+      const orderData = res.data.data;
+      setOrder(orderData);
+      
+      // Thông báo khi đơn hàng chuyển sang trạng thái đang vận chuyển
+      if (orderData.shipping?.shipping_status === "in_transit") {
+        message.info({
+          content: "📦 Đơn hàng của bạn đã được vận chuyển!",
+          duration: 5,
+        });
+      }
     } catch (error) {
       console.error(error);
       message.error("Không thể tải chi tiết đơn hàng!");
@@ -185,37 +208,175 @@ const OrderUserDetail: React.FC = () => {
     fetchOrder();
   }, [id]);
 
-  // Kiểm tra có thể hủy đơn hàng không
-  const canCancelOrder = (status: string) => {
-    const nonCancellableStatuses = ["shipped", "delivered", "completed", "cancelled", "returned"];
-    return !nonCancellableStatuses.includes(status);
+  // Kiểm tra có thể hủy đơn hàng không (chỉ hủy được khi đang pending)
+  const canCancelOrder = (shippingStatus: string) => {
+    return shippingStatus === "pending" || shippingStatus === "nodone"  ;
+  };
+
+  // Kiểm tra có thể hoàn hàng không (chỉ hoàn được khi đã delivered)
+  const canReturnOrder = (shippingStatus: string) => {
+    return shippingStatus === "delivered";
+  };
+
+  // Kiểm tra có thể thanh toán lại không (vnpay và thanh toán thất bại, và chưa bị hủy)
+  const canRepay = (paymentMethod: string, paymentStatus: string, shippingStatus: string) => {
+    return paymentMethod === "vnpay" && 
+           (paymentStatus === "unpaid" || paymentStatus === "failed") &&
+           shippingStatus !== "none";
   };
 
   // Xử lý hủy đơn hàng
-  const handleCancelOrder = async () => {
-    if (!cancelReason.trim()) {
-      message.warning("Vui lòng nhập lý do hủy đơn!");
+  // Xử lý hủy đơn hàng
+const handleCancelOrder = async () => {
+  if (!cancelReason.trim()) {
+    message.warning("Vui lòng nhập lý do hủy đơn!");
+    return;
+  }
+
+  try {
+    setCancelling(true);
+    const token = getAuthToken();
+    
+    // Kiểm tra lại trạng thái mới nhất trước khi hủy
+    const checkRes = await axios.get(`${API_URL}/orders/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    
+    const latestStatus = checkRes.data.data.shipping?.shipping_status;
+    
+    // ✅ FIX: Sử dụng && và !includes thay vì ||
+    if (!["pending", "nodone"].includes(latestStatus)) {
+      setCancelModalVisible(false);
+      setCancelReason("");
+      
+      if (latestStatus === "in_transit") {
+        message.warning({
+          content: "📦 Đơn hàng của bạn đã được vận chuyển! Không thể hủy đơn hàng.",
+          duration: 5,
+        });
+      } else if (latestStatus === "delivered") {
+        message.warning({
+          content: "✅ Đơn hàng của bạn đã được giao! Không thể hủy đơn hàng.",
+          duration: 5,
+        });
+      } else if (latestStatus === "none") {
+        message.info({
+          content: "Đơn hàng này đã được hủy trước đó.",
+          duration: 5,
+        });
+      } else {
+        message.warning({
+          content: "Đơn hàng đã thay đổi trạng thái! Không thể hủy đơn hàng.",
+          duration: 5,
+        });
+      }
+      
+      // Cập nhật lại UI với trạng thái mới
+      setOrder(checkRes.data.data);
+      return;
+    }
+
+    // Nếu vẫn còn pending hoặc nodone thì tiếp tục hủy
+    await axios.post(
+      `${API_URL}/orders/${id}/cancel`,
+      { reason: cancelReason },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    message.success("Hủy đơn hàng thành công!");
+    setCancelModalVisible(false);
+    setCancelReason("");
+    fetchOrder();
+  } catch (error: any) {
+    console.error(error);
+    message.error(error.response?.data?.message || "Không thể hủy đơn hàng!");
+  } finally {
+    setCancelling(false);
+  }
+};
+
+  // Xử lý hoàn hàng
+  const handleReturnOrder = async () => {
+    if (!returnReason.trim()) {
+      message.warning("Vui lòng nhập lý do hoàn hàng!");
       return;
     }
 
     try {
-      setCancelling(true);
+      setReturning(true);
       const token = getAuthToken();
+      
+      // Kiểm tra lại trạng thái mới nhất trước khi hoàn hàng
+      const checkRes = await axios.get(`${API_URL}/orders/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      const latestStatus = checkRes.data.data.shipping?.shipping_status;
+      
+      // Nếu đơn hàng không còn ở trạng thái delivered
+      if (latestStatus !== "delivered") {
+        setReturnModalVisible(false);
+        setReturnReason("");
+        
+        if (latestStatus === "returned") {
+          message.info({
+            content: "Đơn hàng này đã được hoàn trả trước đó.",
+            duration: 5,
+          });
+        } else {
+          message.warning({
+            content: "Trạng thái đơn hàng đã thay đổi! Không thể tạo yêu cầu hoàn hàng.",
+            duration: 5,
+          });
+        }
+        
+        // Cập nhật lại UI với trạng thái mới
+        setOrder(checkRes.data.data);
+        return;
+      }
+
+      // Nếu vẫn còn delivered thì tiếp tục hoàn hàng
       await axios.post(
-        `${API_URL}/orders/${id}/cancel`,
-        { reason: cancelReason },
+        `${API_URL}/orders/${id}/return`,
+        { reason: returnReason },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      message.success("Hủy đơn hàng thành công!");
-      setCancelModalVisible(false);
-      setCancelReason("");
+
+      message.success("Yêu cầu hoàn hàng đã được gửi thành công!");
+      setReturnModalVisible(false);
+      setReturnReason("");
       fetchOrder();
     } catch (error: any) {
       console.error(error);
-      message.error(error.response?.data?.message || "Không thể hủy đơn hàng!");
+      message.error(error.response?.data?.message || "Không thể tạo yêu cầu hoàn hàng!");
     } finally {
-      setCancelling(false);
+      setReturning(false);
+    }
+  };
+
+  // Xử lý thanh toán lại
+  const handleRepay = async () => {
+    try {
+      setRepaying(true);
+      const token = getAuthToken();
+      
+      // Gọi API để tạo lại link thanh toán VNPAY
+      const res = await axios.post(
+        `${API_URL}/orders/${id}/repay`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // Chuyển hướng đến trang thanh toán VNPAY
+      if (res.data.payment_url) {
+        window.location.href = res.data.payment_url;
+      } else {
+        message.error("Không thể tạo link thanh toán!");
+      }
+    } catch (error: any) {
+      console.error(error);
+      message.error(error.response?.data?.message || "Không thể thanh toán lại!");
+      setRepaying(false);
     }
   };
 
@@ -238,7 +399,7 @@ const OrderUserDetail: React.FC = () => {
       const imgWidth = 210;
       const pageHeight = 297;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
+
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "mm",
@@ -304,7 +465,7 @@ const OrderUserDetail: React.FC = () => {
   const finalAmount = parseFloat(order.final_amount);
   const freeShippingThreshold = 500000;
   const isFreeShipping = totalAmount >= freeShippingThreshold;
-  
+
   let couponDiscount = 0;
   if (isFreeShipping) {
     couponDiscount = totalAmount - finalAmount;
@@ -315,9 +476,9 @@ const OrderUserDetail: React.FC = () => {
   return (
     <div style={{ padding: "24px", backgroundColor: "#f0f2f5", minHeight: "100vh" }}>
       {/* Header với gradient */}
-      <Card 
-        style={{ 
-          marginBottom: 24, 
+      <Card
+        style={{
+          marginBottom: 24,
           borderRadius: 12,
           background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
           border: "none",
@@ -331,8 +492,8 @@ const OrderUserDetail: React.FC = () => {
                 icon={<ArrowLeftOutlined />}
                 onClick={() => navigate("/orders")}
                 size="large"
-                style={{ 
-                  backgroundColor: "rgba(255,255,255,0.2)", 
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.2)",
                   border: "none",
                   color: "white",
                 }}
@@ -351,13 +512,48 @@ const OrderUserDetail: React.FC = () => {
           </Col>
           <Col>
             <Space size="middle">
-              {canCancelOrder(order.status) && (
+              {canRepay(order.payment_method, order.payment_status, s?.shipping_status) && (
+                <Button
+                  type="primary"
+                  icon={<ShoppingOutlined />}
+                  size="large"
+                  onClick={handleRepay}
+                  loading={repaying}
+                  style={{
+                    height: 45,
+                    fontSize: 16,
+                    fontWeight: 500,
+                    backgroundColor: "#1890ff",
+                    borderColor: "#1890ff",
+                  }}
+                >
+                  Thanh toán lại
+                </Button>
+              )}
+              {canReturnOrder(s?.shipping_status) && (
+                <Button
+                  icon={<SyncOutlined />}
+                  size="large"
+                  onClick={() => setReturnModalVisible(true)}
+                  style={{
+                    height: 45,
+                    fontSize: 16,
+                    fontWeight: 500,
+                    backgroundColor: "#722ed1",
+                    color: "white",
+                    borderColor: "#722ed1",
+                  }}
+                >
+                  Hoàn hàng
+                </Button>
+              )}
+              {canCancelOrder(s?.shipping_status) && (
                 <Button
                   danger
                   icon={<CloseCircleOutlined />}
                   size="large"
                   onClick={() => setCancelModalVisible(true)}
-                  style={{ 
+                  style={{
                     height: 45,
                     fontSize: 16,
                     fontWeight: 500,
@@ -372,7 +568,7 @@ const OrderUserDetail: React.FC = () => {
                 size="large"
                 onClick={handlePrintPDF}
                 loading={printing}
-                style={{ 
+                style={{
                   backgroundColor: "#52c41a",
                   borderColor: "#52c41a",
                   height: 45,
@@ -400,35 +596,63 @@ const OrderUserDetail: React.FC = () => {
                   <span style={{ fontSize: 18, fontWeight: 600 }}>Thông tin đơn hàng</span>
                 </Space>
               }
-              style={{ 
-                marginBottom: 24, 
+              style={{
+                marginBottom: 24,
                 borderRadius: 12,
                 boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
               }}
             >
               <Descriptions column={{ xs: 1, sm: 2 }} bordered>
+                {/* Ngày đặt hàng */}
                 <Descriptions.Item label="Ngày đặt hàng" span={2}>
                   <Text strong>{formatDate(order.created_at)}</Text>
                 </Descriptions.Item>
-                <Descriptions.Item label="Trạng thái đơn hàng">
-                  <Tag 
-                    color={orderStatusColors[order.status] || "default"}
-                    style={{ fontSize: 14, padding: "4px 12px", fontWeight: 500 }}
+
+                {/* Trạng thái giao hàng */}
+                <Descriptions.Item label="Trạng thái giao hàng" span={2}>
+                  <Tag
+                    color={shippingStatusColors[s?.shipping_status] || "default"}
+                    icon={
+                      s?.shipping_status === "in_transit" ? <SyncOutlined spin /> : 
+                      s?.shipping_status === "delivered" ? <CheckCircleOutlined /> :
+                      s?.shipping_status === "failed" ? <CloseCircleOutlined /> :
+                      s?.shipping_status === "returned" ? <CloseCircleOutlined /> :
+                      <ClockCircleOutlined />
+                    }
+                    style={{ fontSize: 14, padding: "6px 14px", fontWeight: 500 }}
                   >
-                    {orderStatusMap[order.status] || order.status}
+                    {shippingStatusMap[s?.shipping_status] || s?.shipping_status || "—"}
                   </Tag>
                 </Descriptions.Item>
+
+                {/* Trạng thái thanh toán */}
+                <Descriptions.Item label="Trạng thái thanh toán">
+                  <Space>
+                    <Tag
+                      color={paymentStatusColors[order.payment_status] || "default"}
+                      style={{ fontSize: 14, padding: "4px 12px", fontWeight: 500 }}
+                    >
+                      {paymentStatusMap[order.payment_status] || order.payment_status}
+                    </Tag>
+                  </Space>
+                </Descriptions.Item>
+
+                {/* Hình thức thanh toán */}
                 <Descriptions.Item label="Hình thức thanh toán">
-                  <Tag 
+                  <Tag
                     color={paymentMethodColors[order.payment_method] || "default"}
                     style={{ fontSize: 14, padding: "4px 12px", fontWeight: 500 }}
                   >
                     {paymentMethodMap[order.payment_method] || order.payment_method}
                   </Tag>
                 </Descriptions.Item>
+
+                {/* Ghi chú (nếu có) */}
                 {order.note && (
                   <Descriptions.Item label="Ghi chú" span={2}>
-                    <Paragraph style={{ margin: 0 }}>{order.note}</Paragraph>
+                    <Paragraph style={{ margin: 0 }}>
+                      {order.note}
+                    </Paragraph>
                   </Descriptions.Item>
                 )}
               </Descriptions>
@@ -439,8 +663,8 @@ const OrderUserDetail: React.FC = () => {
               title={
                 <span style={{ fontSize: 18, fontWeight: 600 }}>Chi tiết sản phẩm</span>
               }
-              style={{ 
-                marginBottom: 24, 
+              style={{
+                marginBottom: 24,
                 borderRadius: 12,
                 boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
               }}
@@ -506,7 +730,7 @@ const OrderUserDetail: React.FC = () => {
               ))}
 
               <Divider style={{ margin: "24px 0", borderColor: "#d9d9d9" }} />
-              
+
               {/* Tổng tiền */}
               <div style={{ backgroundColor: "#fafafa", padding: 20, borderRadius: 8 }}>
                 <Row justify="end">
@@ -559,7 +783,7 @@ const OrderUserDetail: React.FC = () => {
                   <span style={{ fontSize: 18, fontWeight: 600 }}>Thông tin vận chuyển</span>
                 </Space>
               }
-              style={{ 
+              style={{
                 borderRadius: 12,
                 boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
               }}
@@ -576,11 +800,6 @@ const OrderUserDetail: React.FC = () => {
                 </Descriptions.Item>
                 <Descriptions.Item label="Địa chỉ">
                   <Text style={{ fontSize: 15 }}>{fullAddress || "—"}</Text>
-                </Descriptions.Item>
-                <Descriptions.Item label="Trạng thái giao hàng">
-                  <Tag color="cyan" style={{ fontSize: 14, padding: "4px 12px" }}>
-                    {shippingStatusMap[s?.shipping_status] || s?.shipping_status || "—"}
-                  </Tag>
                 </Descriptions.Item>
                 {s?.shipper_name && (
                   <>
@@ -603,8 +822,8 @@ const OrderUserDetail: React.FC = () => {
               title={
                 <span style={{ fontSize: 18, fontWeight: 600 }}>Thông tin khách hàng</span>
               }
-              style={{ 
-                marginBottom: 24, 
+              style={{
+                marginBottom: 24,
                 borderRadius: 12,
                 boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
               }}
@@ -631,40 +850,67 @@ const OrderUserDetail: React.FC = () => {
             </Card>
 
             {/* Tiến trình đơn hàng */}
-            <Card 
+            <Card
               title={
-                <span style={{ fontSize: 18, fontWeight: 600 }}>Tiến trình đơn hàng</span>
+                <span style={{ fontSize: 18, fontWeight: 600 }}>Tiến trình vận chuyển</span>
               }
-              style={{ 
+              style={{
                 borderRadius: 12,
                 boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
               }}
             >
-              <Steps
-                direction="vertical"
-                current={
-                  ["pending", "confirmed", "shipped", "delivered", "completed"].indexOf(
-                    order.status
-                  )
-                }
-                items={getOrderSteps(order.status)}
-              />
-
-              {(order.status === "cancelled" || order.status === "returned") && (
-                <div style={{ 
-                  marginTop: 24, 
-                  padding: 16, 
-                  backgroundColor: "#fff2e8", 
+              {s?.shipping_status === "none" ? (
+                <div style={{
+                  padding: 20,
+                  backgroundColor: "#f5f5f5",
                   borderRadius: 8,
-                  border: "1px solid #ffbb96",
+                  border: "1px solid #d9d9d9",
+                  textAlign: "center",
                 }}>
-                  <Space>
-                    <ExclamationCircleOutlined style={{ color: "#ff7a45", fontSize: 18 }} />
-                    <Text strong style={{ color: "#d4380d", fontSize: 15 }}>
-                      {order.status === "cancelled" ? "Đơn hàng đã bị hủy" : "Đơn hàng đã được trả lại"}
-                    </Text>
+                  <Space direction="vertical" size="middle">
+                    <CloseCircleOutlined style={{ color: "#8c8c8c", fontSize: 48 }} />
+                    <div>
+                      <Text strong style={{ color: "#595959", fontSize: 16, display: "block", marginBottom: 8 }}>
+                        Đơn hàng đã bị hủy
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 14 }}>
+                        Đơn hàng này đã được hủy bởi người dùng.
+                      </Text>
+                    </div>
                   </Space>
                 </div>
+              ) : (s?.shipping_status === "failed" || s?.shipping_status === "returned") ? (
+                <div style={{
+                  padding: 20,
+                  backgroundColor: "#fff2e8",
+                  borderRadius: 8,
+                  border: "1px solid #ffbb96",
+                  textAlign: "center",
+                }}>
+                  <Space direction="vertical" size="middle">
+                    <ExclamationCircleOutlined style={{ color: "#ff7a45", fontSize: 48 }} />
+                    <div>
+                      <Text strong style={{ color: "#d4380d", fontSize: 16, display: "block", marginBottom: 8 }}>
+                        {s?.shipping_status === "failed" ? "Giao hàng thất bại" : "Đơn hàng đã được hoàn lại"}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 14 }}>
+                        {s?.shipping_status === "failed" 
+                          ? "Không thể giao hàng đến địa chỉ của bạn. Vui lòng liên hệ với chúng tôi để được hỗ trợ."
+                          : "Đơn hàng đã được trả lại cho người bán."}
+                      </Text>
+                    </div>
+                  </Space>
+                </div>
+              ) : (
+                <Steps
+                  direction="vertical"
+                  current={
+                    ["pending", "in_transit", "delivered"].indexOf(
+                      s?.shipping_status
+                    )
+                  }
+                  items={getShippingSteps(s?.shipping_status)}
+                />
               )}
             </Card>
           </Col>
@@ -672,10 +918,10 @@ const OrderUserDetail: React.FC = () => {
       </div>
 
       {/* Footer info */}
-      <Card 
-        style={{ 
-          marginTop: 24, 
-          textAlign: "center", 
+      <Card
+        style={{
+          marginTop: 24,
+          textAlign: "center",
           borderRadius: 12,
           boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           backgroundColor: "#fafafa",
@@ -710,8 +956,8 @@ const OrderUserDetail: React.FC = () => {
           setCancelReason("");
         }}
         footer={[
-          <Button 
-            key="back" 
+          <Button
+            key="back"
             onClick={() => {
               setCancelModalVisible(false);
               setCancelReason("");
@@ -745,6 +991,64 @@ const OrderUserDetail: React.FC = () => {
           placeholder="Vui lòng nhập lý do hủy đơn hàng..."
           value={cancelReason}
           onChange={(e) => setCancelReason(e.target.value)}
+          rows={4}
+          maxLength={500}
+          showCount
+          style={{ fontSize: 15 }}
+        />
+      </Modal>
+      {/* Modal hoàn hàng */}
+      <Modal
+        title={
+          <Space>
+            <SyncOutlined style={{ color: "#722ed1", fontSize: 24 }} />
+            <span style={{ fontSize: 18 }}>Yêu cầu hoàn hàng</span>
+          </Space>
+        }
+        open={returnModalVisible}
+        onCancel={() => {
+          setReturnModalVisible(false);
+          setReturnReason("");
+        }}
+        footer={[
+          <Button
+            key="back"
+            onClick={() => {
+              setReturnModalVisible(false);
+              setReturnReason("");
+            }}
+            size="large"
+          >
+            Đóng
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={returning}
+            onClick={handleReturnOrder}
+            icon={<SyncOutlined />}
+            size="large"
+            style={{
+              backgroundColor: "#722ed1",
+              borderColor: "#722ed1",
+            }}
+          >
+            Xác nhận hoàn hàng
+          </Button>,
+        ]}
+        width={600}
+      >
+        <Divider style={{ margin: "16px 0" }} />
+        <Paragraph style={{ fontSize: 15, marginBottom: 16 }}>
+          Bạn muốn hoàn trả đơn hàng <Text strong style={{ color: "#1890ff" }}>{order.sku}</Text>?
+        </Paragraph>
+        <Paragraph type="secondary" style={{ fontSize: 14, marginBottom: 20 }}>
+          ℹ️ Lưu ý: Yêu cầu hoàn hàng sẽ được xem xét và xử lý trong vòng 24-48 giờ.
+        </Paragraph>
+        <TextArea
+          placeholder="Vui lòng nhập lý do hoàn hàng (sản phẩm bị lỗi, không đúng mô tả, v.v.)..."
+          value={returnReason}
+          onChange={(e) => setReturnReason(e.target.value)}
           rows={4}
           maxLength={500}
           showCount

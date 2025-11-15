@@ -17,6 +17,8 @@ use App\Http\Controllers\Api\client\CartClientController;
 use App\Http\Controllers\Api\client\OrderClientController;
 use App\Http\Controllers\Api\client\CategoryClientController;
 use App\Http\Controllers\Api\client\UserProfileController;
+use App\Http\Controllers\Api\client\ProductReviewController;
+
 
 // ==== ADMIN CONTROLLERS ====
 use App\Http\Controllers\Api\admin\AdminController;
@@ -116,8 +118,13 @@ Route::get('categories', [CategoryClientController::class, 'getCategoriesWithPro
 
 
 // Sản phẩm
-Route::get('products', [ProductClientController::class, 'getAllProducts']);
-Route::get('products/{id}', [ProductClientController::class, 'getProductDetail']);
+Route::prefix('client/products')->group(function () {
+    Route::get('/', [ProductClientController::class, 'getAllProducts']);
+    Route::get('/brands', [ProductClientController::class, 'getBrands']);
+    Route::get('/sizes', [ProductClientController::class, 'getSizes']);
+    Route::get('/colors', [ProductClientController::class, 'getColors']);
+    Route::get('/{id}', [ProductClientController::class, 'getProductDetail']);
+});
 // Trang chủ
 
 
@@ -160,6 +167,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/cancel', [OrderClientController::class, 'cancel']); // ✅ thêm dòng này
     });
 
+    Route::prefix('product-reviews')->group(function () {
+        Route::post('/', [ProductReviewController::class, 'store']);           
+        Route::put('/{id}', [ProductReviewController::class, 'update']);       
+        Route::delete('/{id}', [ProductReviewController::class, 'destroy']);
+        Route::get('/{productId}/reviews', [ProductReviewController::class, 'index']); 
+    });
+    
+
+});
+
+Route::prefix('products')->group(function () {
+    Route::get('/{productId}/reviews', [ProductReviewController::class, 'index']); // Xem danh sách đánh giá
 });
 
 // =====================================================================
@@ -205,22 +224,28 @@ Route::adminApiResource('admin/orders-admin', OrderController::class);
 
 
 
-Route::post('/vnpay/ipn', [PaymentController::class, 'vnpay_ipn'])->name('vnpay.ipn');
+// ==================== PUBLIC ROUTES (NO AUTH) ====================
+// ✅ VNPay IPN webhook - VNPay gọi tới đây khi thanh toán xong
+Route::post('/vnpay/ipn', [PaymentController::class, 'vnpay_ipn'])
+    ->name('payment.vnpay.ipn');
 
-// VNPay Return URL - Không cần auth vì user có thể chưa login
-Route::get('/vnpay/return', [PaymentController::class, 'vnpay_return'])->name('vnpay.return');
+// ✅ VNPay Return URL - User redirect về đây sau khi thanh toán
+Route::get('/vnpay/return', [PaymentController::class, 'vnpay_return'])
+    ->name('payment.vnpay.return');
 
 // ==================== AUTHENTICATED ROUTES ====================
-
 Route::middleware('auth:sanctum')->group(function () {
 
-    // Tạo payment URL cho VNPay
+    // ✅ Tạo payment URL cho VNPay
     Route::post('/vnpay_payment', [PaymentController::class, 'vnpay_payment'])
         ->name('payment.vnpay');
 
-    // Kiểm tra trạng thái thanh toán
+    // ✅ Kiểm tra trạng thái thanh toán
     Route::get('/payment/status/{orderId}', [PaymentController::class, 'check_payment_status'])
         ->name('payment.status');
+
+    Route::get('/orders/{orderId}/payment-status', [PaymentController::class, 'check_payment_status'])
+        ->name('payment.order.status');
 
     // Lấy danh sách transactions của một order
     Route::get('/orders/{orderId}/transactions', [PaymentController::class, 'get_order_transactions'])
@@ -229,15 +254,10 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // ==================== ADMIN ROUTES ====================
-
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
 
     // Lấy tất cả transactions (có filter)
     Route::get('/transactions', [PaymentController::class, 'get_all_transactions'])
         ->name('admin.transactions.index');
-
-    // Xuất báo cáo transactions
-    Route::get('/transactions/export', [PaymentController::class, 'export_transactions'])
-        ->name('admin.transactions.export');
 
 });

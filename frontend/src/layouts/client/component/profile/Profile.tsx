@@ -43,12 +43,14 @@ const Profile: React.FC = () => {
   });
 
   const [hasChanges, setHasChanges] = useState(false);
+  const [hasAvatarChange, setHasAvatarChange] = useState(false);
 
   const [form] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [addressForm] = Form.useForm();
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -63,6 +65,9 @@ const Profile: React.FC = () => {
 
   // ✅ Ref để lưu trữ object URL hiện tại
   const avatarObjectUrlRef = useRef<string | null>(null);
+  
+  // ✅ Lưu giá trị ban đầu để so sánh
+  const initialValuesRef = useRef<any>({});
 
   // ✅ Lấy thông tin người dùng + địa chỉ
   const fetchProfile = async () => {
@@ -75,14 +80,22 @@ const Profile: React.FC = () => {
 
       setUser(res.data.user);
       setAddresses(res.data.addresses || []);
-      // Backend returns full URL in `image`
       setAvatarPreview(res.data.user.image || null);
 
-      form.setFieldsValue({
+      const initialValues = {
         name: res.data.user.name,
         email: res.data.user.email,
         phone: res.data.user.phone,
-      });
+      };
+
+      form.setFieldsValue(initialValues);
+      
+      // ✅ Lưu giá trị ban đầu
+      initialValuesRef.current = initialValues;
+      
+      // ✅ Reset trạng thái thay đổi
+      setHasChanges(false);
+      setHasAvatarChange(false);
     } catch {
       message.error("Không thể tải thông tin người dùng");
     } finally {
@@ -103,9 +116,19 @@ const Profile: React.FC = () => {
     };
   }, []);
 
+  // ✅ Kiểm tra có thay đổi form không
+  const checkFormChanges = (changedValues: any, allValues: any) => {
+    const hasFormChange = 
+      allValues.name !== initialValuesRef.current.name ||
+      allValues.phone !== initialValuesRef.current.phone;
+    
+    setHasChanges(hasFormChange);
+  };
+
   // ✅ Cập nhật hồ sơ
   const handleUpdateProfile = async (values: any) => {
     try {
+      setSaving(true);
       const token = getAuthToken();
       const formData = new FormData();
 
@@ -115,21 +138,34 @@ const Profile: React.FC = () => {
 
       if (avatarFile) formData.append("avatar", avatarFile);
 
-      // Use POST with method override to ensure file uploads work across environments
       formData.append("_method", "PUT");
       const res = await axios.post("/api/profile", formData, {
         headers: {
           Authorization: `Bearer ${token}`,
-          // Let axios set proper multipart boundary automatically
         },
       });
 
       message.success(res.data.message || "Cập nhật thành công");
+      
       // ✅ Cập nhật avatar vào local user và phát sự kiện để Header reload
       const newImage = res.data?.user?.image;
       if (newImage) {
         authService.updateUser({ avatar: newImage } as any);
         window.dispatchEvent(new CustomEvent("profile-updated", { detail: { avatar: newImage } }));
+        // Cập nhật avatar preview với URL từ server
+        setAvatarPreview(newImage);
+      }
+
+      // ✅ Cập nhật thông tin user từ response
+      if (res.data?.user) {
+        setUser(res.data.user);
+        const updatedValues = {
+          name: res.data.user.name,
+          email: res.data.user.email,
+          phone: res.data.user.phone,
+        };
+        form.setFieldsValue(updatedValues);
+        initialValuesRef.current = updatedValues;
       }
 
       // ✅ Cleanup old object URL sau khi upload thành công
@@ -138,30 +174,22 @@ const Profile: React.FC = () => {
         avatarObjectUrlRef.current = null;
       }
       setAvatarFile(null);
-
-      fetchProfile();
+      setHasAvatarChange(false);
+      setHasChanges(false);
     } catch {
       message.error("Cập nhật thất bại");
+    } finally {
+      setSaving(false);
     }
   };
 
   // ✅ Hiển thị ảnh tạm khi upload
   const handleAvatarChange = (info: UploadChangeParam) => {
-    console.log("Upload info:", info);
-
-    // Lấy file từ originFileObj hoặc file object
     const file = info.file.originFileObj || info.file;
 
     if (!file || !(file instanceof File)) {
-      console.log("No valid file found");
       return;
     }
-
-    console.log("File details:", {
-      name: file.name,
-      type: file.type,
-      size: file.size
-    });
 
     // Basic client-side guard
     if (!file.type.startsWith("image/")) {
@@ -176,11 +204,11 @@ const Profile: React.FC = () => {
 
     // ✅ Tạo object URL mới và lưu vào ref
     const objectUrl = URL.createObjectURL(file);
-    console.log("Created object URL:", objectUrl);
     avatarObjectUrlRef.current = objectUrl;
 
     setAvatarFile(file);
     setAvatarPreview(objectUrl);
+    setHasAvatarChange(true); // ✅ Đánh dấu có thay đổi ảnh
   };
 
   // ✅ Đổi mật khẩu
@@ -218,21 +246,30 @@ const Profile: React.FC = () => {
       const token = getAuthToken();
 
       if (editAddress) {
-        await axios.put(`/api/profile/address/${editAddress.id}`, values, {
+        const res = await axios.put(`/api/profile/address/${editAddress.id}`, values, {
           headers: { Authorization: `Bearer ${token}` },
         });
         message.success("Cập nhật địa chỉ thành công");
+        
+        // Cập nhật địa chỉ trong danh sách
+        setAddresses(prev => 
+          prev.map(addr => addr.id === editAddress.id ? res.data.address || { ...addr, ...values } : addr)
+        );
       } else {
-        await axios.post("/api/profile/address", values, {
+        const res = await axios.post("/api/profile/address", values, {
           headers: { Authorization: `Bearer ${token}` },
         });
         message.success("Thêm địa chỉ thành công");
+        
+        // Thêm địa chỉ mới vào danh sách
+        if (res.data.address) {
+          setAddresses(prev => [...prev, res.data.address]);
+        }
       }
 
       setAddressModal(false);
       setEditAddress(null);
       addressForm.resetFields();
-      fetchProfile();
     } catch {
       message.error("Không thể lưu địa chỉ");
     }
@@ -255,7 +292,14 @@ const Profile: React.FC = () => {
       });
 
       message.success("Đã đặt làm địa chỉ mặc định");
-      fetchProfile();
+      
+      // Cập nhật danh sách địa chỉ: bỏ default cũ, set default mới
+      setAddresses(prev =>
+        prev.map(addr => ({
+          ...addr,
+          is_default: addr.id === addressId
+        }))
+      );
     } catch (err: any) {
       console.error(err.response?.data);
       message.error(
@@ -264,8 +308,6 @@ const Profile: React.FC = () => {
     }
   };
 
-
-
   const handleDeleteAddress = async (addressId: number) => {
     try {
       const token = getAuthToken();
@@ -273,7 +315,9 @@ const Profile: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       message.success("Đã xóa địa chỉ");
-      fetchProfile();
+      
+      // Xóa địa chỉ khỏi danh sách
+      setAddresses(prev => prev.filter(addr => addr.id !== addressId));
     } catch {
       message.error("Không thể xóa địa chỉ");
     }
@@ -305,6 +349,9 @@ const Profile: React.FC = () => {
     const communeName = wards.find((w) => w.code === addr.commune)?.name || "";
     return `${addr.village}, ${communeName}, ${districtName}, ${cityName}`;
   };
+
+  // ✅ Kiểm tra có thay đổi nào không (form hoặc avatar)
+  const hasAnyChanges = hasChanges || hasAvatarChange;
 
   return (
     <div className="max-w-5xl mx-auto p-6">
@@ -348,7 +395,7 @@ const Profile: React.FC = () => {
               layout="vertical"
               onFinish={handleUpdateProfile}
               className="flex flex-col gap-4"
-              onValuesChange={() => setHasChanges(true)}
+              onValuesChange={checkFormChanges}
             >
               {/* Họ và tên */}
               <Form.Item
@@ -405,15 +452,15 @@ const Profile: React.FC = () => {
               {/* Nút hành động */}
               <div className="flex flex-col md:flex-row gap-3 mt-2">
                 <Button
-  type="primary"
-  icon={<SaveOutlined />}
-  htmlType="submit"
-  className="flex-1"
-  disabled={!hasChanges || loading}
-  loading={loading}
->
-  Lưu thay đổi
-</Button>
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  htmlType="submit"
+                  className="flex-1"
+                  loading={saving}
+                  disabled={!hasAnyChanges}
+                >
+                  Lưu thay đổi
+                </Button>
                 <Button
                   icon={<LockOutlined />}
                   onClick={() => setPasswordModal(true)}

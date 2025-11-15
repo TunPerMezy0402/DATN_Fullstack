@@ -36,8 +36,7 @@ type VariantForm = {
   discount_price: string;
   stock_quantity: number;
   is_available: boolean;
-  mainFiles: UploadFile[];
-  albumFiles: UploadFile[];
+  imageFile: UploadFile[]; // Chỉ còn 1 ảnh chính
 };
 
 /* ============================== Axios ============================== */
@@ -146,7 +145,11 @@ export default function ProductCreate() {
   const [catName, setCatName] = useState("");
   const [attrModalOpen, setAttrModalOpen] = useState<null | "size" | "color">(null);
   const [attrValue, setAttrValue] = useState("");
-  const [productFile, setProductFile] = useState<UploadFile[]>([]);
+  
+  // Product images: 1 ảnh chính + nhiều ảnh album
+  const [productMainFile, setProductMainFile] = useState<UploadFile[]>([]);
+  const [productAlbumFiles, setProductAlbumFiles] = useState<UploadFile[]>([]);
+  
   const [variants, setVariants] = useState<VariantForm[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<string>("");
@@ -205,49 +208,35 @@ export default function ProductCreate() {
         discount_price: "",
         stock_quantity: 0,
         is_available: true,
-        mainFiles: [],
-        albumFiles: [],
+        imageFile: [],
       },
     ]);
 
   const removeVariant = (idx: number) => setVariants((prev) => prev.filter((_, i) => i !== idx));
 
-  // Chức năng sao chép biến thể
   const duplicateVariant = (idx: number) => {
     const source = variants[idx];
     if (!source) return;
     
-    // Deep clone files với uid mới để Antd Upload nhận diện đúng
-    const cloneFiles = (files: UploadFile[]): UploadFile[] => {
-      return files.map((file) => ({
-        ...file,
-        uid: `${file.uid}-copy-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      }));
-    };
-    
-    // Tạo bản sao với SKU mới
     const copied: VariantForm = {
       size_id: source.size_id,
       color_id: source.color_id,
-      sku: generateSku(9), // SKU mới
+      sku: generateSku(9),
       price: source.price,
       discount_price: source.discount_price,
       stock_quantity: source.stock_quantity,
       is_available: source.is_available,
-      // Deep clone files với uid mới
-      mainFiles: cloneFiles(source.mainFiles),
-      albumFiles: cloneFiles(source.albumFiles),
+      imageFile: [],
     };
 
     setVariants((prev) => {
       const next = [...prev];
-      next.splice(idx + 1, 0, copied); // Chèn ngay sau biến thể được sao chép
+      next.splice(idx + 1, 0, copied);
       return next;
     });
 
-    message.success(`Đã sao chép biến thể #${idx + 1} (${source.mainFiles.length} ảnh chính + ${source.albumFiles.length} ảnh phụ)`);
+    message.success(`Đã sao chép biến thể #${idx + 1} (không bao gồm ảnh, vui lòng upload lại)`);
     
-    // Scroll đến biến thể mới sau 100ms
     setTimeout(() => {
       const cards = document.querySelectorAll('.variant-list .ant-card');
       const targetCard = cards[idx + 1] as HTMLElement;
@@ -265,22 +254,18 @@ export default function ProductCreate() {
       return next;
     });
 
-  const onChangeProductFile = ({ fileList }: { fileList: UploadFile[] }) => {
-    setProductFile(fileList.slice(-1));
+  const onChangeProductMainFile = ({ fileList }: { fileList: UploadFile[] }) => {
+    setProductMainFile(fileList.slice(-1));
   };
 
-  const onChangeVariantMain = (idx: number, fileList: UploadFile[]) => {
-    setVariants((prev) => {
-      const next = [...prev];
-      next[idx].mainFiles = fileList.slice(-1);
-      return next;
-    });
+  const onChangeProductAlbumFiles = ({ fileList }: { fileList: UploadFile[] }) => {
+    setProductAlbumFiles(fileList);
   };
 
-  const onChangeVariantAlbum = (idx: number, fileList: UploadFile[]) => {
+  const onChangeVariantImage = (idx: number, fileList: UploadFile[]) => {
     setVariants((prev) => {
       const next = [...prev];
-      next[idx].albumFiles = fileList;
+      next[idx] = { ...next[idx], imageFile: fileList.slice(-1) };
       return next;
     });
   };
@@ -316,10 +301,17 @@ export default function ProductCreate() {
       if (values.brand) fd.append("brand", values.brand);
       fd.append("variation_status", variationEnabled ? "1" : "0");
 
-      const cover = productFile[0]?.originFileObj as RcFile | undefined;
-      if (cover) {
-        fd.append("image", cover);
+      // Product main image (1 ảnh chính)
+      const mainFile = productMainFile[0]?.originFileObj as RcFile | undefined;
+      if (mainFile) {
+        fd.append("image", mainFile);
       }
+
+      // Product album images (nhiều ảnh)
+      productAlbumFiles.forEach((af) => {
+        const file = af.originFileObj as RcFile | undefined;
+        if (file) fd.append("images[]", file);
+      });
 
       if (variationEnabled) {
         variants.forEach((v, i) => {
@@ -342,15 +334,11 @@ export default function ProductCreate() {
           );
           fd.append(`variants[${i}][is_available]`, v.is_available ? "1" : "0");
 
-          const mainFile = v.mainFiles[0]?.originFileObj as RcFile | undefined;
-          if (mainFile) {
-            fd.append(`variants[${i}][image]`, mainFile);
+          // Variant chỉ còn 1 ảnh chính
+          const variantImageFile = v.imageFile[0]?.originFileObj as RcFile | undefined;
+          if (variantImageFile) {
+            fd.append(`variants[${i}][image]`, variantImageFile);
           }
-
-          v.albumFiles.forEach((af) => {
-            const file = af.originFileObj as RcFile | undefined;
-            if (file) fd.append(`variants[${i}][images][]`, file);
-          });
         });
       }
 
@@ -388,32 +376,58 @@ export default function ProductCreate() {
           }}
         >
           <Row gutter={[16, 16]} align="top">
+            {/* Product Images Section */}
             <Col xs={24} md={8}>
-              <Form.Item label="Ảnh sản phẩm (1 ảnh)">
-                <Upload
-                  accept="image/*"
-                  listType="picture-card"
-                  maxCount={1}
-                  beforeUpload={blockAutoUpload}
-                  fileList={productFile}
-                  onChange={({ fileList }) => onChangeProductFile({ fileList: fileList as UploadFile[] })}
-                  onPreview={onPreviewFile}
-                  showUploadList={{ showPreviewIcon: true, showRemoveIcon: true }}
-                  className="upload-cover pretty-upload"
-                >
-                  {(productFile.length || 0) >= 1 ? null : (
+              <Card title="Ảnh sản phẩm" size="small" className="rounded-xl shadow-xs">
+                <Form.Item label="Ảnh chính (1 ảnh)">
+                  <Upload
+                    accept="image/*"
+                    listType="picture-card"
+                    maxCount={1}
+                    beforeUpload={blockAutoUpload}
+                    fileList={productMainFile}
+                    onChange={onChangeProductMainFile}
+                    onPreview={onPreviewFile}
+                    showUploadList={{ showPreviewIcon: true, showRemoveIcon: true }}
+                    className="upload-product-main pretty-upload"
+                  >
+                    {productMainFile.length >= 1 ? null : (
+                      <div>
+                        <UploadOutlined />
+                        <div style={{ marginTop: 8 }}>Chọn ảnh chính</div>
+                      </div>
+                    )}
+                  </Upload>
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                    Ảnh đại diện sản phẩm (tối đa 8MB)
+                  </div>
+                </Form.Item>
+
+                <Form.Item label="Album ảnh (nhiều ảnh)">
+                  <Upload
+                    accept="image/*"
+                    listType="picture-card"
+                    multiple
+                    beforeUpload={blockAutoUpload}
+                    fileList={productAlbumFiles}
+                    onChange={onChangeProductAlbumFiles}
+                    onPreview={onPreviewFile}
+                    showUploadList={{ showPreviewIcon: true, showRemoveIcon: true }}
+                    className="upload-product-album pretty-upload"
+                  >
                     <div>
-                      <UploadOutlined />
-                      <div style={{ marginTop: 8 }}>Chọn ảnh</div>
+                      <PlusOutlined />
+                      <div style={{ marginTop: 8 }}>Thêm ảnh</div>
                     </div>
-                  )}
-                </Upload>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                  Chỉ chọn 1 ảnh; tối đa 8MB
-                </div>
-              </Form.Item>
+                  </Upload>
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                    Có thể chọn nhiều ảnh (mỗi ảnh tối đa 8MB)
+                  </div>
+                </Form.Item>
+              </Card>
             </Col>
 
+            {/* Product Info Section */}
             <Col xs={24} md={16}>
               <Row gutter={[16, 0]}>
                 <Col xs={24} md={12}>
@@ -493,19 +507,19 @@ export default function ProductCreate() {
                   
                   <Row gutter={[16, 8]}>
                     <Col xs={24} sm={12} md={6}>
-                      <Form.Item label="Ảnh đại diện biến thể (1 ảnh)">
+                      <Form.Item label="Ảnh biến thể (1 ảnh)">
                         <Upload
                           accept="image/*"
                           listType="picture-card"
                           maxCount={1}
                           beforeUpload={blockAutoUpload}
-                          fileList={variants[idx].mainFiles}
-                          onChange={({ fileList }) => onChangeVariantMain(idx, fileList as UploadFile[])}
+                          fileList={v.imageFile}
+                          onChange={({ fileList }) => onChangeVariantImage(idx, fileList)}
                           onPreview={onPreviewFile}
                           showUploadList={{ showPreviewIcon: true, showRemoveIcon: true }}
-                          className="upload-variant-main pretty-upload"
+                          className="upload-variant-image pretty-upload"
                         >
-                          {(variants[idx].mainFiles?.length || 0) >= 1 ? null : (
+                          {v.imageFile.length >= 1 ? null : (
                             <div>
                               <UploadOutlined />
                               <div style={{ marginTop: 8 }}>Chọn ảnh</div>
@@ -606,27 +620,6 @@ export default function ProductCreate() {
                         />
                       </Form.Item>
                     </Col>
-
-                    <Col span={24}>
-                      <Form.Item label="Ảnh phụ của biến thể (nhiều ảnh)">
-                        <Upload
-                          accept="image/*"
-                          listType="picture-card"
-                          multiple
-                          beforeUpload={blockAutoUpload}
-                          fileList={variants[idx].albumFiles}
-                          onChange={({ fileList }) => onChangeVariantAlbum(idx, fileList as UploadFile[])}
-                          onPreview={onPreviewFile}
-                          showUploadList={{ showPreviewIcon: true, showRemoveIcon: true }}
-                          className="upload-variant-album pretty-upload"
-                        >
-                          <div>
-                            <UploadOutlined />
-                            <div style={{ marginTop: 8 }}>Chọn ảnh</div>
-                          </div>
-                        </Upload>
-                      </Form.Item>
-                    </Col>
                   </Row>
 
                   <Space>
@@ -722,16 +715,16 @@ export default function ProductCreate() {
       </Modal>
 
       <style>{`
-        .upload-cover .ant-upload-list-picture-card .ant-upload-list-item,
-        .upload-cover .ant-upload.ant-upload-select-picture-card {
+        .upload-product-main .ant-upload-list-picture-card .ant-upload-list-item,
+        .upload-product-main .ant-upload.ant-upload-select-picture-card {
           width: 160px;
           height: 160px;
         }
 
-        .upload-variant-main .ant-upload-list-picture-card .ant-upload-list-item,
-        .upload-variant-main .ant-upload.ant-upload-select-picture-card,
-        .upload-variant-album .ant-upload-list-picture-card .ant-upload-list-item,
-        .upload-variant-album .ant-upload.ant-upload-select-picture-card {
+        .upload-product-album .ant-upload-list-picture-card .ant-upload-list-item,
+        .upload-product-album .ant-upload.ant-upload-select-picture-card,
+        .upload-variant-image .ant-upload-list-picture-card .ant-upload-list-item,
+        .upload-variant-image .ant-upload.ant-upload-select-picture-card {
           width: 120px;
           height: 120px;
         }

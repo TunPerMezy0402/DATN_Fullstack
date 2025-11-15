@@ -22,8 +22,6 @@ class Shipping extends Model
         'commune',
         'village',
         'notes',
-        'shipper_name',
-        'shipper_phone',
     ];
 
     public $timestamps = false;

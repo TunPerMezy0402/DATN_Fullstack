@@ -49,9 +49,8 @@ const RESPONSE_CODE_MESSAGES: Record<string, string> = {
 interface OrderStatus {
   order_id: string | number;
   payment_status: string;
-  status: string;
   final_amount: number;
-  sku : string;
+  sku: string;
   paid_at?: string;
   transaction?: {
     id: number;
@@ -88,7 +87,7 @@ const PaymentSuccessPage: React.FC = () => {
       bankCode: bankCode || "",
     });
 
-    // 🔧 Sửa lỗi: Tách orderId đúng (tránh "_xxxx")
+    // Tách orderId đúng
     const orderId =
       txnRef.split("_")[0] ||
       searchParams.get("order_id") ||
@@ -140,7 +139,6 @@ const PaymentSuccessPage: React.FC = () => {
           background: "#f5f5f5",
         }}
       >
-        {/* 🟢 Sửa lỗi Spin tip warning */}
         <Spin spinning tip="Đang kiểm tra trạng thái thanh toán..." size="large">
           <div style={{ height: 100 }} />
         </Spin>
@@ -148,37 +146,51 @@ const PaymentSuccessPage: React.FC = () => {
     );
   }
 
+  // ✅ FIX LOGIC: Kiểm tra thành công/thất bại DỰA VÀO BACKEND
+  const isVNPayPayment = !!vnpayData.responseCode; // Có response code => thanh toán VNPay
   const isVNPaySuccess = vnpayData.responseCode === "00";
-  const isCODSuccess =
-    !vnpayData.responseCode && orderStatus?.payment_status === "unpaid";
-  const isSuccess = isVNPaySuccess || isCODSuccess;
+  const isVNPayCancelled = vnpayData.responseCode === "24";
+  
+  // Kiểm tra từ database
+  const isPaidFromDB = orderStatus?.payment_status === "paid";
+  const isFailedFromDB = orderStatus?.payment_status === "failed";
+  
+  // Logic cuối cùng
+  const isSuccess = isPaidFromDB || (isVNPayPayment && isVNPaySuccess);
+  const isFailed = isFailedFromDB || (isVNPayPayment && !isVNPaySuccess && !isVNPayCancelled);
 
   const getStatusIcon = () => {
     if (isSuccess) return <CheckCircleOutlined />;
-    if (vnpayData.responseCode === "24") return <ClockCircleOutlined />;
+    if (isVNPayCancelled) return <ClockCircleOutlined />;
     return <CloseCircleOutlined />;
   };
 
   const getStatusType = () => {
     if (isSuccess) return "success";
-    if (vnpayData.responseCode === "24") return "warning";
+    if (isVNPayCancelled) return "warning";
     return "error";
   };
 
   const getTitle = () => {
-    if (isCODSuccess) return "Đặt hàng thành công!";
-    if (isVNPaySuccess) return "Thanh toán thành công!";
-    if (vnpayData.responseCode === "24") return "Đã hủy thanh toán";
+    if (isSuccess) {
+      return orderStatus?.transaction?.payment_method === "cod"
+        ? "Đặt hàng thành công!"
+        : "Thanh toán thành công!";
+    }
+    if (isVNPayCancelled) return "Đã hủy thanh toán";
     return "Thanh toán thất bại";
   };
 
   const getSubTitle = () => {
-    if (isCODSuccess)
-      return "Đơn hàng của bạn đã được tiếp nhận. Bạn sẽ thanh toán khi nhận hàng.";
-    if (isVNPaySuccess)
+    if (isSuccess) {
+      if (orderStatus?.transaction?.payment_method === "cod") {
+        return "Đơn hàng của bạn đã được tiếp nhận. Bạn sẽ thanh toán khi nhận hàng.";
+      }
       return "Giao dịch của bạn đã được xử lý thành công.";
-    if (vnpayData.responseCode === "24")
+    }
+    if (isVNPayCancelled) {
       return "Bạn đã hủy thanh toán. Vui lòng thử lại nếu muốn tiếp tục.";
+    }
     return (
       RESPONSE_CODE_MESSAGES[vnpayData.responseCode] ||
       "Đã có lỗi xảy ra trong quá trình thanh toán."
@@ -200,6 +212,7 @@ const PaymentSuccessPage: React.FC = () => {
               icon={<ShoppingOutlined />}
               onClick={() => (window.location.href = `/orders/${orderStatus?.order_id}`)}
               key="orders"
+              disabled={!orderStatus}
             >
               Xem đơn hàng
             </Button>,
@@ -228,9 +241,9 @@ const PaymentSuccessPage: React.FC = () => {
               <Descriptions.Item label="Mã đơn hàng">
                 <Text strong>#{orderStatus.sku}</Text>
               </Descriptions.Item>
-              <Descriptions.Item label="Trạng thái đơn hàng">
-                <Tag color={orderStatus.status === "confirmed" ? "green" : "blue"}>
-                  {orderStatus.status === "confirmed" ? "Đã xác nhận" : "Chờ xác nhận"}
+              <Descriptions.Item label="Trạng thái thanh toán">
+                <Tag color={isPaidFromDB ? "green" : isFailedFromDB ? "red" : "orange"}>
+                  {isPaidFromDB ? "Đã thanh toán" : isFailedFromDB ? "Thất bại" : "Chờ thanh toán"}
                 </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="Tổng tiền">
@@ -279,7 +292,9 @@ const PaymentSuccessPage: React.FC = () => {
                 {formatMoney(Number(vnpayData.amount) / 100)}₫
               </Descriptions.Item>
               <Descriptions.Item label="Mã phản hồi">
-                {vnpayData.responseCode}
+                <Tag color={isVNPaySuccess ? "green" : "red"}>
+                  {vnpayData.responseCode}
+                </Tag>
               </Descriptions.Item>
             </Descriptions>
           </Card>

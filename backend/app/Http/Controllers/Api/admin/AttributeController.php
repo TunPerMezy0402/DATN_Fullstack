@@ -66,12 +66,12 @@ class AttributeController extends Controller
 
     /**
      * POST /admin/attributes
+     * → Không cho thêm nếu (type, value) đã tồn tại
      */
     public function store(Request $request)
     {
         $input = $request->all();
 
-        // Chuyển type về lowercase để validate
         if (isset($input['type'])) {
             $input['type'] = Str::lower($input['type']);
         }
@@ -86,8 +86,18 @@ class AttributeController extends Controller
             'value.max'      => 'Giá trị không được dài quá 100 ký tự.',
         ])->validate();
 
-        // Chuẩn hóa value
         $validated = $this->formatStrings($validated);
+
+        // Kiểm tra trùng lặp
+        $exists = Attribute::where('type', $validated['type'])
+            ->where('value', $validated['value'])
+            ->exists();
+
+        if ($exists) {
+            return response()->json([
+                'error' => 'Thuộc tính này đã tồn tại, không thể thêm mới.'
+            ], 409);
+        }
 
         $attr = Attribute::create($validated);
         return response()->json($attr, 201);
@@ -95,6 +105,7 @@ class AttributeController extends Controller
 
     /**
      * PUT /admin/attributes/{id}
+     * → Không cho sửa nếu (type, value) sau khi cập nhật đã trùng với bản ghi khác
      */
     public function update(Request $request, $id)
     {
@@ -102,7 +113,6 @@ class AttributeController extends Controller
             $attr = Attribute::withTrashed()->findOrFail($id);
             $input = $request->all();
 
-            // Chuyển type về lowercase để validate
             if (isset($input['type'])) {
                 $input['type'] = Str::lower($input['type']);
             }
@@ -117,6 +127,22 @@ class AttributeController extends Controller
 
             if (!empty($validated)) {
                 $validated = $this->formatStrings($validated);
+
+                $newType  = $validated['type']  ?? $attr->type;
+                $newValue = $validated['value'] ?? $attr->value;
+
+                // Kiểm tra trùng lặp (bỏ qua chính bản ghi hiện tại)
+                $exists = Attribute::where('type', $newType)
+                    ->where('value', $newValue)
+                    ->where('id', '<>', $attr->id)
+                    ->exists();
+
+                if ($exists) {
+                    return response()->json([
+                        'error' => 'Thuộc tính này đã tồn tại, không thể cập nhật.'
+                    ], 409);
+                }
+
                 $attr->update($validated);
             }
 
@@ -124,12 +150,15 @@ class AttributeController extends Controller
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['error' => 'Không tìm thấy thuộc tính'], 404);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Cập nhật thất bại', 'message' => $e->getMessage()], 500);
+            return response()->json([
+                'error' => 'Cập nhật thất bại',
+                'message' => $e->getMessage()
+            ], 500);
         }
     }
 
     /**
-     * DELETE /admin/attributes/{id} (xóa mềm)
+     * DELETE /admin/attributes/{id}
      */
     public function destroy($id)
     {

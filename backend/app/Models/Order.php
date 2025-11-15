@@ -17,18 +17,13 @@ class Order extends Model
         'total_amount',
         'discount_amount',
         'final_amount',
-        'shipping_fee',
-        'status',
         'payment_status',
         'payment_method',
         'note',
-        'shipping_name',
-        'shipping_phone',
         'city',
         'district',
         'commune',
         'village',
-        'shipping_notes',
         'coupon_code',
         'coupon_id',
         'paid_at',
@@ -40,7 +35,6 @@ class Order extends Model
         'total_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'final_amount' => 'decimal:2',
-        'shipping_fee' => 'decimal:2',
     ];
 
     // ==================== RELATIONSHIPS ====================
@@ -96,5 +90,22 @@ class Order extends Model
         return $this->hasMany(OrderCancelLog::class, 'order_id');
     }
 
+        public function productReviews()
+    {
+        // Lấy tất cả review của user cho sản phẩm trong đơn hàng này
+        return $this->hasManyThrough(
+            ProductReview::class, // model review
+            OrderItem::class,     // qua order item
+            'order_id',           // khóa ngoại OrderItem -> Order
+            'product_id',         // khóa ngoại ProductReview -> Product
+            'id',                 // khóa chính Order
+            'product_id'          // khóa chính OrderItem
+        )->where('user_id', $this->user_id);
+    }
 
+    // ✅ HELPER METHOD CHỈ CHECK payment_status
+    public function isPaymentProcessed(): bool
+    {
+        return $this->payment_status === 'paid';
+    }
 }

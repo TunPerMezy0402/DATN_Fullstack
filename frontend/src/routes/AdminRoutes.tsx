@@ -9,7 +9,6 @@ import CategoryTrash from '../pages/admin/category/CategoryTrash';
 import CategoryEdit from '../pages/admin/category/CategoryEdit';
 
 import AttributeList from '../pages/admin/attributes/AttributeList';
-import AttributeCreate from '../pages/admin/attributes/AttributeCreate';
 import AttributeTrash from '../pages/admin/attributes/AttributeTrash';
 
 import UserList from '../pages/admin/users/UserList';
@@ -26,7 +25,6 @@ import CouponList from '../pages/admin/coupons/CouponList';
 
 import OrderList from '../pages/admin/orders/OrderList';
 import OrderDetail from '../pages/admin/orders/OrderDetail';
-import OrderEdit from '../pages/admin/orders/OrderEdit';
 
 
 
@@ -59,7 +57,6 @@ const AdminRoutes: React.FC = () => {
 
         {/* ✅ Quản lý thuộc tính */}
         <Route path="attributes" element={<AttributeList />} />
-        <Route path="attributes/create" element={<AttributeCreate />} />
         <Route path="attributes/trash" element={<AttributeTrash />} />
 
         <Route path="products" element={<ProductList />} />
@@ -72,7 +69,6 @@ const AdminRoutes: React.FC = () => {
 
         <Route path="orders" element={<OrderList />} />
         <Route path="orders/:id" element={<OrderDetail />} />
-        <Route path="orders/:id/edit" element={<OrderEdit />} />
 
 
          <Route path="banners" element={<BannerList />} />

@@ -20,7 +20,6 @@ interface Order {
   user?: User;
   total_amount?: number | null;
   final_amount?: number | null;
-  status: string;
   payment_status: string;
 }
 
@@ -40,15 +39,6 @@ interface Stats {
 const API_URL = "http://127.0.0.1:8000/api";
 const token = localStorage.getItem("access_token") || "";
 
-const statusMap: Record<string, { text: string; color: string }> = {
-  pending: { text: "Đang chờ", color: "gold" },
-  confirmed: { text: "Xác nhận", color: "blue" },
-  shipped: { text: "Đang giao", color: "purple" },
-  delivered: { text: "Đã giao", color: "cyan" },
-  completed: { text: "Hoàn tất", color: "green" },
-  cancelled: { text: "Đã hủy", color: "red" },
-  returned: { text: "Trả lại", color: "orange" },
-};
 
 const paymentMap: Record<string, { text: string; color: string }> = {
   unpaid: { text: "Chưa thanh toán", color: "red" },
@@ -108,14 +98,7 @@ const OrderList: React.FC = () => {
       render: (_, record) =>
         (record.final_amount ?? record.total_amount ?? 0).toLocaleString("vi-VN") + "₫",
     },
-    {
-      title: "Trạng thái",
-      key: "status",
-      render: (_, record) => {
-        const info = statusMap[record.status] || { text: record.status, color: "default" };
-        return <Badge color={info.color} text={info.text} />;
-      },
-    },
+
     {
       title: "Thanh toán",
       key: "payment_status",

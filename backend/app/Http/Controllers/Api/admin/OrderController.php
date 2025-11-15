@@ -17,11 +17,6 @@ class OrderController extends Controller
     $query = Order::with(['user:id,name,phone,email', 'items', 'shipping', 'coupon'])
         ->orderByDesc('created_at');
 
-    // Lọc theo trạng thái đơn hàng nếu có
-    if ($request->has('status')) {
-        $query->where('status', $request->status);
-    }
-
     // 🔹 Phân trang
     $orders = $query->paginate(10);
 
@@ -29,17 +24,10 @@ class OrderController extends Controller
     $stats = [
         'total_orders' => Order::count(),
         'total_revenue' => Order::where('payment_status', 'paid')->sum('final_amount'),
-        'pending_orders' => Order::where('status', 'pending')->count(),
-        'confirmed_orders' => Order::where('status', 'confirmed')->count(),
-        'shipped_orders' => Order::where('status', 'shipped')->count(),
-        'delivered_orders' => Order::where('status', 'delivered')->count(),
-        'cancelled_orders' => Order::where('status', 'cancelled')->count(),
-        'returned_orders' => Order::where('status', 'returned')->count(),
         'unpaid_orders' => Order::where('payment_status', 'unpaid')->count(),
         'refunded_orders' => Order::where('payment_status', 'refunded')->count(),
     ];
 
-    // 🔹 Trả về JSON gồm danh sách và thống kê
     return response()->json([
         'data' => $orders,
         'stats' => $stats,
@@ -119,7 +107,6 @@ public function show($id)
             'total_amount' => $order->total_amount,
             'discount_amount' => $order->discount_amount,
             'final_amount' => $order->final_amount,
-            'status' => $order->status,
             'payment_status' => $order->payment_status,
             'payment_method' => $order->payment_method,
             'note' => $order->note,
@@ -153,27 +140,18 @@ public function show($id)
         $order = Order::findOrFail($id);
 
         $validated = $request->validate([
-            'status' => 'nullable|in:pending,confirmed,shipped,delivered,completed,cancelled,returned',
             'payment_status' => 'nullable|in:unpaid,paid,refunded,failed',
             'shipping' => 'nullable|array',
         ]);
 
         DB::beginTransaction();
         try {
-            $order->update(array_filter([
-                'status' => $validated['status'] ?? $order->status,
-                'payment_status' => $validated['payment_status'] ?? $order->payment_status,
-            ]));
-
             if (!empty($validated['shipping'])) {
                 $shippingData = $validated['shipping'];
 
                 $shipping = Shipping::firstOrNew(['order_id' => $order->id]);
                 $shipping->fill([
                     'shipping_status' => $shippingData['shipping_status'] ?? $shipping->shipping_status,
-                    'shipper_name' => $shippingData['shipper_name'] ?? $shipping->shipper_name,
-                    'shipper_phone' => $shippingData['shipper_phone'] ?? $shipping->shipper_phone,
-
                 ]);
                 $shipping->save();
             }

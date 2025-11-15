@@ -43,7 +43,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
       icon: "fa-list",
       items: [
         { label: "Tất cả thuộc tính", path: "/admin/attributes" },
-        { label: "Thêm thuộc tính", path: "/admin/attributes/create" },
         { label: "Thuộc tính lưu trữ", path: "/admin/attributes/trash" },
       ],
     },

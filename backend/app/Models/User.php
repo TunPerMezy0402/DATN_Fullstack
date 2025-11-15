@@ -63,6 +63,10 @@ class User extends Authenticatable
         return $this->hasMany(AddressBook::class, 'user_id');
     }
 
-    
+        // ✅ Thêm quan hệ reviews
+    public function reviews()
+    {
+        return $this->hasMany(ProductReview::class, 'user_id');
+    }
 
 }

@@ -15,6 +15,7 @@ use App\Models\{
     CartItem,
     Coupon,
     ProductVariant,
+    Cart,
     OrderCancelLog
 };
 
@@ -37,7 +38,7 @@ class OrderClientController extends Controller
                 'shipping',
                 'paymentTransaction'
             ])
-            ->select('id', 'user_id', 'sku', 'total_amount', 'final_amount', 'status', 'payment_status', 'payment_method', 'note', 'created_at')
+            ->select('id', 'user_id', 'sku', 'total_amount', 'final_amount', 'payment_status', 'payment_method', 'note', 'created_at')
             ->latest()
             ->get()
             ->map(function ($order) {
@@ -71,7 +72,7 @@ class OrderClientController extends Controller
                 'shipping',
                 'paymentTransaction'
             ])
-            ->select('id', 'user_id', 'sku', 'total_amount', 'final_amount', 'status', 'payment_status', 'payment_method', 'note', 'created_at')
+            ->select('id', 'user_id', 'sku', 'total_amount', 'final_amount', 'payment_status', 'payment_method', 'note', 'created_at')
             ->find($id);
 
         if (!$order) {
@@ -119,7 +120,7 @@ class OrderClientController extends Controller
             'shipping_name' => 'required|string|max:255',
             'shipping_phone' => 'required|string|max:20',
             'city' => 'required|string|max:100',
-            'notes' => 'max:500',
+            'notes' => 'nullable|max:500',
             'district' => 'required|string|max:100',
             'commune' => 'required|string|max:100',
             'village' => 'nullable|string|max:255',
@@ -129,12 +130,15 @@ class OrderClientController extends Controller
         DB::beginTransaction();
 
         try {
-            // ✅ 1. VALIDATE COUPON (TRONG TRANSACTION)
+            // ==========================================
+            // ✅ BƯỚC 1: VALIDATE COUPON
+            // ==========================================
             $coupon = null;
             if ($validated['coupon_id']) {
                 $coupon = Coupon::lockForUpdate()->find($validated['coupon_id']);
                 
                 if (!$coupon) {
+                    DB::rollBack();
                     return response()->json([
                         'success' => false,
                         'message' => 'Mã giảm giá không tồn tại'
@@ -142,6 +146,7 @@ class OrderClientController extends Controller
                 }
 
                 if (!$coupon->is_active) {
+                    DB::rollBack();
                     return response()->json([
                         'success' => false,
                         'message' => 'Mã giảm giá đã bị vô hiệu hóa'
@@ -149,6 +154,7 @@ class OrderClientController extends Controller
                 }
 
                 if ($coupon->used) {
+                    DB::rollBack();
                     return response()->json([
                         'success' => false,
                         'message' => 'Mã giảm giá đã được sử dụng'
@@ -156,6 +162,7 @@ class OrderClientController extends Controller
                 }
 
                 if ($coupon->end_date && now()->gt($coupon->end_date)) {
+                    DB::rollBack();
                     return response()->json([
                         'success' => false,
                         'message' => 'Mã giảm giá đã hết hạn'
@@ -163,15 +170,17 @@ class OrderClientController extends Controller
                 }
 
                 if ($validated['total_amount'] < $coupon->min_purchase) {
+                    DB::rollBack();
                     return response()->json([
                         'success' => false,
                         'message' => "Đơn hàng tối thiểu {$coupon->min_purchase}₫ để sử dụng mã này"
                     ], 400);
                 }
 
-                // ✅ FIX: Kiểm tra usage_limit đúng cách
+                // Kiểm tra usage_limit
                 if (isset($coupon->usage_limit) && $coupon->usage_limit > 0) {
                     if ($coupon->used_count >= $coupon->usage_limit) {
+                        DB::rollBack();
                         return response()->json([
                             'success' => false,
                             'message' => 'Mã giảm giá đã hết lượt sử dụng'
@@ -180,7 +189,9 @@ class OrderClientController extends Controller
                 }
             }
 
-            // ✅ 2. VALIDATE & RESERVE STOCK (TRONG TRANSACTION)
+            // ==========================================
+            // ✅ BƯỚC 2: VALIDATE & LOCK STOCK
+            // ==========================================
             $variantsToDeduct = [];
             foreach ($validated['items'] as $item) {
                 if ($item['variant_id']) {
@@ -210,7 +221,9 @@ class OrderClientController extends Controller
                 }
             }
 
-            // ✅ 3. TẠO ORDER
+            // ==========================================
+            // ✅ BƯỚC 3: TẠO ORDER
+            // ==========================================
             $order = Order::create([
                 'user_id' => $user->id,
                 'sku' => strtoupper(substr(uniqid('ODR'), -9)),
@@ -219,13 +232,14 @@ class OrderClientController extends Controller
                 'final_amount' => $validated['final_amount'],
                 'coupon_id' => $validated['coupon_id'] ?? null,
                 'coupon_code' => $validated['coupon_code'] ?? null,
-                'status' => 'pending',
                 'payment_status' => 'unpaid',
                 'payment_method' => $validated['payment_method'],
                 'note' => $validated['note'] ?? null,
             ]);
 
-            // ✅ 4. TẠO ORDER ITEMS
+            // ==========================================
+            // ✅ BƯỚC 4: TẠO ORDER ITEMS
+            // ==========================================
             foreach ($validated['items'] as $item) {
                 OrderItem::create([
                     'order_id' => $order->id,
@@ -240,8 +254,9 @@ class OrderClientController extends Controller
                 ]);
             }
 
-            // ✅ 5. TRỪ STOCK NGAY (CHO CẢ COD VÀ VNPAY)
-            // Stock được reserve ngay, nếu VNPay fail sẽ hoàn lại
+            // ==========================================
+            // ✅ BƯỚC 5: TRỪ STOCK
+            // ==========================================
             foreach ($variantsToDeduct as $data) {
                 $data['variant']->decrement('stock_quantity', $data['quantity']);
                 
@@ -254,17 +269,35 @@ class OrderClientController extends Controller
                 ]);
             }
 
-            // ✅ 6. TẠO PAYMENT TRANSACTION
+            // ==========================================
+            // ✅ BƯỚC 6: TĂNG COUPON USED_COUNT (NẾU CÓ)
+            // ==========================================
+            if ($coupon && isset($coupon->usage_limit) && $coupon->usage_limit > 0) {
+                $coupon->increment('used_count');
+                
+                Log::info('Coupon used count incremented', [
+                    'coupon_id' => $coupon->id,
+                    'coupon_code' => $coupon->code,
+                    'used_count' => $coupon->fresh()->used_count,
+                    'usage_limit' => $coupon->usage_limit,
+                    'order_id' => $order->id,
+                ]);
+            }
+
+            // ==========================================
+            // ✅ BƯỚC 7: TẠO PAYMENT TRANSACTION
+            // ==========================================
             PaymentTransaction::create([
                 'order_id' => $order->id,
                 'transaction_code' => 'PENDING_' . $order->id . '_' . time(),
                 'amount' => $validated['final_amount'],
-                'status' => 'pending',
                 'payment_method' => $validated['payment_method'],
                 'paid_at' => null,
             ]);
 
-            // ✅ 7. TẠO SHIPPING
+            // ==========================================
+            // ✅ BƯỚC 8: TẠO SHIPPING
+            // ==========================================
             Shipping::create([
                 'order_id' => $order->id,
                 'sku' => strtoupper(Str::random(9)),
@@ -272,33 +305,73 @@ class OrderClientController extends Controller
                 'shipping_phone' => $validated['shipping_phone'],
                 'shipping_status' => 'pending',
                 'city' => $validated['city'],
-                'notes' => $validated['notes'],
+                'notes' => $validated['notes'] ?? null,
                 'district' => $validated['district'],
                 'commune' => $validated['commune'],
                 'village' => $validated['village'] ?? null,
             ]);
 
-            // ✅ 8. XÓA CART ITEMS (CHO CẢ COD VÀ VNPAY)
-            $variantIds = collect($validated['items'])->pluck('variant_id')->filter()->unique();
+            // ==========================================
+            // ✅ BƯỚC 9: XÓA CART ITEMS ĐÃ MUA
+            // ==========================================
+            $variantIds = collect($validated['items'])
+                ->pluck('variant_id')
+                ->filter()
+                ->unique()
+                ->values();
+
             if ($variantIds->isNotEmpty()) {
-                CartItem::whereIn('variant_id', $variantIds)
-                    ->whereHas('cart', fn($q) => $q->where('user_id', $user->id))
-                    ->delete();
+                $cart = Cart::where('user_id', $user->id)->first();
+                
+                if ($cart) {
+                    $deletedCount = CartItem::where('cart_id', $cart->id)
+                        ->whereIn('variant_id', $variantIds)
+                        ->delete();
+                    
+                    Log::info('Cart items removed after successful order', [
+                        'order_id' => $order->id,
+                        'order_sku' => $order->sku,
+                        'cart_id' => $cart->id,
+                        'variant_ids_removed' => $variantIds->toArray(),
+                        'items_deleted' => $deletedCount,
+                        'user_id' => $user->id,
+                    ]);
+                    
+                    $remainingItems = CartItem::where('cart_id', $cart->id)->count();
+                    
+                    if ($remainingItems > 0) {
+                        Log::info('Cart still has items after order', [
+                            'cart_id' => $cart->id,
+                            'remaining_items' => $remainingItems,
+                        ]);
+                    }
+                }
             }
 
+            // ==========================================
+            // ✅ COMMIT TRANSACTION
+            // ==========================================
             DB::commit();
 
-            $order->load(['items', 'user:id,name,phone,email', 'shipping', 'paymentTransaction']);
+            // Load đầy đủ thông tin order
+            $order->load([
+                'items',
+                'user:id,name,phone,email',
+                'shipping',
+                'paymentTransaction'
+            ]);
 
             Log::info('Order created successfully', [
                 'order_id' => $order->id,
                 'sku' => $order->sku,
                 'payment_method' => $order->payment_method,
-                'status' => $order->status,
                 'payment_status' => $order->payment_status,
+                'total_items' => $order->items->count(),
+                'final_amount' => $order->final_amount,
             ]);
 
             return response()->json([
+                'success' => true,
                 'message' => 'Đặt hàng thành công',
                 'data' => $order
             ], 201);
@@ -310,6 +383,7 @@ class OrderClientController extends Controller
                 'line' => $e->getLine(),
             ]);
             return response()->json([
+                'success' => false,
                 'error' => 'Đặt hàng thất bại',
                 'detail' => $e->getMessage()
             ], 500);
@@ -317,7 +391,7 @@ class OrderClientController extends Controller
     }
 
     /**
-     * 💳 Lấy trạng thái thanh toán
+     * 💳 Kiểm tra trạng thái thanh toán
      */
     public function paymentStatus(Request $request, $id)
     {
@@ -343,7 +417,6 @@ class OrderClientController extends Controller
                 'data' => [
                     'order_id' => $order->id,
                     'sku' => $order->sku,
-                    'status' => $order->status,
                     'payment_status' => $order->payment_status,
                     'payment_method' => $order->payment_method,
                     'final_amount' => $order->final_amount,
@@ -351,7 +424,6 @@ class OrderClientController extends Controller
                     'transaction' => $transaction ? [
                         'id' => $transaction->id,
                         'transaction_code' => $transaction->transaction_code,
-                        'status' => $transaction->status,
                         'amount' => $transaction->amount,
                         'bank_code' => $transaction->bank_code ?? null,
                         'paid_at' => $transaction->paid_at,
@@ -368,74 +440,233 @@ class OrderClientController extends Controller
         }
     }
 
-
-public function cancel(Request $request, $id)
-{
-    $user = $request->user();
-    if (!$user) {
-        return response()->json(['message' => 'Vui lòng đăng nhập'], 401);
-    }
-
-    $validated = $request->validate([
-        'reason' => 'nullable|string|max:255',
-        'note'   => 'nullable|string|max:500',
-    ]);
-
-    DB::beginTransaction();
-
-    try {
-        // 🔍 Lấy đơn hàng của user
-        $order = Order::with(['items', 'shipping'])->where('user_id', $user->id)->find($id);
-
-        if (!$order) {
-            return response()->json(['error' => 'Không tìm thấy đơn hàng'], 404);
+    /**
+     * ❌ Hủy đơn hàng
+     */
+/**
+     * ❌ Hủy đơn hàng
+     */
+    public function cancel(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Vui lòng đăng nhập'], 401);
         }
 
-        // ❌ Không cho hủy nếu đã giao
-        if (in_array($order->status, ['shipped', 'delivered', 'completed'])) {
-            return response()->json(['error' => 'Không thể hủy đơn hàng đã giao hoặc hoàn tất!'], 400);
-        }
-
-        // ✅ Cập nhật trạng thái đơn hàng
-        $order->update(['status' => 'cancelled']);
-
-        // ✅ Cập nhật shipping nếu có
-        if ($order->shipping) {
-            $order->shipping->update([
-                'shipping_status' => 'pending',
-            ]);
-        }
-
-        // ✅ Ghi log hủy đơn
-        OrderCancelLog::create([
-            'order_id'     => $order->id,
-            'cancelled_by' => 'user',
-            'reason'       => $validated['reason'] ?? null,
-            'note'         => $validated['note'] ?? null,
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
         ]);
 
-        // ✅ (Tùy chọn) Hoàn stock nếu muốn
-        foreach ($order->items as $item) {
-            if ($item->variant_id) {
-                ProductVariant::where('id', $item->variant_id)
-                    ->increment('stock_quantity', $item->quantity);
+        DB::beginTransaction();
+
+        try {
+            $order = Order::with(['items', 'shipping'])->where('user_id', $user->id)->find($id);
+
+            if (!$order) {
+                return response()->json(['message' => 'Không tìm thấy đơn hàng'], 404);
             }
+
+            if (!$order->shipping) {
+                return response()->json([
+                    'message' => 'Không tìm thấy thông tin vận chuyển'
+                ], 400);
+            }
+
+            $currentStatus = $order->shipping->shipping_status;
+            
+            // Chỉ cho phép hủy khi đang pending hoặc nodone
+            if (!in_array($currentStatus, ['pending', 'nodone'])) {
+                if ($currentStatus === 'in_transit') {
+                    return response()->json([
+                        'message' => '📦 Đơn hàng của bạn đã được vận chuyển! Không thể hủy đơn hàng.'
+                    ], 400);
+                } elseif ($currentStatus === 'delivered') {
+                    return response()->json([
+                        'message' => '✅ Đơn hàng của bạn đã được giao! Không thể hủy đơn hàng.'
+                    ], 400);
+                } elseif ($currentStatus === 'none') {
+                    return response()->json([
+                        'message' => 'Đơn hàng này đã được hủy trước đó.'
+                    ], 400);
+                } else {
+                    return response()->json([
+                        'message' => 'Không thể hủy đơn hàng ở trạng thái hiện tại.'
+                    ], 400);
+                }
+            }
+
+            // ✅ Cập nhật shipping_status và lưu lý do vào trường reason
+            $order->shipping->update([
+                'shipping_status' => 'none',
+                'reason' => $validated['reason'], // Lưu lý do hủy
+            ]);
+
+            // Hoàn stock
+            foreach ($order->items as $item) {
+                if ($item->variant_id) {
+                    ProductVariant::where('id', $item->variant_id)
+                        ->increment('stock_quantity', $item->quantity);
+                    
+                    Log::info('Stock restored after order cancellation', [
+                        'order_id' => $order->id,
+                        'variant_id' => $item->variant_id,
+                        'quantity_restored' => $item->quantity,
+                    ]);
+                }
+            }
+
+            // Nếu đã thanh toán VNPAY thì đánh dấu refund
+            if ($order->payment_status === 'paid' && $order->payment_method === 'vnpay') {
+                $order->update([
+                    'payment_status' => 'refund_processing',
+                ]);
+                
+                Log::info('Order marked for refund', [
+                    'order_id' => $order->id,
+                    'sku' => $order->sku,
+                    'amount' => $order->final_amount,
+                ]);
+            }
+
+            // Ghi log hủy đơn
+            OrderCancelLog::create([
+                'order_id'     => $order->id,
+                'cancelled_by' => 'user',
+                'reason'       => $validated['reason'],
+                'note'         => "Đơn hàng bị hủy bởi khách hàng: {$user->name}",
+            ]);
+
+            DB::commit();
+
+            Log::info('Order cancelled successfully', [
+                'order_id' => $order->id,
+                'sku' => $order->sku,
+                'cancelled_by' => 'user',
+                'user_id' => $user->id,
+            ]);
+
+            return response()->json([
+                'message' => 'Đơn hàng đã được hủy thành công!',
+                'data' => $order->load('shipping'),
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Order cancel error: ' . $e->getMessage(), [
+                'order_id' => $id,
+                'user_id' => $user->id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'Hủy đơn hàng thất bại!',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * 🔄 Hoàn hàng
+     */
+    public function return(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Vui lòng đăng nhập'], 401);
         }
 
-        DB::commit();
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
+        ]);
 
-        return response()->json([
-            'message' => 'Đơn hàng đã được hủy thành công!',
-            'data' => $order->load('shipping'),
-        ], 200);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json([
-            'error' => 'Hủy đơn hàng thất bại!',
-            'message' => $e->getMessage(),
-        ], 500);
+        DB::beginTransaction();
+
+        try {
+            $order = Order::with(['items', 'shipping'])->where('user_id', $user->id)->find($id);
+
+            if (!$order) {
+                return response()->json(['message' => 'Không tìm thấy đơn hàng'], 404);
+            }
+
+            if (!$order->shipping) {
+                return response()->json([
+                    'message' => 'Không tìm thấy thông tin vận chuyển'
+                ], 400);
+            }
+
+            $currentStatus = $order->shipping->shipping_status;
+            
+            // Chỉ cho phép hoàn hàng khi đã delivered
+            if ($currentStatus !== 'delivered') {
+                if ($currentStatus === 'returned') {
+                    return response()->json([
+                        'message' => 'Đơn hàng này đã được hoàn trả trước đó.'
+                    ], 400);
+                } else {
+                    return response()->json([
+                        'message' => 'Chỉ có thể hoàn hàng khi đơn hàng đã được giao thành công.'
+                    ], 400);
+                }
+            }
+
+            // ✅ Cập nhật shipping_status thành 'returned' và lưu lý do
+            $order->shipping->update([
+                'shipping_status' => 'returned',
+                'reason' => $validated['reason'], // Lưu lý do hoàn hàng
+            ]);
+
+            // Hoàn stock
+            foreach ($order->items as $item) {
+                if ($item->variant_id) {
+                    ProductVariant::where('id', $item->variant_id)
+                        ->increment('stock_quantity', $item->quantity);
+                    
+                    Log::info('Stock restored after order return', [
+                        'order_id' => $order->id,
+                        'variant_id' => $item->variant_id,
+                        'quantity_restored' => $item->quantity,
+                    ]);
+                }
+            }
+
+            // Đánh dấu hoàn tiền nếu đã thanh toán
+            if ($order->payment_status === 'paid') {
+                $order->update([
+                    'payment_status' => 'refund_processing',
+                ]);
+                
+                Log::info('Order marked for refund after return', [
+                    'order_id' => $order->id,
+                    'sku' => $order->sku,
+                    'amount' => $order->final_amount,
+                ]);
+            }
+
+            DB::commit();
+
+            Log::info('Order returned successfully', [
+                'order_id' => $order->id,
+                'sku' => $order->sku,
+                'user_id' => $user->id,
+            ]);
+
+            return response()->json([
+                'message' => 'Yêu cầu hoàn hàng đã được gửi thành công!',
+                'data' => $order->load('shipping'),
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Order return error: ' . $e->getMessage(), [
+                'order_id' => $id,
+                'user_id' => $user->id,
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'message' => 'Hoàn hàng thất bại!',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
-}
-
-
 }

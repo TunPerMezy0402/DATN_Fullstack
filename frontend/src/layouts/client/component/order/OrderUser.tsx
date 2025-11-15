@@ -13,16 +13,24 @@ interface OrderItem {
   price: string;
 }
 
+interface Shipping {
+  id: number;
+  sku: string;
+  shipping_name: string;
+  shipping_phone: string;
+  shipping_status: string;
+}
+
 interface Order {
   id: number;
   sku: string;
   total_amount: string;
   final_amount: string;
-  status: string;
   payment_status: string;
   payment_method: string;
   created_at: string;
   items: OrderItem[];
+  shipping: Shipping;
 }
 
 const API_URL = "http://127.0.0.1:8000/api/orders";
@@ -32,13 +40,13 @@ const getAuthToken = () =>
 
 const STATUS_TABS = [
   { key: "all", label: "Tất cả" },
-  { key: "failed", label: "Chờ thanh toán" },
-  { key: "pending", label: "Chờ xác nhận" },
-  { key: "confirmed", label: "Đã xác nhận" },
-  { key: "shipped", label: "Đang giao hàng" },
-  { key: "completed", label: "Hoàn thành" },
-  { key: "cancelled", label: "Đã hủy" },
-  { key: "returned", label: "Trả hàng" },
+  { key: "nodone", label: "Chưa thanh toán" },
+  { key: "pending", label: "Chờ xử lý" },
+  { key: "in_transit", label: "Đang giao hàng" },
+  { key: "delivered", label: "Đã giao hàng" },
+  { key: "none", label: "Đã hủy" },
+  { key: "failed", label: "Giao thất bại" },
+  { key: "returned", label: "Đã hoàn hàng" },
 ];
 
 const OrderUser: React.FC = () => {
@@ -80,7 +88,7 @@ const OrderUser: React.FC = () => {
   const filteredOrders =
     activeTab === "all"
       ? orders
-      : orders.filter((order) => order.status === activeTab);
+      : orders.filter((order) => order.shipping?.shipping_status === activeTab);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString("vi-VN", {
@@ -96,14 +104,58 @@ const OrderUser: React.FC = () => {
     const m = (method || "").toLowerCase();
 
     if (m === "cod") {
-      return <span className="text-red-500">Thanh toán khi nhận hàng</span>;
+      return <span className="text-orange-600 font-medium">Thanh toán khi nhận hàng</span>;
     }
 
     if (m === "vnpay") {
-      return <span className="text-green-600">VNPAY</span>;
+      return <span className="text-green-600 font-medium">VNPAY</span>;
     }
 
     return <span className="text-gray-500">Không xác định</span>;
+  };
+
+  const renderPaymentStatus = (status: string) => {
+    const s = (status || "").toLowerCase();
+
+    if (s === "failed") {
+      return <span className="text-red-600 font-medium">Thanh toán thất bại</span>;
+    }
+
+    if (s === "paid") {
+      return <span className="text-green-600 font-medium">Đã thanh toán</span>;
+    }
+
+    if (s === "refund_processing") {
+      return <span className="text-yellow-600 font-medium">Đã hoàn tiền</span>;
+    }
+
+    if (s === "refunded") {
+      return <span className="text-blue-600 font-medium">Đã hoàn tiền</span>;
+    }
+
+    if (s === "unpaid") {
+      return <span className="text-orange-600 font-medium">Chưa thanh toán</span>;
+    }
+
+    return <span className="text-gray-500">Không xác định</span>;
+  };
+
+  const renderShippingStatus = (status: string) => {
+    const s = (status || "").toLowerCase();
+
+    const statusMap: Record<string, { text: string; color: string }> = {
+      pending: { text: "Chờ xử lý", color: "text-orange-600" },
+      in_transit: { text: "Đang vận chuyển", color: "text-blue-600" },
+      delivered: { text: "Đã giao hàng", color: "text-green-600" },
+      failed: { text: "Giao thất bại", color: "text-red-600" },
+      returned: { text: "Đã hoàn hàng", color: "text-purple-600" },
+      none: { text: "Đã hủy", color: "text-gray-600" },
+      nodone: { text: "Chưa thanh toán", color: "text-gray-600" },
+    };
+
+    const statusInfo = statusMap[s] || { text: "Không xác định", color: "text-gray-500" };
+
+    return <span className={`${statusInfo.color} font-medium`}>{statusInfo.text}</span>;
   };
 
   if (loading) {
@@ -153,62 +205,92 @@ const OrderUser: React.FC = () => {
           {filteredOrders.map((order) => (
             <div
               key={order.id}
-              className="border border-gray-200 rounded-lg overflow-hidden shadow-sm"
+              className="border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow"
             >
-              <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-start">
                 <div>
                   <span className="font-medium text-gray-700">Mã đơn hàng: </span>
-                  <span className="text-blue-600">{order.sku}</span>
+                  <span className="text-blue-600 font-semibold">{order.sku}</span>
                   <p className="text-sm text-gray-500 mt-1">
                     Ngày đặt: {formatDate(order.created_at)}
                   </p>
                 </div>
-                <div className="text-right text-sm text-gray-500">
-                  Hình thức thanh toán: {renderPaymentMethod(order.payment_method)}
+
+                <div className="text-right space-y-1">
+                  {/* Trạng thái giao hàng */}
+                  <div className="text-sm">
+                    <span className="text-gray-600">Trạng thái: </span>
+                    {renderShippingStatus(order.shipping?.shipping_status)}
+                  </div>
+
+                  {/* Chỉ hiện thông tin thanh toán nếu đơn chưa bị hủy */}
+                  {order.shipping?.shipping_status !== "none" && (
+                    <>
+                      <div className="text-sm">
+                        <span className="text-gray-600">Thanh toán: </span>
+                        {renderPaymentStatus(order.payment_status)}
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-gray-600">Hình thức: </span>
+                        {renderPaymentMethod(order.payment_method)}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
               <div className="divide-y divide-gray-100">
                 {order.items.map((item) => (
-                  <div key={item.id} className="p-4 flex">
+                  <div key={item.id} className="p-4 flex items-center">
                     <img
                       src={`http://127.0.0.1:8000/${item.product_image}`}
                       alt={item.product_name}
-                      className="w-16 h-16 object-cover rounded border"
+                      className="w-20 h-20 object-cover rounded border border-gray-200"
                     />
                     <div className="ml-4 flex-1">
-                      <h3 className="text-gray-800 font-medium">{item.product_name}</h3>
-                      <p className="text-sm text-gray-500">
-                        Màu: {item.color} | Size: {item.size}
-                      </p>
+                      <h3 className="text-gray-800 font-medium text-base">{item.product_name}</h3>
+                      <div className="flex gap-4 mt-1">
+                        {item.color && (
+                          <span className="text-sm text-gray-600">
+                            Màu: <span className="font-medium">{item.color}</span>
+                          </span>
+                        )}
+                        {item.size && (
+                          <span className="text-sm text-gray-600">
+                            Size: <span className="font-medium">{item.size}</span>
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-600 mt-1">
-                        SL: {item.quantity} ×{" "}
-                        <span className="font-medium text-green-700">
+                        Số lượng: <span className="font-medium">{item.quantity}</span> ×{" "}
+                        <span className="font-medium text-orange-600">
                           {parseInt(item.price).toLocaleString()}₫
                         </span>
                       </p>
                     </div>
-                    <div className="text-right text-gray-800 font-medium">
-                      {(item.quantity * parseFloat(item.price)).toLocaleString()}₫
+                    <div className="text-right">
+                      <div className="text-gray-800 font-semibold text-lg">
+                        {(item.quantity * parseFloat(item.price)).toLocaleString()}₫
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 text-right">
-                <span className="text-gray-700">
-                  Tổng tiền:{" "}
-                  <span className="font-semibold text-lg text-green-700">
-                    {parseInt(order.final_amount).toLocaleString()}₫
-                  </span>
-                </span>
-                <div className="mt-2">
+              <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+                <div className="flex justify-between items-center">
                   <Link
                     to={`/orders/${order.id}`}
-                    className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                    className="text-blue-600 hover:text-blue-800 text-sm font-medium hover:underline"
                   >
-                    Xem chi tiết
+                    Xem chi tiết →
                   </Link>
+                  <div className="text-right">
+                    <span className="text-gray-700 text-base">Tổng tiền: </span>
+                    <span className="font-bold text-xl text-orange-600">
+                      {parseInt(order.final_amount).toLocaleString()}₫
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
