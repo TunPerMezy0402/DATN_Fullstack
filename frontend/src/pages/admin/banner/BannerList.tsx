@@ -11,7 +11,7 @@ const BannerList = () => {
   const fetchBanners = async () => {
     try {
       setLoading(true);
-      const res = await getAllBanners(1, 50); // paginate
+      const res = await getAllBanners(1, 50);
       setBanners(res.data || []);
     } catch (error) {
       message.error("Không thể lấy danh sách banner");
@@ -37,28 +37,46 @@ const BannerList = () => {
   const columns = [
     {
       title: "Ảnh",
-      render: (record: IBanner) => (
-        <Image
-          width={100}
-          src={record.images?.[0]?.image_url}
-          fallback="https://via.placeholder.com/100"
-        />
-      ),
+      width: 120,
+      render: (record: IBanner) => {
+        const imageUrl = record.images?.[0]?.image_url;
+
+        if (!imageUrl) {
+          return <Image width={100} src="https://via.placeholder.com/100" alt="No image" />;
+        }
+
+        const fullUrl = imageUrl.startsWith("http")
+          ? imageUrl
+          : `http://localhost:8000${imageUrl.startsWith("/") ? "" : "/"}${imageUrl}`;
+
+        return (
+          <Image
+            width={100}
+            height={60}
+            src={fullUrl}
+            fallback="https://via.placeholder.com/100"
+            preview={{ src: fullUrl }}
+            style={{ objectFit: "cover", borderRadius: 6 }}
+            alt={record.title}
+          />
+        );
+      },
     },
     {
       title: "Tiêu đề",
       dataIndex: "title",
+      ellipsis: true,
     },
     {
       title: "Link",
       dataIndex: "link",
       render: (text: string) =>
         text ? (
-          <a href={text} target="_blank">
-            {text}
+          <a href={text} target="_blank" rel="noopener noreferrer" className="text-blue-600">
+            {text.length > 50 ? `${text.substring(0, 50)}...` : text}
           </a>
         ) : (
-          "-"
+          <span className="text-gray-400">-</span>
         ),
     },
     {
@@ -66,16 +84,18 @@ const BannerList = () => {
       dataIndex: "is_active",
       render: (active: boolean) =>
         active ? (
-          <Tag color="green">Đang hiển thị</Tag>
+          <Tag color="success">Đang hiển thị</Tag>
         ) : (
-          <Tag color="red">Ẩn</Tag>
+          <Tag color="error">Ẩn</Tag>
         ),
     },
     {
       title: "Hành động",
+      width: 180,
       render: (record: IBanner) => (
         <div className="flex gap-2">
           <Button
+            size="small"
             type="primary"
             onClick={() => navigate(`/admin/banner/edit/${record.id}`)}
           >
@@ -83,10 +103,14 @@ const BannerList = () => {
           </Button>
 
           <Popconfirm
-            title="Bạn chắc chắn xoá?"
+            title="Bạn có chắc chắn xoá banner này?"
             onConfirm={() => handleDelete(record.id)}
+            okText="Xoá"
+            cancelText="Hủy"
           >
-            <Button danger>Xoá</Button>
+            <Button size="small" danger>
+              Xoá
+            </Button>
           </Popconfirm>
         </div>
       ),
@@ -94,11 +118,11 @@ const BannerList = () => {
   ];
 
   return (
-    <div className="p-4 bg-white shadow rounded">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Danh sách Banner</h2>
-        <Button type="primary" onClick={() => navigate("/admin/banner/add")}>
-          + Thêm mới
+    <div className="p-6 bg-white shadow-lg rounded-lg">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800">Danh sách Banner</h2>
+        <Button type="primary" size="large" onClick={() => navigate("/admin/banner/add")}>
+          + Thêm Banner Mới
         </Button>
       </div>
 
@@ -107,7 +131,13 @@ const BannerList = () => {
         dataSource={banners}
         rowKey="id"
         loading={loading}
-        pagination={{ pageSize: 10 }}
+        pagination={{
+          pageSize: 10,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (total) => `Tổng ${total} banner`,
+        }}
+        scroll={{ x: 800 }}
       />
     </div>
   );

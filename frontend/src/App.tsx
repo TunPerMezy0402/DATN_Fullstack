@@ -8,7 +8,7 @@ import Login from './layouts/account/Login';
 import Register from './layouts/account/Register';
 import Unauthorized from './pages/Unauthorized';
 import authService from './services/authService';
-import Profile from "./pages/client/Users/Profile";
+import Profile from "./pages/client/users/Profile";
 import Wishlist from "./pages/client/Wishlist/Wishlist";
 import Cart from "./pages/client/Cart/Cart";
 // Component wrapper để redirect nếu đã login

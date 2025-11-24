@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 
 // ================== TYPES ==================
 export interface IBanner {
@@ -37,11 +37,28 @@ const axiosInstance = axios.create({
   },
 });
 
+// ================== INTERCEPTOR ==================
 axiosInstance.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const token = localStorage.getItem("access_token");
+  if (!token) {
+    console.warn("Chưa có token! Vui lòng login.");
+  } else {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   return config;
 });
+
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    if (error.response?.status === 401) {
+      console.error("401: Token hết hạn hoặc không hợp lệ!");
+      localStorage.removeItem("access_token");
+      // window.location.href = "/login"; // Tùy chọn: redirect login
+    }
+    return Promise.reject(error);
+  }
+);
 
 // ================== SERVICES ==================
 export const getAllBanners = async (
@@ -49,31 +66,57 @@ export const getAllBanners = async (
   perPage: number = 10
 ): Promise<IPaginatedResponse<IBanner>> => {
   const res = await axiosInstance.get(`/banners?page=${page}&per_page=${perPage}`);
-  return res.data; // ✅ pagination của Laravel Resource đúng format này
+  return res.data;
 };
 
 export const getBannerById = async (id: number): Promise<IBanner> => {
   const res = await axiosInstance.get(`/banners/${id}`);
-  return res.data.data; // ✅ phải lấy res.data.data
-};
-
-export const createBanner = async (data: {
-  title: string;
-  is_active?: boolean;
-  link?: string;
-}): Promise<IBanner> => {
-  const res = await axiosInstance.post("/banners", data);
   return res.data.data;
 };
 
+// CREATE BANNER – DÙNG AXIOS + FORM DATA
+export const createBanner = async (payload: any): Promise<IBanner> => {
+  const formData = new FormData();
+
+  // Text fields
+  formData.append("title", payload.title);
+  if (payload.link) formData.append("link", payload.link);
+  formData.append("is_active", payload.is_active ? "1" : "0");
+
+  // Images – DÙNG DẤU NGOẶC VUÔNG [] ĐÚNG CÚ PHÁP PHP
+  payload.images.forEach((img: any, index: number) => {
+    if (img.file && img.file instanceof File) {
+      formData.append(`images[${index}][file]`, img.file);
+    } else if (img.url) {
+      formData.append(`images[${index}][url]`, img.url); // ← SỬA: [] thay vì .
+    }
+    formData.append(`images[${index}][is_active]`, img.is_active ? "1" : "0");
+  });
+
+  try {
+    const res = await axiosInstance.post("/banners", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return res.data.data || res.data;
+  } catch (error: any) {
+    const errors = error.response?.data?.errors || {};
+    const messages = Object.values(errors).flat().join(", ");
+    throw new Error(messages || "Tạo banner thất bại");
+  }
+};
+
+// UPDATE BANNER – DÙNG AXIOS
 export const updateBanner = async (
   id: number,
   data: Partial<IBanner>
 ): Promise<IBanner> => {
   const res = await axiosInstance.put(`/banners/${id}`, data);
-  return res.data.data;
+  return res.data.data || res.data;
 };
 
+// DELETE BANNER
 export const deleteBanner = async (id: number): Promise<void> => {
   await axiosInstance.delete(`/banners/${id}`);
 };
