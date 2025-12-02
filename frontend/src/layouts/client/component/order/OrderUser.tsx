@@ -44,9 +44,13 @@ const STATUS_TABS = [
   { key: "pending", label: "Chờ xử lý" },
   { key: "in_transit", label: "Đang giao hàng" },
   { key: "delivered", label: "Đã giao hàng" },
+  { key: "evaluated", label: "Đã Đánh giá" },
   { key: "none", label: "Đã hủy" },
   { key: "failed", label: "Giao thất bại" },
+  { key: "return_processing", label: "Xử lý hoàn hàng" },
+  { key: "return_fail", label: "Hoàn thất bại" },
   { key: "returned", label: "Đã hoàn hàng" },
+  { key: "none", label: "Đã hủy" },
 ];
 
 const OrderUser: React.FC = () => {
@@ -125,10 +129,6 @@ const OrderUser: React.FC = () => {
       return <span className="text-green-600 font-medium">Đã thanh toán</span>;
     }
 
-    if (s === "refund_processing") {
-      return <span className="text-yellow-600 font-medium">Đã hoàn tiền</span>;
-    }
-
     if (s === "refunded") {
       return <span className="text-blue-600 font-medium">Đã hoàn tiền</span>;
     }
@@ -147,10 +147,15 @@ const OrderUser: React.FC = () => {
       pending: { text: "Chờ xử lý", color: "text-orange-600" },
       in_transit: { text: "Đang vận chuyển", color: "text-blue-600" },
       delivered: { text: "Đã giao hàng", color: "text-green-600" },
+      evaluated: { text: "Đã Đánh giá", color: "text-green-600" },
       failed: { text: "Giao thất bại", color: "text-red-600" },
       returned: { text: "Đã hoàn hàng", color: "text-purple-600" },
       none: { text: "Đã hủy", color: "text-gray-600" },
+      return_processing: { text: "Xử lý hoàn hàng", color: "text-gray-600" },
+      nodreturn_fail: { text: "Hoàn thất bại", color: "text-gray-600" },
       nodone: { text: "Chưa thanh toán", color: "text-gray-600" },
+      received: { text: "Đã nhận hàng", color: "text-gray-600" },
+
     };
 
     const statusInfo = statusMap[s] || { text: "Không xác định", color: "text-gray-500" };

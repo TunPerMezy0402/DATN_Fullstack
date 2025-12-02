@@ -40,7 +40,12 @@ import NewsArticleTop10 from "../components/News/NewsArticleTop10";
 import NewsArticleTips from "../components/News/NewsArticleTips";
 import NewsArticleReview from "../components/News/NewsArticleReview"; 
 import NewsArticlePromotion from "../components/News/NewsArticlePromotion"; 
-import NewsArticleStory from "../components/News/NewsArticleStory"; 
+import NewsArticleStory from "../components/News/NewsArticleStory";
+
+// Trang liên hệ 
+
+import Contact from "../pages/Contact";
+
 
 // ===============================================
 
@@ -54,6 +59,7 @@ const ClientRoutes = () => {
 
         {/* Các trang khác */}
         <Route path="banner" element={<Banner />} />
+        <Route path="lien_he" element={<Contact />} />
         <Route path="menu" element={<Menu />} />
         <Route path="outstanding-products" element={<OutstandingProducts />} />
         <Route path="services-row" element={<ServicesRow />} />

@@ -11,10 +11,10 @@ class ProductReview extends Model
     protected $fillable = [
         'user_id',
         'product_id',
-        'order_id',     // ✅ Thêm order_id
+        'variant_id', 
+        'order_id',
         'rating',       
         'comment',
-        'parent_id',
         'comment_time',
     ];
 
@@ -44,21 +44,5 @@ class ProductReview extends Model
     public function order()
     {
         return $this->belongsTo(Order::class, 'order_id');
-    }
-
-    /**
-     * Review cha (parent review)
-     */
-    public function parent()
-    {
-        return $this->belongsTo(ProductReview::class, 'parent_id');
-    }
-
-    /**
-     * Các reply (children reviews)
-     */
-    public function children()
-    {
-        return $this->hasMany(ProductReview::class, 'parent_id');
     }
 }

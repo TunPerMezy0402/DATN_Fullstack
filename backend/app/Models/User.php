@@ -28,6 +28,11 @@ class User extends Authenticatable
         'phone',
         'status',
         'role',
+
+        'bank_account_number',
+        'bank_name',
+        'bank_account_name',
+
     ];
 
     /**

@@ -49,6 +49,7 @@ const RESPONSE_CODE_MESSAGES: Record<string, string> = {
 interface OrderStatus {
   order_id: string | number;
   payment_status: string;
+  payment_method: string;
   final_amount: number;
   sku: string;
   paid_at?: string;
@@ -57,7 +58,6 @@ interface OrderStatus {
     transaction_code: string;
     status: string;
     amount: number;
-    payment_method: string;
     bank_code?: string;
     paid_at?: string;
   };
@@ -146,49 +146,68 @@ const PaymentSuccessPage: React.FC = () => {
     );
   }
 
-  // ✅ FIX LOGIC: Kiểm tra thành công/thất bại DỰA VÀO BACKEND
-  const isVNPayPayment = !!vnpayData.responseCode; // Có response code => thanh toán VNPay
+  // ✅ LOGIC MỚI: Ưu tiên kiểm tra từ database trước
+  const isCOD = orderStatus?.payment_method === "cod";
+  const isVNPayPayment = !!vnpayData.responseCode;
   const isVNPaySuccess = vnpayData.responseCode === "00";
   const isVNPayCancelled = vnpayData.responseCode === "24";
   
   // Kiểm tra từ database
   const isPaidFromDB = orderStatus?.payment_status === "paid";
+  const isPendingFromDB = orderStatus?.payment_status === "pending";
   const isFailedFromDB = orderStatus?.payment_status === "failed";
   
   // Logic cuối cùng
-  const isSuccess = isPaidFromDB || (isVNPayPayment && isVNPaySuccess);
-  const isFailed = isFailedFromDB || (isVNPayPayment && !isVNPaySuccess && !isVNPayCancelled);
+  let isSuccess = false;
+  let isFailed = false;
+  let isCancelled = false;
+
+  if (!orderStatus) {
+    // Không có thông tin đơn hàng
+    isFailed = true;
+  } else if (isCOD) {
+    // COD: Chỉ cần order tồn tại và không failed là thành công
+    isSuccess = !isFailedFromDB;
+    isFailed = isFailedFromDB;
+  } else if (isVNPayPayment) {
+    // VNPay: Kiểm tra cả response code và DB
+    isSuccess = isPaidFromDB || isVNPaySuccess;
+    isCancelled = isVNPayCancelled;
+    isFailed = isFailedFromDB || (!isVNPaySuccess && !isVNPayCancelled);
+  } else {
+    // Trường hợp khác: dựa vào DB
+    isSuccess = isPaidFromDB || isPendingFromDB;
+    isFailed = isFailedFromDB;
+  }
 
   const getStatusIcon = () => {
     if (isSuccess) return <CheckCircleOutlined />;
-    if (isVNPayCancelled) return <ClockCircleOutlined />;
+    if (isCancelled) return <ClockCircleOutlined />;
     return <CloseCircleOutlined />;
   };
 
   const getStatusType = () => {
     if (isSuccess) return "success";
-    if (isVNPayCancelled) return "warning";
+    if (isCancelled) return "warning";
     return "error";
   };
 
   const getTitle = () => {
     if (isSuccess) {
-      return orderStatus?.transaction?.payment_method === "cod"
-        ? "Đặt hàng thành công!"
-        : "Thanh toán thành công!";
+      return isCOD ? "Đặt hàng thành công!" : "Thanh toán thành công!";
     }
-    if (isVNPayCancelled) return "Đã hủy thanh toán";
+    if (isCancelled) return "Đã hủy thanh toán";
     return "Thanh toán thất bại";
   };
 
   const getSubTitle = () => {
     if (isSuccess) {
-      if (orderStatus?.transaction?.payment_method === "cod") {
+      if (isCOD) {
         return "Đơn hàng của bạn đã được tiếp nhận. Bạn sẽ thanh toán khi nhận hàng.";
       }
       return "Giao dịch của bạn đã được xử lý thành công.";
     }
-    if (isVNPayCancelled) {
+    if (isCancelled) {
       return "Bạn đã hủy thanh toán. Vui lòng thử lại nếu muốn tiếp tục.";
     }
     return (
@@ -246,6 +265,11 @@ const PaymentSuccessPage: React.FC = () => {
                   {isPaidFromDB ? "Đã thanh toán" : isFailedFromDB ? "Thất bại" : "Chờ thanh toán"}
                 </Tag>
               </Descriptions.Item>
+              <Descriptions.Item label="Phương thức thanh toán">
+                <Tag color={isCOD ? "orange" : "blue"}>
+                  {isCOD ? "COD (Thanh toán khi nhận hàng)" : "VNPay"}
+                </Tag>
+              </Descriptions.Item>
               <Descriptions.Item label="Tổng tiền">
                 <Text strong style={{ fontSize: 16, color: "#ff4d4f" }}>
                   {formatMoney(orderStatus.final_amount)}₫
@@ -256,17 +280,10 @@ const PaymentSuccessPage: React.FC = () => {
                   {new Date(orderStatus.paid_at).toLocaleString("vi-VN")}
                 </Descriptions.Item>
               )}
-              {orderStatus.transaction && (
+              {orderStatus.transaction && !isCOD && (
                 <>
                   <Descriptions.Item label="Mã giao dịch">
                     <Text code>{orderStatus.transaction.transaction_code}</Text>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Phương thức">
-                    <Tag color="blue">
-                      {orderStatus.transaction.payment_method === "vnpay"
-                        ? "VNPay"
-                        : "COD"}
-                    </Tag>
                   </Descriptions.Item>
                   {orderStatus.transaction.bank_code && (
                     <Descriptions.Item label="Ngân hàng">
@@ -279,7 +296,7 @@ const PaymentSuccessPage: React.FC = () => {
           </Card>
         )}
 
-        {vnpayData.transactionNo && (
+        {vnpayData.transactionNo && !isCOD && (
           <Card title="Chi tiết giao dịch VNPay" style={{ marginTop: 16 }} size="small">
             <Descriptions column={1} size="small">
               <Descriptions.Item label="Mã giao dịch">
@@ -300,7 +317,7 @@ const PaymentSuccessPage: React.FC = () => {
           </Card>
         )}
 
-        {!isSuccess && vnpayData.responseCode && (
+        {!isSuccess && !isCOD && vnpayData.responseCode && (
           <Alert
             message="Lưu ý"
             description={
@@ -315,6 +332,16 @@ const PaymentSuccessPage: React.FC = () => {
               </Space>
             }
             type="info"
+            showIcon
+            style={{ marginTop: 16 }}
+          />
+        )}
+
+        {isCOD && isSuccess && (
+          <Alert
+            message="Thông tin COD"
+            description="Đơn hàng của bạn sẽ được giao đến địa chỉ đã đăng ký. Vui lòng chuẩn bị số tiền chính xác để thanh toán cho nhân viên giao hàng."
+            type="success"
             showIcon
             style={{ marginTop: 16 }}
           />

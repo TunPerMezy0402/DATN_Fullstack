@@ -11,6 +11,11 @@ class Order extends Model
 
     protected $table = 'orders';
 
+    public function getTable()
+    {
+        return 'orders';
+    }
+
     protected $fillable = [
         'user_id',
         'sku',
@@ -90,7 +95,7 @@ class Order extends Model
         return $this->hasMany(OrderCancelLog::class, 'order_id');
     }
 
-        public function productReviews()
+    public function productReviews()
     {
         // Lấy tất cả review của user cho sản phẩm trong đơn hàng này
         return $this->hasManyThrough(

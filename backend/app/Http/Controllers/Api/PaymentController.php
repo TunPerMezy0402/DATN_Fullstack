@@ -656,4 +656,263 @@ class PaymentController extends Controller
 
         return $messages[$code] ?? ['short' => 'Lỗi không xác định', 'detail' => 'Mã lỗi: ' . $code];
     }
+
+    /**
+ * ✅ Thanh toán lại đơn hàng
+ */
+public function repay(Request $request, $orderId)
+{
+    try {
+        $validated = $request->validate([
+            'payment_method' => 'required|in:vnpay,cod',
+            'bank_code' => 'nullable|string',
+        ]);
+
+        // Lấy user từ request (phải có middleware auth)
+        $user = $request->user();
+        
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vui lòng đăng nhập để thực hiện thanh toán'
+            ], 401);
+        }
+
+        Log::info('🔄 Repay request', [
+            'order_id' => $orderId,
+            'payment_method' => $validated['payment_method'],
+            'user_id' => $user->id,
+        ]);
+
+        $order = Order::with(['items', 'shipping'])->find($orderId);
+        
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không tìm thấy đơn hàng'
+            ], 404);
+        }
+
+        // Kiểm tra quyền sở hữu
+        if ($order->user_id !== $user->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bạn không có quyền truy cập đơn hàng này'
+            ], 403);
+        }
+
+        // Kiểm tra trạng thái có thể thanh toán lại
+        if ($order->payment_status === 'paid') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Đơn hàng đã được thanh toán'
+            ], 400);
+        }
+
+        // Kiểm tra nếu đơn hàng đã bị hủy
+        if ($order->status === 'cancelled') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không thể thanh toán đơn hàng đã bị hủy'
+            ], 400);
+        }
+
+        // ⚠️ CHỈ KIỂM TRA STOCK KHI CHUYỂN TỪ FAILED/PENDING SANG VNPAY
+        // Không kiểm tra nếu đơn hàng đã PAID trước đó (vì stock đã trừ rồi)
+        if ($order->payment_status !== 'paid') {
+            foreach ($order->items as $item) {
+                if ($item->variant_id) {
+                    $variant = ProductVariant::find($item->variant_id);
+                    
+                    if (!$variant) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Sản phẩm '{$item->product_name}' không còn tồn tại"
+                        ], 400);
+                    }
+
+                    if ($variant->stock_quantity < $item->quantity) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Sản phẩm '{$item->product_name}' không đủ số lượng trong kho"
+                        ], 400);
+                    }
+                }
+            }
+        }
+
+        DB::beginTransaction();
+
+        try {
+            // ✅ FIX: Dùng 'unpaid' thay vì 'pending' vì ENUM không có 'pending'
+            DB::table('orders')
+                ->where('id', $order->id)
+                ->update([
+                    'payment_method' => $validated['payment_method'],
+                    'payment_status' => 'unpaid', // ✅ Đổi từ 'pending' sang 'unpaid'
+                    'updated_at' => now(),
+                ]);
+
+            Log::info('📦 Order updated via DB::update', [
+                'order_id' => $order->id,
+                'payment_method' => $validated['payment_method'],
+                'payment_status' => 'unpaid'
+            ]);
+
+            // Reset shipping status nếu cần
+            if ($order->shipping && $order->shipping->shipping_status === 'nodone') {
+                // ✅ FIX: Chỉ update shipping_status, bỏ updated_at
+                DB::table('shipping')
+                    ->where('order_id', $order->id)
+                    ->update([
+                        'shipping_status' => 'pending',
+                    ]);
+                
+                Log::info('🚚 Shipping status updated', [
+                    'order_id' => $order->id,
+                    'status' => 'pending'
+                ]);
+            }
+
+            DB::commit();
+            
+            // Refresh order để lấy data mới
+            $order->refresh();
+            
+            Log::info('✅ Transaction committed for repayment', [
+                'order_id' => $order->id
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('❌ Transaction rollback: ' . $e->getMessage(), [
+                'order_id' => $orderId,
+                'line' => $e->getLine(),
+                'file' => $e->getFile()
+            ]);
+            throw $e;
+        }
+
+        // Xử lý theo phương thức thanh toán
+        if ($validated['payment_method'] === 'vnpay') {
+            // Tạo URL thanh toán VNPay
+            $amount = $order->final_amount;
+
+            if ($amount < 10000 || $amount > 500000000) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Số tiền không hợp lệ (10,000₫ - 500,000,000₫)'
+                ], 400);
+            }
+
+            date_default_timezone_set('Asia/Ho_Chi_Minh');
+
+            $vnp_TmnCode = config('services.vnpay.tmn_code');
+            $vnp_HashSecret = config('services.vnpay.hash_secret');
+            $vnp_Url = config('services.vnpay.url');
+            $vnp_ReturnUrl = 'http://127.0.0.1:8000/api/vnpay/return';
+
+            if (empty($vnp_TmnCode) || empty($vnp_HashSecret) || empty($vnp_Url)) {
+                Log::error('❌ VNPay config missing');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cấu hình VNPay chưa đầy đủ'
+                ], 500);
+            }
+
+            $vnp_TxnRef = $order->id . '_REPAY_' . time();
+            $vnp_OrderInfo = "Thanh toan lai don hang #{$order->id}";
+            $vnp_OrderType = "other";
+            $vnp_Amount = $amount * 100;
+            $vnp_Locale = "vn";
+            $vnp_BankCode = $validated['bank_code'] ?? "";
+            $vnp_IpAddr = $request->ip();
+
+            $inputData = [
+                "vnp_Version" => "2.1.0",
+                "vnp_TmnCode" => $vnp_TmnCode,
+                "vnp_Amount" => $vnp_Amount,
+                "vnp_Command" => "pay",
+                "vnp_CreateDate" => date('YmdHis'),
+                "vnp_CurrCode" => "VND",
+                "vnp_IpAddr" => $vnp_IpAddr,
+                "vnp_Locale" => $vnp_Locale,
+                "vnp_OrderInfo" => $vnp_OrderInfo,
+                "vnp_OrderType" => $vnp_OrderType,
+                "vnp_ReturnUrl" => $vnp_ReturnUrl,
+                "vnp_TxnRef" => $vnp_TxnRef,
+            ];
+
+            if (!empty($vnp_BankCode)) {
+                $inputData['vnp_BankCode'] = $vnp_BankCode;
+            }
+
+            ksort($inputData);
+
+            $hashData = '';
+            $query = '';
+            foreach ($inputData as $key => $value) {
+                $hashData .= ($hashData ? '&' : '') . urlencode($key) . '=' . urlencode($value);
+                $query .= ($query ? '&' : '') . urlencode($key) . '=' . urlencode($value);
+            }
+
+            $vnpSecureHash = hash_hmac('sha512', $hashData, $vnp_HashSecret);
+            $vnp_Url = $vnp_Url . '?' . $query . '&vnp_SecureHash=' . $vnpSecureHash;
+
+            Log::info('✅ Repay VNPay URL generated', [
+                'order_id' => $order->id,
+                'txn_ref' => $vnp_TxnRef,
+                'amount' => $amount,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'payment_method' => 'vnpay',
+                'payment_url' => $vnp_Url,
+                'order_id' => $order->id,
+                'txn_ref' => $vnp_TxnRef,
+                'message' => 'Đã tạo link thanh toán VNPay'
+            ]);
+
+        } else {
+            // COD - Chỉ cần cập nhật trạng thái
+            Log::info('✅ Repay COD success', ['order_id' => $order->id]);
+
+            return response()->json([
+                'success' => true,
+                'payment_method' => 'cod',
+                'order_id' => $order->id,
+                'message' => 'Đã chuyển sang thanh toán COD'
+            ]);
+        }
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        DB::rollBack();
+        Log::error('❌ Repay validation error', [
+            'order_id' => $orderId,
+            'errors' => $e->errors()
+        ]);
+        return response()->json([
+            'success' => false,
+            'message' => 'Dữ liệu không hợp lệ',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('❌ Repay error: ' . $e->getMessage(), [
+            'order_id' => $orderId,
+            'line' => $e->getLine(),
+            'file' => $e->getFile(),
+            'trace' => $e->getTraceAsString() // ✅ Thêm trace để debug
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Có lỗi xảy ra khi xử lý thanh toán',
+            'error' => config('app.debug') ? $e->getMessage() : null // ✅ Hiện lỗi nếu debug mode
+        ], 500);
+    }
+}
+
+    
 }

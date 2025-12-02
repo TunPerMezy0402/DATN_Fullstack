@@ -246,7 +246,7 @@ export async function fetchTrashedProducts(): Promise<Product[]> {
 }
 
 export async function restoreProduct(id: number): Promise<void> {
-  await api.patch(`/admin/products/${id}/restore`);
+  await api.post(`/admin/products/${id}/restore`);
 }
 
 export async function forceDeleteProduct(id: number): Promise<void> {

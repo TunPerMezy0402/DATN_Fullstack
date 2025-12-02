@@ -92,6 +92,8 @@ Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
     Route::post('register', [AuthController::class, 'register']);
     Route::post('google', [AuthController::class, 'googleLogin']);
+    Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('reset-password', [AuthController::class, 'resetPassword']);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
@@ -161,24 +163,30 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('orders')->group(function () {
         Route::get('/', [OrderClientController::class, 'index']);
-        Route::get('/{id}', [OrderClientController::class, 'show']);
         Route::post('/', [OrderClientController::class, 'store']);
+        Route::get('/{id}', [OrderClientController::class, 'show']);
+        Route::post('/{id}/cancel', [OrderClientController::class, 'cancel']);
+        Route::post('/{id}/return', [OrderClientController::class, 'return']);
+        Route::post('/{id}/confirm-received', [OrderClientController::class, 'confirmReceived']);
         Route::get('/{id}/payment-status', [OrderClientController::class, 'paymentStatus']);
-        Route::post('/{id}/cancel', [OrderClientController::class, 'cancel']); // ✅ thêm dòng này
+        Route::get('/{id}/shipping-logs', [OrderClientController::class, 'shippingLogs']);
+
+        Route::get('/{id}/return-requests', [OrderClientController::class, 'returnRequests']);
+        Route::get('/{id}/cancel-logs', [OrderClientController::class, 'cancelLogs']);
     });
 
     Route::prefix('product-reviews')->group(function () {
-        Route::post('/', [ProductReviewController::class, 'store']);           
-        Route::put('/{id}', [ProductReviewController::class, 'update']);       
+        Route::post('/', [ProductReviewController::class, 'store']);
+        /* Route::put('/{id}', [ProductReviewController::class, 'update']);   */
         Route::delete('/{id}', [ProductReviewController::class, 'destroy']);
-        Route::get('/{productId}/reviews', [ProductReviewController::class, 'index']); 
+        Route::get('/{productId}/reviews', [ProductReviewController::class, 'index']);
     });
-    
+
 
 });
 
 Route::prefix('products')->group(function () {
-    Route::get('/{productId}/reviews', [ProductReviewController::class, 'index']); // Xem danh sách đánh giá
+    Route::get('/{productId}/reviews', [ProductReviewController::class, 'index']);
 });
 
 // =====================================================================
@@ -205,6 +213,10 @@ Route::macro('adminApiResource', function ($prefix, $controller) {
             Route::post('/{id}/restore', [$controller, 'restore']);
             Route::delete('/{id}/force-delete', [$controller, 'forceDelete']);
         });
+});
+
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::post('/upload', [OrderController::class, 'upload']);
 });
 
 
@@ -251,6 +263,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/orders/{orderId}/transactions', [PaymentController::class, 'get_order_transactions'])
         ->name('payment.order.transactions');
 
+    Route::post('/orders/{orderId}/repay', [PaymentController::class, 'repay'])
+        ->name('payment.repay');
+
+
 });
 
 // ==================== ADMIN ROUTES ====================
@@ -260,4 +276,14 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/transactions', [PaymentController::class, 'get_all_transactions'])
         ->name('admin.transactions.index');
 
+});
+
+// Admin Order Routes
+Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
+    // Existing routes...
+    
+    // ✅ Return Request Management
+    Route::get('orders/{id}/return-requests', [OrderController::class, 'returnRequests']);
+    Route::post('orders/{orderId}/return-requests/{returnRequestId}/approve', [OrderController::class, 'approveReturn']);
+    Route::post('orders/{orderId}/return-requests/{returnRequestId}/reject', [OrderController::class, 'rejectReturn']);
 });

@@ -215,86 +215,119 @@ class ProductClientController extends Controller
         ]);
     }
 
-    /**
-     * 📦 Lấy chi tiết 1 sản phẩm theo ID hoặc SKU
-     */
-    public function getProductDetail($id)
-    {
-        $product = Product::query()
-            ->with([
-                'category:id,name',
-                'variants' => function ($q) {
-                    $q->select(
-                        'id',
-                        'product_id',
-                        'size_id',
-                        'color_id',
-                        'sku',
-                        'price',
-                        'discount_price',
-                        'quantity_sold',
-                        'stock_quantity',
-                        'is_available'
-                    )
-                    ->whereNull('deleted_at')
-                    ->with(['size:id,value', 'color:id,value']);
-                },
-            ])
-            ->where(function ($q) use ($id) {
-                $q->where('id', $id)
-                  ->orWhere('sku', $id);
-            })
-            ->whereNull('deleted_at')
-            ->first();
+/**
+ * 📦 Lấy chi tiết 1 sản phẩm theo ID hoặc SKU
+ */
+public function getProductDetail($id)
+{
+    $product = Product::query()
+        ->with([
+            'category:id,name',
+            'variants' => function ($q) {
+                $q->select(
+                    'id',
+                    'product_id',
+                    'size_id',
+                    'color_id',
+                    'sku',
+                    'price',
+                    'discount_price',
+                    'quantity_sold',  // ✅ QUAN TRỌNG
+                    'stock_quantity',
+                    'is_available',
+                    'image',          // ✅ Thêm image của variant
+                    'images'          // ✅ Thêm images của variant
+                )
+                ->whereNull('deleted_at')
+                ->with(['size:id,value', 'color:id,value']);
+            },
+        ])
+        ->where(function ($q) use ($id) {
+            $q->where('id', $id)
+              ->orWhere('sku', $id);
+        })
+        ->whereNull('deleted_at')
+        ->first();
 
-        if (!$product) {
-            return response()->json(['message' => 'Sản phẩm không tồn tại.'], 404);
+    if (!$product) {
+        return response()->json(['message' => 'Sản phẩm không tồn tại.'], 404);
+    }
+
+    // ✅ Tính tổng quantity_sold của TẤT CẢ variants
+    $totalQuantitySold = $product->variants->sum('quantity_sold');
+
+    // Tính toán giá cuối cùng cho từng variant
+    $product->variants->map(function ($v) {
+        $v->original_price = $v->price;
+        $v->final_price = ($v->discount_price && $v->discount_price < $v->price)
+            ? $v->discount_price
+            : $v->price;
+        
+        // ✅ Đảm bảo quantity_sold không null
+        $v->quantity_sold = $v->quantity_sold ?? 0;
+        
+        return $v;
+    });
+
+    // Lấy biến thể có giá thấp nhất
+    $minVariant = $product->variants->sortBy('final_price')->first();
+    $product->min_variant = $minVariant;
+    $product->min_effective_price = $minVariant ? $minVariant->final_price : null;
+    $product->min_original_price = $minVariant ? $minVariant->original_price : null;
+
+    // Hình ảnh chính sản phẩm
+    $product->image_url = $product->image
+        ? asset(str_starts_with($product->image, 'storage/') ? $product->image : 'storage/' . $product->image)
+        : null;
+
+    // Danh sách hình ảnh sản phẩm
+    $product->images_list = [];
+    if (!empty($product->images)) {
+        $imgs = is_string($product->images) ? json_decode($product->images, true) : $product->images;
+        if (is_array($imgs)) {
+            $product->images_list = collect($imgs)->map(fn($i) =>
+                asset(str_starts_with($i, 'storage/') ? $i : 'storage/' . $i)
+            )->toArray();
+        }
+    }
+
+    // Thông tin bổ sung
+    $product->brand = $product->brand ?? null;
+    $product->origin = $product->origin ?? null;
+    $product->total_variants = $product->variants->count();
+    $product->total_quantity_sold = $totalQuantitySold; // ✅ THÊM TỔNG ĐÃ BÁN
+
+    // Lấy danh sách sizes và colors từ variants
+    $product->sizes = $product->variants->pluck('size.value')->filter()->unique()->values();
+    $product->colors = $product->variants->pluck('color.value')->filter()->unique()->values();
+
+    // ✅ Transform variants để thêm image URLs
+    $product->variants->transform(function ($variant) {
+        // Xử lý hình ảnh của variant
+        if ($variant->image) {
+            $variant->image_url = asset(str_starts_with($variant->image, 'storage/') 
+                ? $variant->image 
+                : 'storage/' . $variant->image);
         }
 
-        // Tính toán giá cuối cùng cho từng variant
-        $product->variants->map(function ($v) {
-            $v->original_price = $v->price;
-            $v->final_price = ($v->discount_price && $v->discount_price < $v->price)
-                ? $v->discount_price
-                : $v->price;
-            return $v;
-        });
-
-        // Lấy biến thể có giá thấp nhất
-        $minVariant = $product->variants->sortBy('final_price')->first();
-        $product->min_variant = $minVariant;
-        $product->min_effective_price = $minVariant ? $minVariant->final_price : null;
-        $product->min_original_price = $minVariant ? $minVariant->original_price : null;
-
-        // Hình ảnh chính sản phẩm
-        $product->image_url = $product->image
-            ? asset(str_starts_with($product->image, 'storage/') ? $product->image : 'storage/' . $product->image)
-            : null;
-
-        // Danh sách hình ảnh sản phẩm
-        $product->images_list = [];
-        if (!empty($product->images)) {
-            $imgs = is_string($product->images) ? json_decode($product->images, true) : $product->images;
+        // Xử lý danh sách hình ảnh của variant
+        $variant->images_list = [];
+        if (!empty($variant->images)) {
+            $imgs = is_string($variant->images) ? json_decode($variant->images, true) : $variant->images;
             if (is_array($imgs)) {
-                $product->images_list = collect($imgs)->map(fn($i) =>
+                $variant->images_list = collect($imgs)->map(fn($i) =>
                     asset(str_starts_with($i, 'storage/') ? $i : 'storage/' . $i)
                 )->toArray();
             }
         }
 
-        // Thông tin bổ sung
-        $product->brand = $product->brand ?? null;
-        $product->origin = $product->origin ?? null;
-        $product->total_variants = $product->variants->count();
+        return $variant;
+    });
 
-        // Lấy danh sách sizes và colors từ variants
-        $product->sizes = $product->variants->pluck('size.value')->filter()->unique()->values();
-        $product->colors = $product->variants->pluck('color.value')->filter()->unique()->values();
-
-        return response()->json([
-            'product' => $product,
-        ]);
-    }
+    return response()->json([
+        'product' => $product,
+    ]);
+}
 
     /**
      * 🔍 API lấy danh sách brands động
