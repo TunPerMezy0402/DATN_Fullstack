@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
-import { Modal, Form, Input, Button, message, Alert } from "antd";
-import { BankOutlined, LockOutlined } from "@ant-design/icons";
+import { Outlet, useNavigate } from "react-router-dom";
+import { Modal, Form, Input, Button, message, Alert, FloatButton, Tooltip } from "antd";
+import { BankOutlined, LockOutlined, CustomerServiceOutlined, SendOutlined } from "@ant-design/icons";
 import axios from "axios";
 import Header from "../../components/common/Header";
 import Footer from "../../components/common/Footer";
@@ -11,12 +11,16 @@ const getAuthToken = () =>
   localStorage.getItem("access_token") || localStorage.getItem("token");
 
 const MainLayout: React.FC = () => {
+  const navigate = useNavigate();
   const [showBankModal, setShowBankModal] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [bankForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [supportForm] = Form.useForm();
+  const [supportLoading, setSupportLoading] = useState(false);
 
   // Check if user needs to update bank info
   const checkBankInfoRequired = async () => {
@@ -108,6 +112,44 @@ const MainLayout: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSupportSubmit = async (values: any) => {
+    try {
+      setSupportLoading(true);
+      const token = getAuthToken();
+
+      await axios.post(
+        `${API_URL}/support-tickets`,
+        {
+          subject: values.subject,
+          message: values.message,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      message.success("Ticket hỗ trợ được tạo thành công!");
+      setShowSupportModal(false);
+      supportForm.resetFields();
+    } catch (err: any) {
+      message.error(
+        err.response?.data?.message || "Lỗi khi tạo ticket hỗ trợ"
+      );
+    } finally {
+      setSupportLoading(false);
+    }
+  };
+
+  const handleSupportClick = () => {
+    const token = getAuthToken();
+    if (!token) {
+      message.warning("Vui lòng đăng nhập để gửi yêu cầu hỗ trợ");
+      navigate("/login");
+      return;
+    }
+    setShowSupportModal(true);
   };
 
   return (
@@ -275,6 +317,95 @@ const MainLayout: React.FC = () => {
           </Button>
         </Form>
       </Modal>
+
+      {/* Support Chat Modal */}
+      <Modal
+        open={showSupportModal}
+        title={
+          <div className="flex items-center gap-2">
+            <CustomerServiceOutlined className="text-blue-500" />
+            <span>Gửi yêu cầu hỗ trợ</span>
+          </div>
+        }
+        onCancel={() => setShowSupportModal(false)}
+        footer={null}
+        width={600}
+      >
+        <Form
+          form={supportForm}
+          layout="vertical"
+          onFinish={handleSupportSubmit}
+        >
+          <Form.Item
+            label="Tiêu đề"
+            name="subject"
+            rules={[
+              { required: true, message: "Vui lòng nhập tiêu đề" },
+              { max: 255, message: "Tiêu đề không được vượt quá 255 ký tự" },
+            ]}
+          >
+            <Input
+              placeholder="Nhập tiêu đề yêu cầu hỗ trợ"
+              size="large"
+              maxLength={255}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="Nội dung"
+            name="message"
+            rules={[
+              { required: true, message: "Vui lòng nhập nội dung" },
+              { min: 10, message: "Nội dung phải tối thiểu 10 ký tự" },
+              { max: 5000, message: "Nội dung không được vượt quá 5000 ký tự" },
+            ]}
+          >
+            <Input.TextArea
+              placeholder="Mô tả chi tiết vấn đề của bạn..."
+              rows={6}
+              maxLength={5000}
+              showCount
+            />
+          </Form.Item>
+
+          <div className="flex gap-3">
+            <Button
+              type="default"
+              onClick={() => setShowSupportModal(false)}
+              className="flex-1"
+              size="large"
+            >
+              Hủy
+            </Button>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={supportLoading}
+              icon={<SendOutlined />}
+              className="flex-1"
+              size="large"
+            >
+              Gửi yêu cầu
+            </Button>
+          </div>
+        </Form>
+      </Modal>
+
+      {/* Support Float Button */}
+      <Tooltip title="Gửi yêu cầu hỗ trợ">
+        <FloatButton
+          icon={<CustomerServiceOutlined />}
+          type="primary"
+          style={{
+            right: 24,
+            bottom: 34,
+            width: 56,
+            height: 56,
+            fontSize: 24,
+          }}
+          onClick={handleSupportClick}
+        />
+      </Tooltip>
     </div>
   );
 };

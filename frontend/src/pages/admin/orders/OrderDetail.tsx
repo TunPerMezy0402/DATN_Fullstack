@@ -23,6 +23,7 @@ import {
   Collapse,
   Timeline,
   Drawer,
+  Popconfirm,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -245,6 +246,7 @@ const OrderDetail: React.FC = () => {
   const [updating, setUpdating] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [form] = Form.useForm();
+  const [itemActionLoading, setItemActionLoading] = useState<number | null>(null);
   const [returnDrawer, setReturnDrawer] = useState<ReturnRequest | null>(null);
 
   // ============================================================
@@ -308,9 +310,19 @@ const OrderDetail: React.FC = () => {
     }
   }, [order, isEditMode, form]);
 
-  // ============================================================
-  //                      HELPER FUNCTIONS
-  // ============================================================
+
+
+  const getFullImageUrl = (imagePath: string | null | undefined): string => {
+    if (!imagePath) return '';
+
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+      return imagePath;
+    }
+
+    const baseUrl = API_URL.replace('/api', '');
+    const path = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
+    return `${baseUrl}${path}`;
+  };
 
   const handleCancelEdit = () => {
     setIsEditMode(false);
@@ -587,6 +599,87 @@ const OrderDetail: React.FC = () => {
   //                      RENDER FUNCTIONS
   // ============================================================
 
+  const handleApproveItem = async (returnRequestId: number, itemId: number, adminResponse?: string) => {
+    try {
+      setItemActionLoading(itemId);
+      const response = await axios.post(
+        `${API_URL}/admin/orders/${orderId}/return-requests/${returnRequestId}/items/${itemId}/approve`,
+        { admin_response: adminResponse },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      message.success("Đã duyệt sản phẩm hoàn hàng!");
+
+      // ✅ Cập nhật state trực tiếp thay vì fetchOrder()
+      setOrder((prevOrder) => {
+        if (!prevOrder) return prevOrder;
+
+        return {
+          ...prevOrder,
+          return_requests: prevOrder.return_requests?.map((req) =>
+            req.id === returnRequestId
+              ? {
+                ...req,
+                items: req.items.map((item) =>
+                  item.id === itemId
+                    ? { ...item, status: "approved", admin_response: adminResponse }
+                    : item
+                ),
+              }
+              : req
+          ),
+        };
+      });
+    } catch (error: any) {
+      message.error(error.response?.data?.message || "Có lỗi xảy ra khi duyệt sản phẩm");
+    } finally {
+      setItemActionLoading(null);
+    }
+  };
+
+  const handleRejectItem = async (returnRequestId: number, itemId: number, adminResponse: string) => {
+    if (!adminResponse?.trim()) {
+      message.error("Vui lòng nhập lý do từ chối!");
+      return;
+    }
+
+    try {
+      setItemActionLoading(itemId);
+      const response = await axios.post(
+        `${API_URL}/admin/orders/${orderId}/return-requests/${returnRequestId}/items/${itemId}/reject`,
+        { admin_response: adminResponse },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      message.success("Đã từ chối sản phẩm hoàn hàng!");
+
+      // ✅ Cập nhật state trực tiếp thay vì fetchOrder()
+      setOrder((prevOrder) => {
+        if (!prevOrder) return prevOrder;
+
+        return {
+          ...prevOrder,
+          return_requests: prevOrder.return_requests?.map((req) =>
+            req.id === returnRequestId
+              ? {
+                ...req,
+                items: req.items.map((item) =>
+                  item.id === itemId
+                    ? { ...item, status: "rejected", admin_response: adminResponse }
+                    : item
+                ),
+              }
+              : req
+          ),
+        };
+      });
+    } catch (error: any) {
+      message.error(error.response?.data?.message || "Có lỗi xảy ra khi từ chối sản phẩm");
+    } finally {
+      setItemActionLoading(null);
+    }
+  };
+
   const renderReturnRequests = () => {
     if (!order?.return_requests || order.return_requests.length === 0) {
       return null;
@@ -686,6 +779,44 @@ const OrderDetail: React.FC = () => {
                     rowKey="id"
                     pagination={false}
                     columns={[
+
+                      {
+                        title: "Hình ảnh",
+                        dataIndex: "product_image",
+                        key: "image",
+                        width: 100,
+                        render: (image: string, item: ReturnItem) => (
+                          item.product_image ? (
+                            <img
+                              src={getFullImageUrl(item.product_image)}  // ✅ Thêm hàm getFullImageUrl
+                              alt={item.product_name}
+                              style={{
+                                width: 80,
+                                height: 80,
+                                objectFit: "cover",
+                                borderRadius: 8,
+                                border: "1px solid #f0f0f0",
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: 80,
+                                height: 80,
+                                backgroundColor: "#f5f5f5",
+                                borderRadius: 8,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              <ShoppingCartOutlined
+                                style={{ fontSize: 32, color: "#ccc" }}
+                              />
+                            </div>
+                          )
+                        ),
+                      },
                       {
                         title: "Sản phẩm",
                         dataIndex: "product_name",
@@ -734,6 +865,76 @@ const OrderDetail: React.FC = () => {
                           </Tag>
                         ),
                       },
+                      {
+                        title: "Thao tác",
+                        key: "action",
+                        align: "center",
+                        width: 150,
+                        render: (_: any, record: ReturnItem) => {
+                          if (record.status === "pending" && returnRequest.status === "pending") {
+                            return (
+                              <Space direction="vertical" size="small">
+                                <Popconfirm
+                                  title="Duyệt sản phẩm hoàn?"
+                                  description="Bạn có muốn duyệt sản phẩm này không?"
+                                  onConfirm={() => handleApproveItem(returnRequest.id, record.id)}
+                                  okText="Duyệt"
+                                  cancelText="Hủy"
+                                >
+                                  <Button
+                                    type="primary"
+                                    size="small"
+                                    icon={<CheckCircleOutlined />}
+                                    loading={itemActionLoading === record.id}
+                                    block
+                                  >
+                                    Duyệt
+                                  </Button>
+                                </Popconfirm>
+
+                                <Button
+                                  danger
+                                  size="small"
+                                  icon={<CloseCircleOutlined />}
+                                  loading={itemActionLoading === record.id}
+                                  onClick={() => {
+                                    Modal.confirm({
+                                      title: "Từ chối sản phẩm hoàn?",
+                                      content: (
+                                        <div>
+                                          <Text>Lý do từ chối:</Text>
+                                          <TextArea
+                                            id="reject-reason"
+                                            rows={3}
+                                            placeholder="Nhập lý do từ chối..."
+                                            style={{ marginTop: 8 }}
+                                          />
+                                        </div>
+                                      ),
+                                      okText: "Từ chối",
+                                      cancelText: "Hủy",
+                                      okButtonProps: { danger: true },
+                                      onOk: () => {
+                                        const reason = (document.getElementById("reject-reason") as HTMLTextAreaElement)?.value;
+                                        return handleRejectItem(returnRequest.id, record.id, reason);
+                                      },
+                                    });
+                                  }}
+                                  block
+                                >
+                                  Từ chối
+                                </Button>
+                              </Space>
+                            );
+                          }
+
+                          return (
+                            <Tag color={returnItemStatusColors[record.status]}>
+                              {returnItemStatusMap[record.status]}
+                            </Tag>
+                          );
+                        },
+                      },
                     ]}
                     expandable={{
                       expandedRowRender: (record: ReturnItem) => (
@@ -781,25 +982,11 @@ const OrderDetail: React.FC = () => {
                             <Row justify="space-between">
                               <Text>Giảm giá được hoàn:</Text>
                               <Text strong style={{ color: "#ff4d4f" }}>
-                                -{returnRequest.refunded_discount?.toLocaleString("vi-VN")}₫
-                              </Text>
-                            </Row>
-                          )}
-
-                          {returnRequest.shipping_diff !== 0 && (
-                            <Row justify="space-between">
-                              <Text>Phí ship:</Text>
-                              <Text
-                                strong
-                                style={{
-                                  color:
-                                    returnRequest.shipping_diff > 0
-                                      ? "#ff4d4f"
-                                      : "#52c41a",
-                                }}
-                              >
-                                {returnRequest.shipping_diff > 0 ? "-" : "+"}
-                                {Math.abs(returnRequest.shipping_diff)?.toLocaleString("vi-VN")}₫
+                                -
+                                {returnRequest.refunded_discount?.toLocaleString("vi-VN", {
+                                  maximumFractionDigits: 0,
+                                })}
+                                ₫
                               </Text>
                             </Row>
                           )}
@@ -808,65 +995,20 @@ const OrderDetail: React.FC = () => {
 
                           <Row justify="space-between">
                             <Text strong style={{ fontSize: 16 }}>
-                              Số tiền hoàn dự kiến:
+                              Số tiền hoàn:
                             </Text>
-                            <Text
-                              strong
-                              style={{ fontSize: 18, color: "#ff4d4f" }}
-                            >
-                              {returnRequest.estimated_refund?.toLocaleString("vi-VN")}₫
+                            <Text strong style={{ fontSize: 18, color: "#ff4d4f" }}>
+                              {returnRequest.estimated_refund?.toLocaleString("vi-VN", {
+                                maximumFractionDigits: 0,
+                              })}
+                              ₫
                             </Text>
                           </Row>
 
-                          {returnRequest.actual_refund && (
-                            <Row justify="space-between">
-                              <Text strong style={{ fontSize: 16 }}>
-                                Số tiền hoàn thực tế:
-                              </Text>
-                              <Text
-                                strong
-                                style={{ fontSize: 18, color: "#52c41a" }}
-                              >
-                                {returnRequest.actual_refund?.toLocaleString("vi-VN")}₫
-                              </Text>
-                            </Row>
-                          )}
-
-                          {returnRequest.remaining_amount > 0 && (
-                            <>
-                              <Divider style={{ margin: "8px 0" }} />
-                              <Row justify="space-between">
-                                <Text>Số tiền đơn còn lại:</Text>
-                                <Text strong>
-                                  {returnRequest.remaining_amount?.toLocaleString("vi-VN")}₫
-                                </Text>
-                              </Row>
-                            </>
-                          )}
                         </Space>
                       </div>
                     </Col>
                   </Row>
-
-                  {returnRequest.note && (
-                    <Alert
-                      message="Ghi chú"
-                      description={returnRequest.note}
-                      type="info"
-                      showIcon
-                      style={{ marginTop: 16 }}
-                    />
-                  )}
-
-                  {returnRequest.admin_note && (
-                    <Alert
-                      message="Phản hồi Admin"
-                      description={returnRequest.admin_note}
-                      type={returnRequest.status === "rejected" ? "error" : "success"}
-                      showIcon
-                      style={{ marginTop: 16 }}
-                    />
-                  )}
                 </Card>
               </div>
             ),
@@ -988,86 +1130,50 @@ const OrderDetail: React.FC = () => {
       <Row gutter={[24, 24]}>
         {/* Cột trái - Thông tin chi tiết */}
         <Col xs={24} lg={16}>
-          {/* Thông tin khách hàng */}
+          {/* Thông tin vận chuyển */}
           <Card
             title={
               <Space>
-                <UserOutlined />
-                <span>Thông tin khách hàng</span>
+                <CarOutlined />
+                <span>Thông tin vận chuyển</span>
               </Space>
             }
-            style={{ marginBottom: 24, borderRadius: 8 }}
+            style={{ borderRadius: 8 }}
           >
             <Descriptions column={1} size="middle">
-              <Descriptions.Item
-                label={
-                  <Space>
-                    <UserOutlined />Họ tên
-                  </Space>
-                }
-              >
-                <Text strong>{order.user?.name}</Text>
+              <Descriptions.Item label="Mã vận đơn">
+                <Text strong>{s?.sku || "—"}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Người nhận">
+                <Text strong>{s?.shipping_name || "—"}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="Số điện thoại">
+                {s?.shipping_phone || "—"}
               </Descriptions.Item>
               <Descriptions.Item
                 label={
                   <Space>
-                    <PhoneOutlined />
-                    Số điện thoại
+                    <EnvironmentOutlined />
+                    Địa chỉ giao hàng
                   </Space>
                 }
               >
-                {order.user?.phone}
+                {fullAddress || "—"}
               </Descriptions.Item>
-              <Descriptions.Item
-                label={
-                  <Space>
-                    <MailOutlined />
-                    Email
-                  </Space>
-                }
-              >
-                {order.user?.email}
-              </Descriptions.Item>
-
-              {order.user?.bank_account_number && (
-                <>
-                  <Descriptions.Item
-                    label={
-                      <Space>
-                        <CreditCardOutlined />
-                        Số tài khoản ngân hàng
-                      </Space>
-                    }
-                  >
-                    {order.user.bank_account_number}
-                  </Descriptions.Item>
-
-                  <Descriptions.Item
-                    label={
-                      <Space>
-                        <BankOutlined />
-                        Tên ngân hàng
-                      </Space>
-                    }
-                  >
-                    {order.user.bank_name || "—"}
-                  </Descriptions.Item>
-
-                  <Descriptions.Item
-                    label={
-                      <Space>
-                        <UserOutlined />
-                        Tên chủ thẻ
-                      </Space>
-                    }
-                  >
-                    {order.user.bank_account_name || "—"}
-                  </Descriptions.Item>
-                </>
+              {s?.received_at && (
+                <Descriptions.Item
+                  label={
+                    <Space>
+                      <ClockCircleOutlined />
+                      Thời gian nhận hàng
+                    </Space>
+                  }
+                >
+                  {new Date(s.received_at).toLocaleString("vi-VN")}
+                </Descriptions.Item>
               )}
             </Descriptions>
           </Card>
-
           {/* Chi tiết sản phẩm */}
           <Card
             title={
@@ -1235,51 +1341,6 @@ const OrderDetail: React.FC = () => {
 
           {/* Lịch sử hoàn hàng */}
           {renderReturnRequests()}
-
-          {/* Thông tin vận chuyển */}
-          <Card
-            title={
-              <Space>
-                <CarOutlined />
-                <span>Thông tin vận chuyển</span>
-              </Space>
-            }
-            style={{ borderRadius: 8 }}
-          >
-            <Descriptions column={1} size="middle">
-              <Descriptions.Item label="Mã vận đơn">
-                <Text strong>{s?.sku || "—"}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Người nhận">
-                <Text strong>{s?.shipping_name || "—"}</Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Số điện thoại">
-                {s?.shipping_phone || "—"}
-              </Descriptions.Item>
-              <Descriptions.Item
-                label={
-                  <Space>
-                    <EnvironmentOutlined />
-                    Địa chỉ giao hàng
-                  </Space>
-                }
-              >
-                {fullAddress || "—"}
-              </Descriptions.Item>
-              {s?.received_at && (
-                <Descriptions.Item
-                  label={
-                    <Space>
-                      <ClockCircleOutlined />
-                      Thời gian nhận hàng
-                    </Space>
-                  }
-                >
-                  {new Date(s.received_at).toLocaleString("vi-VN")}
-                </Descriptions.Item>
-              )}
-            </Descriptions>
-          </Card>
         </Col>
 
         {/* Cột phải - Cập nhật trạng thái */}
@@ -1527,6 +1588,86 @@ const OrderDetail: React.FC = () => {
                 </Form.Item>
               </Form>
             )}
+          </Card>
+
+          {/* Thông tin khách hàng */}
+          <Card
+            title={
+              <Space>
+                <UserOutlined />
+                <span>Thông tin khách hàng</span>
+              </Space>
+            }
+            style={{ marginBottom: 24, borderRadius: 8 }}
+          >
+            <Descriptions column={1} size="middle">
+              <Descriptions.Item
+                label={
+                  <Space>
+                    <UserOutlined />Họ tên
+                  </Space>
+                }
+              >
+                <Text strong>{order.user?.name}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={
+                  <Space>
+                    <PhoneOutlined />
+                    Số điện thoại
+                  </Space>
+                }
+              >
+                {order.user?.phone}
+              </Descriptions.Item>
+              <Descriptions.Item
+                label={
+                  <Space>
+                    <MailOutlined />
+                    Email
+                  </Space>
+                }
+              >
+                {order.user?.email}
+              </Descriptions.Item>
+
+              {order.user?.bank_account_number && (
+                <>
+                  <Descriptions.Item
+                    label={
+                      <Space>
+                        <CreditCardOutlined />
+                        Số tài khoản ngân hàng
+                      </Space>
+                    }
+                  >
+                    {order.user.bank_account_number}
+                  </Descriptions.Item>
+
+                  <Descriptions.Item
+                    label={
+                      <Space>
+                        <BankOutlined />
+                        Tên ngân hàng
+                      </Space>
+                    }
+                  >
+                    {order.user.bank_name || "—"}
+                  </Descriptions.Item>
+
+                  <Descriptions.Item
+                    label={
+                      <Space>
+                        <UserOutlined />
+                        Tên chủ thẻ
+                      </Space>
+                    }
+                  >
+                    {order.user.bank_account_name || "—"}
+                  </Descriptions.Item>
+                </>
+              )}
+            </Descriptions>
           </Card>
         </Col>
       </Row>

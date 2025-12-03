@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\client\OrderClientController;
 use App\Http\Controllers\Api\client\CategoryClientController;
 use App\Http\Controllers\Api\client\UserProfileController;
 use App\Http\Controllers\Api\client\ProductReviewController;
+use App\Http\Controllers\Api\client\SupportTicketController;
 
 
 // ==== ADMIN CONTROLLERS ====
@@ -28,9 +29,8 @@ use App\Http\Controllers\Api\admin\CategoryController;
 use App\Http\Controllers\Api\admin\AttributeController;
 use App\Http\Controllers\Api\admin\ProductVariantController;
 /* use App\Http\Controllers\Api\admin\ProductReviewController; */
-use App\Http\Controllers\Api\admin\SupportTicketController;
-use App\Http\Controllers\Api\admin\WishlistController;
 use App\Http\Controllers\Api\admin\AddressBookController;
+use App\Http\Controllers\Api\admin\AdminSupportTicketController;
 
 use App\Http\Controllers\Api\admin\CouponController;
 use App\Http\Controllers\Api\admin\OrderController;
@@ -63,29 +63,6 @@ Route::get('banners/active', [HomeBannerController::class, 'active']);
 Route::get('banners', [HomeBannerController::class, 'index']);
 
 
-
-/*
-|--------------------------------------------------------------------------
-| API Routes
-|--------------------------------------------------------------------------
-| Phiên bản refactor chuẩn RESTful – Laravel 12+
-| Tách biệt rõ client / admin / upload / auth
-|--------------------------------------------------------------------------
-*/
-
-
-// =====================================================================
-// 🔐 AUTH ROUTES
-// =====================================================================
-
-
-
-
-
-
-
-
-// ----------------------
 
 
 Route::prefix('auth')->group(function () {
@@ -183,6 +160,7 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
 
+
 });
 
 Route::prefix('products')->group(function () {
@@ -227,8 +205,6 @@ Route::adminApiResource('admin/categories', CategoryController::class);
 Route::adminApiResource('admin/attributes', AttributeController::class);
 Route::adminApiResource('admin/product-variants', ProductVariantController::class);
 /* Route::adminApiResource('admin/product-reviews', ProductReviewController::class); */
-Route::adminApiResource('admin/support-tickets', SupportTicketController::class);
-Route::adminApiResource('admin/wishlists', WishlistController::class);
 Route::adminApiResource('admin/address-book', AddressBookController::class);
 Route::adminApiResource('admin/coupons', CouponController::class);
 Route::adminApiResource('admin/orders-admin', OrderController::class);
@@ -269,6 +245,34 @@ Route::middleware('auth:sanctum')->group(function () {
 
 });
 
+// Client routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::prefix('support-tickets')->group(function () {
+        Route::get('/', [SupportTicketController::class, 'index']);
+        Route::get('/{id}', [SupportTicketController::class, 'show']);
+        Route::post('/', [SupportTicketController::class, 'store']);
+        Route::post('/{id}/cancel', [SupportTicketController::class, 'cancel']);
+    });
+});
+
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    // Danh sách tickets
+    Route::get('/support-tickets', [AdminSupportTicketController::class, 'index']);
+    
+    // Chi tiết ticket
+    Route::get('/support-tickets/{id}', [AdminSupportTicketController::class, 'show']);
+    
+    // Cập nhật status
+    Route::patch('/support-tickets/{id}/status', [AdminSupportTicketController::class, 'updateStatus']);
+    
+    // Cập nhật nội dung
+    Route::put('/support-tickets/{id}', [AdminSupportTicketController::class, 'update']);
+    
+    // Xóa ticket
+    Route::delete('/support-tickets/{id}', [AdminSupportTicketController::class, 'destroy']);
+});
+
+
 // ==================== ADMIN ROUTES ====================
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
 
@@ -278,12 +282,13 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 
 });
 
-// Admin Order Routes
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
-    // Existing routes...
-    
-    // ✅ Return Request Management
+    // Return Request Management - Full Request
     Route::get('orders/{id}/return-requests', [OrderController::class, 'returnRequests']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/approve', [OrderController::class, 'approveReturn']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/reject', [OrderController::class, 'rejectReturn']);
+    
+    // Return Request Management - Individual Items
+    Route::post('orders/{orderId}/return-requests/{returnRequestId}/items/{itemId}/approve', [OrderController::class, 'approveReturnItem']);
+    Route::post('orders/{orderId}/return-requests/{returnRequestId}/items/{itemId}/reject', [OrderController::class, 'rejectReturnItem']);
 });

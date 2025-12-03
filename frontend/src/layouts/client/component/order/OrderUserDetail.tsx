@@ -1120,7 +1120,7 @@ const OrderUserDetail: React.FC = () => {
                     <div style={{ backgroundColor: "#fff", padding: 16, borderRadius: 8, border: "2px solid #722ed1" }}>
                       <Row justify="space-between" align="middle">
                         <Col>
-                          <Text strong style={{ fontSize: 18 }}>Số tiền hoàn dự kiến:</Text>
+                          <Text strong style={{ fontSize: 18 }}>Số tiền hoàn:</Text>
                         </Col>
                         <Col>
                           <Text strong style={{ fontSize: 24, color: "#722ed1" }}>

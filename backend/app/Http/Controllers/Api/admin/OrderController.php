@@ -461,7 +461,7 @@ class OrderController extends Controller
         if ($order->payment_status === 'refund_processing' && isset($data['shipping_status'])) {
             $newShippingStatus = $data['shipping_status'];
             $currentShippingStatus = $order->shipping->shipping_status;
-            
+
             if (!in_array($newShippingStatus, ['return_fail', 'returned']) && $newShippingStatus !== $currentShippingStatus) {
                 abort(400, 'Không thể cập nhật trạng thái vận chuyển khi đơn hàng đang xử lý hoàn tiền!');
             }
@@ -692,4 +692,95 @@ class OrderController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * ✅ Duyệt sản phẩm hoàn (Admin approve item)
+     */
+    /**
+     * ✅ Duyệt sản phẩm hoàn (Admin approve item)
+     */
+    public function approveReturnItem(Request $request, $orderId, $returnRequestId, $itemId)
+    {
+        $validated = $request->validate([
+            'admin_response' => 'nullable|string|max:500',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $returnItem = ReturnItem::where('return_request_id', $returnRequestId)
+                ->findOrFail($itemId);
+
+            if (!$returnItem->canApprove()) {
+                return response()->json([
+                    'message' => 'Không thể duyệt sản phẩm ở trạng thái hiện tại'
+                ], 400);
+            }
+
+            // Duyệt sản phẩm
+            $returnItem->markAsApproved($validated['admin_response'] ?? null);
+
+            // ✅ THÊM: Tính lại số tiền hoàn
+            $returnRequest = $returnItem->returnRequest;
+            $returnRequest->recalculateAmounts();
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Đã duyệt sản phẩm hoàn hàng!',
+                'data' => $returnRequest->fresh(['items']) // ✅ Trả về returnRequest đã update
+            ], 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Approve return item error: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Lỗi khi duyệt sản phẩm',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+/**
+ * ❌ Từ chối sản phẩm hoàn (Admin reject item)
+ */
+public function rejectReturnItem(Request $request, $orderId, $returnRequestId, $itemId)
+{
+    $validated = $request->validate([
+        'admin_response' => 'required|string|max:500',
+    ]);
+
+    DB::beginTransaction();
+    try {
+        $returnItem = ReturnItem::where('return_request_id', $returnRequestId)
+            ->findOrFail($itemId);
+
+        if (!$returnItem->canReject()) {
+            return response()->json([
+                'message' => 'Không thể từ chối sản phẩm ở trạng thái hiện tại'
+            ], 400);
+        }
+
+        // Từ chối sản phẩm
+        $returnItem->markAsRejected($validated['admin_response']);
+
+        // ✅ THÊM: Tính lại số tiền hoàn
+        $returnRequest = $returnItem->returnRequest;
+        $returnRequest->recalculateAmounts();
+
+        DB::commit();
+
+        return response()->json([
+            'message' => 'Đã từ chối sản phẩm hoàn hàng!',
+            'data' => $returnRequest->fresh(['items']) // ✅ Trả về returnRequest đã update
+        ], 200);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Reject return item error: ' . $e->getMessage());
+        return response()->json([
+            'message' => 'Lỗi khi từ chối sản phẩm',
+            'error' => config('app.debug') ? $e->getMessage() : null
+        ], 500);
+    }
+}
 }

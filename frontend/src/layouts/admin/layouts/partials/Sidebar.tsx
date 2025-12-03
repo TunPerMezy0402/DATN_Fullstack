@@ -59,7 +59,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
     {
       id: "orders",
       title: "Đơn hàng",
-      icon: "fa-list",
+      icon: "fa-shopping-cart",
       items: [
         { label: "Tất cả đơn hàng", path: "/admin/orders" },
       ],
@@ -67,32 +67,31 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
     {
       id: "coupons",
       title: "Mã giảm giá",
-      icon: "fa-list",
+      icon: "fa-tag",
       items: [
         { label: "Tất cả mã giảm giá", path: "/admin/coupons" },
-        { label: "Thêm danh mục", path: "/admin/coupons/create" },
+        { label: "Thêm mã giảm giá", path: "/admin/coupons/create" },
         { label: "Mã lưu trữ", path: "/admin/coupons/trash" },
       ],
     },
-  ];
-
-  const contentGroups: MenuItem[] = [
     {
-      id: "blog",
-      title: "Blog",
-      icon: "fa-file-alt",
+      id: "comments",
+      title: "Quản lý bình luận",
+      icon: "fa-comments",
       items: [
-        { label: "Tất cả trang", path: "/admin/blog" },
-        { label: "Thêm trang mới", path: "/admin/blog/create" },
+        { label: "Tất cả bình luận", path: "/admin/comments" },
+        { label: "Bình luận chờ duyệt", path: "/admin/comments/pending" },
       ],
     },
     {
-      id: "banner",
-      title: "Banner",
-      icon: "fa-image",
+      id: "support",
+      title: "Hỗ Trợ Khách Hàng",
+      icon: "fa-headset",
       items: [
-        { label: "Tất cả Banner", path: "/admin/banners" },
-        { label: "Thêm banner mới", path: "/admin/banners/create" },
+        { label: "Tất cả ticket", path: "/admin/support-tickets" },
+        { label: "Ticket mở", path: "/admin/support-tickets?status=open" },
+        { label: "Đang xử lý", path: "/admin/support-tickets?status=in_progress" },
+        { label: "Đã đóng", path: "/admin/support-tickets?status=closed" },
       ],
     },
   ];
@@ -116,7 +115,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
         <div
           id={`submenu-${group.id}`}
           className={`sidebar__submenu ${open ? "sidebar__submenu--open" : ""}`}
-          // để screen reader hiểu có thể mở/đóng
           role="region"
           aria-hidden={!open}
         >
@@ -127,7 +125,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
               className={({ isActive }) =>
                 `sidebar__sublink ${isActive ? "sidebar__sublink--active" : ""}`
               }
-              onClick={onToggle} // đóng sidebar trên mobile
+              onClick={onToggle}
             >
               <span className="sidebar__sublink-dot" />
               {item.label}
@@ -141,7 +139,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
   return (
     <>
       <aside className={`sidebar ${isToggled ? "is-open" : ""}`}>
-
         {/* Brand */}
         <div className="sidebar__brand">
           <NavLink to="/admin" className="sidebar__brand-link" onClick={onToggle}>
@@ -154,7 +151,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
 
         {/* Nav */}
         <nav className="sidebar__nav">
-
           {/* Dashboard */}
           <div className="sidebar__section">
             <NavLink
@@ -187,58 +183,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
             {managementGroups.map((g) => (
               <DropdownGroup key={g.id} group={g} />
             ))}
-
-          </div>
-
-          {/* Nội dung */}
-          <div className="sidebar__section">
-            <div className="sidebar__heading">Nội dung</div>
-            {contentGroups.map((g) => (
-              <DropdownGroup key={g.id} group={g} />
-            ))}
-          </div>
-
-          {/* Báo cáo */}
-          <div className="sidebar__section">
-            <div className="sidebar__heading">Báo cáo</div>
-
-            <NavLink
-              to="/admin/charts"
-              className={({ isActive }) =>
-                `sidebar__link ${isActive ? "sidebar__link--active" : ""}`
-              }
-              onClick={onToggle}
-            >
-              <i className="sidebar__icon fas fa-chart-area" />
-              <span className="sidebar__text">Biểu đồ</span>
-            </NavLink>
-
-            <NavLink
-              to="/admin/tables"
-              className={({ isActive }) =>
-                `sidebar__link ${isActive ? "sidebar__link--active" : ""}`
-              }
-              onClick={onToggle}
-            >
-              <i className="sidebar__icon fas fa-table" />
-              <span className="sidebar__text">Bảng dữ liệu</span>
-            </NavLink>
-          </div>
-
-          {/* Hệ thống */}
-          <div className="sidebar__section">
-            <div className="sidebar__heading">Hệ thống</div>
-
-            <NavLink
-              to="/admin/settings"
-              className={({ isActive }) =>
-                `sidebar__link ${isActive ? "sidebar__link--active" : ""}`
-              }
-              onClick={onToggle}
-            >
-              <i className="sidebar__icon fas fa-cog" />
-              <span className="sidebar__text">Cài đặt</span>
-            </NavLink>
           </div>
         </nav>
       </aside>

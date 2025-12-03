@@ -56,6 +56,9 @@ class ReturnRequest extends Model
     const STATUS_COMPLETED = 'completed';
     const STATUS_REJECTED = 'rejected';
 
+    const FREE_SHIPPING_THRESHOLD = 500000; // Miễn phí ship nếu >= 500k
+    const SHIPPING_FEE = 30000;             // Phí ship cố định
+
     // ============================================================
     //                         RELATIONSHIPS
     // ============================================================
@@ -84,22 +87,6 @@ class ReturnRequest extends Model
         return $query->where('status', self::STATUS_PENDING);
     }
 
-    public function restoreStock(): void
-    {
-        foreach ($this->items as $returnItem) {
-            if ($returnItem->status === ReturnItem::STATUS_COMPLETED && $returnItem->variant) {
-                $returnItem->variant->increment('stock_quantity', $returnItem->quantity);
-                $returnItem->variant->decrement('quantity_sold', $returnItem->quantity);
-
-                Log::info("Stock restored", [
-                    'variant_id' => $returnItem->variant->id,
-                    'quantity' => $returnItem->quantity,
-                    'return_request_id' => $this->id,
-                ]);
-            }
-        }
-    }
-
     public function scopeProcessing($query)
     {
         return $query->where('status', self::STATUS_PROCESSING);
@@ -118,6 +105,107 @@ class ReturnRequest extends Model
     // ============================================================
     //                         METHODS
     // ============================================================
+
+    /**
+     * ✅ Tính lại số tiền hoàn dựa trên items đã được duyệt
+     */
+    public function recalculateAmounts(): self
+    {
+        // Load relations nếu chưa có
+        if (!$this->relationLoaded('items')) {
+            $this->load('items');
+        }
+        if (!$this->relationLoaded('order')) {
+            $this->load('order.items');
+        }
+
+        $order = $this->order;
+
+        // 1. Chỉ tính các items có status = approved hoặc completed
+        $approvedItems = $this->items->whereIn('status', [
+            ReturnItem::STATUS_APPROVED,
+            ReturnItem::STATUS_COMPLETED
+        ]);
+
+        // 2. Tổng tiền hàng hoàn (chỉ items đã duyệt)
+        $totalReturnAmount = $approvedItems->sum('refund_amount');
+
+        // 3. Tính giảm giá được hoàn (theo tỷ lệ)
+        $refundedDiscount = 0;
+        if ($order->discount_amount > 0) {
+            $originalTotal = floatval($order->total_amount);
+            if ($originalTotal > 0) {
+                $discountRatio = floatval($order->discount_amount) / $originalTotal;
+                $refundedDiscount = $totalReturnAmount * $discountRatio;
+            }
+        }
+
+        // 4. Tính phí ship cũ (phí ship của đơn ban đầu)
+        $oldShippingFee = floatval($order->total_amount) >= self::FREE_SHIPPING_THRESHOLD 
+            ? 0 
+            : self::SHIPPING_FEE;
+
+        // 5. Số tiền đơn còn lại sau khi hoàn
+        $remainingAmount = floatval($order->final_amount) - $totalReturnAmount + $refundedDiscount;
+
+        // 6. Tính phí ship mới (của đơn còn lại)
+        // Chú ý: Tính dựa trên total_amount còn lại (chưa trừ discount)
+        $remainingTotalAmount = floatval($order->total_amount) - $totalReturnAmount;
+        $newShippingFee = $remainingTotalAmount >= self::FREE_SHIPPING_THRESHOLD 
+            ? 0 
+            : self::SHIPPING_FEE;
+
+        // 7. Chênh lệch phí ship (số tiền phải trừ thêm từ refund)
+        // - Nếu oldShippingFee = 0, newShippingFee = 30k → shipping_diff = -30k (khách phải trả thêm ship)
+        // - Nếu oldShippingFee = 30k, newShippingFee = 0 → shipping_diff = 30k (được hoàn cả ship)
+        $shippingDiff = $oldShippingFee - $newShippingFee;
+
+        // 8. Số tiền hoàn dự kiến
+        // = Tiền hàng - Giảm giá được hoàn - Chênh lệch ship
+        $estimatedRefund = $totalReturnAmount - $refundedDiscount - $shippingDiff;
+        $estimatedRefund = max(0, $estimatedRefund); // Không được âm
+
+        // 9. Cập nhật vào database
+        $this->update([
+            'total_return_amount' => $totalReturnAmount,
+            'refunded_discount' => $refundedDiscount,
+            'old_shipping_fee' => $oldShippingFee,
+            'new_shipping_fee' => $newShippingFee,
+            'shipping_diff' => $shippingDiff,
+            'estimated_refund' => $estimatedRefund,
+            'remaining_amount' => max(0, $remainingAmount),
+        ]);
+
+        Log::info('Return request amounts recalculated', [
+            'return_request_id' => $this->id,
+            'total_return_amount' => $totalReturnAmount,
+            'refunded_discount' => $refundedDiscount,
+            'shipping_diff' => $shippingDiff,
+            'estimated_refund' => $estimatedRefund,
+            'approved_items_count' => $approvedItems->count(),
+        ]);
+
+        return $this->fresh();
+    }
+
+    /**
+     * Khôi phục kho hàng
+     */
+    public function restoreStock(): void
+    {
+        foreach ($this->items as $returnItem) {
+            if ($returnItem->status === ReturnItem::STATUS_COMPLETED && $returnItem->variant) {
+                $returnItem->variant->increment('stock_quantity', $returnItem->quantity);
+                $returnItem->variant->decrement('quantity_sold', $returnItem->quantity);
+
+                Log::info("Stock restored", [
+                    'variant_id' => $returnItem->variant->id,
+                    'quantity' => $returnItem->quantity,
+                    'return_request_id' => $this->id,
+                ]);
+            }
+        }
+    }
 
     /**
      * Kiểm tra có thể xử lý không
