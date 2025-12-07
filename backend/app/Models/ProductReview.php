@@ -9,25 +9,40 @@ class ProductReview extends Model
     public $timestamps = false; // bảng dùng comment_time thay vì timestamps mặc định
 
     protected $fillable = [
-        'user_name', 'product_id', 'comment', 'parent_id', 'comment_time',
+        'user_id',
+        'product_id',
+        'variant_id', 
+        'order_id',
+        'rating',       
+        'comment',
+        'comment_time',
     ];
 
     protected $casts = [
         'comment_time' => 'datetime',
     ];
 
+    /**
+     * Relationship với Product
+     */
     public function product()
     {
         return $this->belongsTo(Product::class);
     }
 
-    public function parent()
+    /**
+     * Relationship với User
+     */
+    public function user()
     {
-        return $this->belongsTo(ProductReview::class, 'parent_id');
+        return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function children()
+    /**
+     * Relationship với Order
+     */
+    public function order()
     {
-        return $this->hasMany(ProductReview::class, 'parent_id');
+        return $this->belongsTo(Order::class, 'order_id');
     }
 }

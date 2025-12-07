@@ -5,16 +5,17 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\ValidationException;
-use Laravel\Socialite\Facades\Socialite;
-use App\Models\User;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Hash;
-
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Auth\Events\PasswordReset;
+use App\Models\User;
 
 class AuthController extends Controller
 {
-
-     public function register(Request $request)
+    public function register(Request $request)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:100',
@@ -22,12 +23,10 @@ class AuthController extends Controller
             'password' => 'required|string|min:6|confirmed',
         ]);
 
-        // Generate unique name (since name has unique constraint)
         $baseName = $validated['name'];
         $name = $baseName;
         $counter = 1;
         
-        // Ensure name is unique
         while (User::where('name', $name)->exists()) {
             $name = $baseName . ' (' . $counter . ')';
             $counter++;
@@ -45,9 +44,6 @@ class AuthController extends Controller
         ], 201);
     }
 
-    /**
-     * Đăng nhập tài khoản thường (email + password)
-     */
     public function login(Request $request)
     {
         $credentials = $request->validate([
@@ -63,10 +59,7 @@ class AuthController extends Controller
 
         /** @var \App\Models\User $user */
         $user = Auth::user();
-
-        // Xóa token cũ (nếu muốn giới hạn 1 token mỗi user)
         $user->tokens()->delete();
-
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
@@ -77,9 +70,6 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Đăng xuất
-     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
@@ -90,9 +80,6 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Lấy thông tin user hiện tại
-     */
     public function me(Request $request)
     {
         return response()->json([
@@ -102,8 +89,97 @@ class AuthController extends Controller
     }
 
     /**
-     * Đăng nhập bằng Google OAuth (Google Identity Services)
+     * Gửi email đặt lại mật khẩu
      */
+    public function forgotPassword(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+        
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Email không tồn tại trong hệ thống.',
+            ], 404);
+        }
+
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        if ($status === Password::RESET_LINK_SENT) {
+            return response()->json([
+                'status' => true,
+                'message' => 'Đã gửi email khôi phục mật khẩu! Vui lòng kiểm tra hộp thư.',
+            ]);
+        }
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Không thể gửi email. Vui lòng thử lại sau.',
+        ], 500);
+    }
+
+    /**
+     * Đặt lại mật khẩu mới
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required',
+            'password' => 'required|min:6|confirmed',
+        ]);
+
+        // Tìm email từ token trong bảng password_reset_tokens
+        $tokenRecord = DB::table('password_reset_tokens')
+            ->whereNotNull('token')
+            ->get()
+            ->first(function ($record) use ($request) {
+                return Hash::check($request->token, $record->token);
+            });
+
+        if (!$tokenRecord) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Token không hợp lệ hoặc đã hết hạn.',
+            ], 400);
+        }
+
+        $status = Password::reset(
+            [
+                'email' => $tokenRecord->email,
+                'password' => $request->password,
+                'password_confirmation' => $request->password_confirmation,
+                'token' => $request->token,
+            ],
+            function (User $user, string $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                ])->setRememberToken(Str::random(60));
+
+                $user->save();
+                $user->tokens()->delete();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json([
+                'status' => true,
+                'message' => 'Đặt lại mật khẩu thành công! Vui lòng đăng nhập.',
+            ]);
+        }
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Token không hợp lệ hoặc đã hết hạn.',
+        ], 400);
+    }
+
     public function googleLogin(Request $request)
     {
         try {
@@ -115,7 +191,6 @@ class AuthController extends Controller
                 ], 400);
             }
 
-            // Xác thực token Google bằng Google Identity Services
             $client = new \GuzzleHttp\Client();
             $response = $client->get('https://oauth2.googleapis.com/tokeninfo', [
                 'query' => ['id_token' => $googleToken]
@@ -130,7 +205,6 @@ class AuthController extends Controller
             
             $googleData = json_decode($response->getBody(), true);
 
-            // Kiểm tra client_id để đảm bảo token từ đúng ứng dụng
             $expectedClientId = config('services.google.client_id');
             if ($googleData['aud'] !== $expectedClientId) {
                 return response()->json([
@@ -146,18 +220,15 @@ class AuthController extends Controller
                 ], 400);
             }
 
-            // Generate unique name if needed
             $baseName = $googleData['name'] ?? $googleData['email'];
             $name = $baseName;
             $counter = 1;
             
-            // Check if name exists for other users
             while (User::where('name', $name)->where('email', '!=', $googleData['email'])->exists()) {
                 $name = $baseName . ' (' . $counter . ')';
                 $counter++;
             }
 
-            // Tạo hoặc cập nhật user trong DB
             $user = User::updateOrCreate(
                 ['email' => $googleData['email']],
                 [
@@ -168,7 +239,6 @@ class AuthController extends Controller
                 ]
             );
 
-            // Xóa token cũ và tạo token mới
             $user->tokens()->delete();
             $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -194,9 +264,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Đăng ký bằng Google OAuth (Google Identity Services)
-     */
     public function googleRegister(Request $request)
     {
         try {
@@ -205,7 +272,6 @@ class AuthController extends Controller
                 return response()->json(['status' => false, 'message' => 'Thiếu Google token.'], 400);
             }
 
-            // Xác thực token Google bằng Google Identity Services
             $client = new \GuzzleHttp\Client();
             $response = $client->get('https://oauth2.googleapis.com/tokeninfo', [
                 'query' => ['id_token' => $googleToken]
@@ -217,7 +283,6 @@ class AuthController extends Controller
             
             $googleData = json_decode($response->getBody(), true);
 
-            // Kiểm tra client_id để đảm bảo token từ đúng ứng dụng
             $expectedClientId = config('services.google.client_id');
             if ($googleData['aud'] !== $expectedClientId) {
                 return response()->json([
@@ -230,7 +295,6 @@ class AuthController extends Controller
                 return response()->json(['status' => false, 'message' => 'Email Google chưa được xác thực.'], 400);
             }
 
-            // Nếu đã có user => báo lỗi
             if (User::where('email', $googleData['email'])->exists()) {
                 return response()->json([
                     'status' => false,
@@ -238,7 +302,6 @@ class AuthController extends Controller
                 ], 409);
             }
 
-            // Generate unique name if needed
             $baseName = $googleData['name'] ?? $googleData['email'];
             $name = $baseName;
             $counter = 1;
@@ -248,17 +311,15 @@ class AuthController extends Controller
                 $counter++;
             }
 
-            // Tạo user mới
             $user = User::create([
                 'name' => $name,
                 'email' => $googleData['email'],
                 'google_id' => $googleData['sub'],
                 'avatar' => $googleData['picture'] ?? null,
                 'email_verified_at' => now(),
-                'password' => Hash::make(uniqid()), // tạo mật khẩu ngẫu nhiên
+                'password' => Hash::make(uniqid()),
             ]);
 
-            // Tạo token
             $token = $user->createToken('auth_token')->plainTextToken;
 
             return response()->json([

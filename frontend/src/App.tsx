@@ -5,6 +5,8 @@ import PrivateRoute from './components/PrivateRoute';
 import AdminRoutes from './routes/AdminRoutes';
 import ClientRoutes from './routes/ClientRoutes';
 import Login from './layouts/account/Login';
+import ForgotPassword from './layouts/account/ForgotPassword';
+import ResetPassword  from './layouts/account/ResetPassword';
 import Register from './layouts/account/Register';
 import Unauthorized from './pages/Unauthorized';
 import authService from './services/authService';
@@ -42,6 +44,23 @@ const App: React.FC = () => {
           element={
             <PublicRoute>
               <Register />
+            </PublicRoute>
+          } 
+        />
+        <Route 
+          path="/forgot-password" 
+          element={
+            <PublicRoute>
+              <ForgotPassword />
+            </PublicRoute>
+          } 
+        />
+
+        <Route 
+          path="/reset-password" 
+          element={
+            <PublicRoute>
+              <ResetPassword  />
             </PublicRoute>
           } 
         />

@@ -11,9 +11,8 @@ import {
   Upload,
   Spin,
   Select,
-  Checkbox,
-  Space,
   Popconfirm,
+  Tabs,
 } from "antd";
 import {
   EditOutlined,
@@ -22,6 +21,7 @@ import {
   SaveOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
+  BankOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import authService from "../../../../services/authService";
@@ -31,28 +31,32 @@ import NoImage from "../../../../assets/client/img/default-avatar.jpg";
 
 const { Title } = Typography;
 
-// ✅ Lấy token đăng nhập
 const getAuthToken = () =>
   localStorage.getItem("access_token") || localStorage.getItem("token");
 
 const Profile: React.FC = () => {
-
   const [editing, setEditing] = useState({
     name: false,
     phone: false,
+    bank: false,
   });
 
   const [hasChanges, setHasChanges] = useState(false);
+  const [hasAvatarChange, setHasAvatarChange] = useState(false);
+  const [hasBankChanges, setHasBankChanges] = useState(false);
 
   const [form] = Form.useForm();
+  const [bankForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [addressForm] = Form.useForm();
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [passwordModal, setPasswordModal] = useState(false);
+  const [bankPasswordModal, setBankPasswordModal] = useState(false);
 
   const [addresses, setAddresses] = useState<any[]>([]);
   const [addressModal, setAddressModal] = useState(false);
@@ -61,10 +65,10 @@ const Profile: React.FC = () => {
   const [districtList, setDistrictList] = useState<any[]>([]);
   const [wardList, setWardList] = useState<any[]>([]);
 
-  // ✅ Ref để lưu trữ object URL hiện tại
   const avatarObjectUrlRef = useRef<string | null>(null);
+  const initialValuesRef = useRef<any>({});
+  const initialBankValuesRef = useRef<any>({});
 
-  // ✅ Lấy thông tin người dùng + địa chỉ
   const fetchProfile = async () => {
     try {
       setLoading(true);
@@ -75,14 +79,29 @@ const Profile: React.FC = () => {
 
       setUser(res.data.user);
       setAddresses(res.data.addresses || []);
-      // Backend returns full URL in `image`
       setAvatarPreview(res.data.user.image || null);
 
-      form.setFieldsValue({
+      const initialValues = {
         name: res.data.user.name,
         email: res.data.user.email,
         phone: res.data.user.phone,
-      });
+      };
+
+      const initialBankValues = {
+        bank_account_number: res.data.user.bank_account_number || "",
+        bank_name: res.data.user.bank_name || "",
+        bank_account_name: res.data.user.bank_account_name || "",
+      };
+
+      form.setFieldsValue(initialValues);
+      bankForm.setFieldsValue(initialBankValues);
+
+      initialValuesRef.current = initialValues;
+      initialBankValuesRef.current = initialBankValues;
+
+      setHasChanges(false);
+      setHasAvatarChange(false);
+      setHasBankChanges(false);
     } catch {
       message.error("Không thể tải thông tin người dùng");
     } finally {
@@ -94,7 +113,6 @@ const Profile: React.FC = () => {
     fetchProfile();
   }, []);
 
-  // ✅ Cleanup object URL khi component unmount
   useEffect(() => {
     return () => {
       if (avatarObjectUrlRef.current) {
@@ -103,9 +121,26 @@ const Profile: React.FC = () => {
     };
   }, []);
 
-  // ✅ Cập nhật hồ sơ
+  const checkFormChanges = (changedValues: any, allValues: any) => {
+    const hasFormChange =
+      allValues.name !== initialValuesRef.current.name ||
+      allValues.phone !== initialValuesRef.current.phone;
+
+    setHasChanges(hasFormChange);
+  };
+
+  const checkBankChanges = (changedValues: any, allValues: any) => {
+    const hasBankChange =
+      allValues.bank_account_number !== initialBankValuesRef.current.bank_account_number ||
+      allValues.bank_name !== initialBankValuesRef.current.bank_name ||
+      allValues.bank_account_name !== initialBankValuesRef.current.bank_account_name;
+
+    setHasBankChanges(hasBankChange);
+  };
+
   const handleUpdateProfile = async (values: any) => {
     try {
+      setSaving(true);
       const token = getAuthToken();
       const formData = new FormData();
 
@@ -115,75 +150,123 @@ const Profile: React.FC = () => {
 
       if (avatarFile) formData.append("avatar", avatarFile);
 
-      // Use POST with method override to ensure file uploads work across environments
       formData.append("_method", "PUT");
       const res = await axios.post("/api/profile", formData, {
         headers: {
           Authorization: `Bearer ${token}`,
-          // Let axios set proper multipart boundary automatically
         },
       });
 
       message.success(res.data.message || "Cập nhật thành công");
-      // ✅ Cập nhật avatar vào local user và phát sự kiện để Header reload
+
       const newImage = res.data?.user?.image;
       if (newImage) {
         authService.updateUser({ avatar: newImage } as any);
-        window.dispatchEvent(new CustomEvent("profile-updated", { detail: { avatar: newImage } }));
+        window.dispatchEvent(
+          new CustomEvent("profile-updated", { detail: { avatar: newImage } })
+        );
+        setAvatarPreview(newImage);
       }
 
-      // ✅ Cleanup old object URL sau khi upload thành công
+      if (res.data?.user) {
+        setUser(res.data.user);
+        const updatedValues = {
+          name: res.data.user.name,
+          email: res.data.user.email,
+          phone: res.data.user.phone,
+        };
+        form.setFieldsValue(updatedValues);
+        initialValuesRef.current = updatedValues;
+      }
+
       if (avatarObjectUrlRef.current) {
         URL.revokeObjectURL(avatarObjectUrlRef.current);
         avatarObjectUrlRef.current = null;
       }
       setAvatarFile(null);
-
-      fetchProfile();
+      setHasAvatarChange(false);
+      setHasChanges(false);
     } catch {
       message.error("Cập nhật thất bại");
+    } finally {
+      setSaving(false);
     }
   };
 
-  // ✅ Hiển thị ảnh tạm khi upload
-  const handleAvatarChange = (info: UploadChangeParam) => {
-    console.log("Upload info:", info);
+  const handleUpdateBankInfo = async (passwordValues: any) => {
+    try {
+      setSaving(true);
+      const token = getAuthToken();
+      const bankValues = bankForm.getFieldsValue();
 
-    // Lấy file từ originFileObj hoặc file object
+      const payload = {
+        ...bankValues,
+        password: passwordValues.password,
+        _method: "PUT",
+      };
+
+      const res = await axios.post("/api/profile", payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      message.success("Cập nhật thông tin ngân hàng thành công");
+      
+      if (res.data?.user) {
+        const updatedBankValues = {
+          bank_account_number: res.data.user.bank_account_number || "",
+          bank_name: res.data.user.bank_name || "",
+          bank_account_name: res.data.user.bank_account_name || "",
+        };
+        bankForm.setFieldsValue(updatedBankValues);
+        initialBankValuesRef.current = updatedBankValues;
+      }
+
+      setHasBankChanges(false);
+      setBankPasswordModal(false);
+      setEditing((prev) => ({ ...prev, bank: false }));
+    } catch (err: any) {
+      message.error(
+        err.response?.data?.message || "Cập nhật thông tin ngân hàng thất bại"
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBankFormSubmit = () => {
+    if (!hasBankChanges) {
+      message.warning("Không có thay đổi nào");
+      return;
+    }
+    setBankPasswordModal(true);
+  };
+
+  const handleAvatarChange = (info: UploadChangeParam) => {
     const file = info.file.originFileObj || info.file;
 
     if (!file || !(file instanceof File)) {
-      console.log("No valid file found");
       return;
     }
 
-    console.log("File details:", {
-      name: file.name,
-      type: file.type,
-      size: file.size
-    });
-
-    // Basic client-side guard
     if (!file.type.startsWith("image/")) {
       message.error("Vui lòng chọn định dạng ảnh hợp lệ");
       return;
     }
 
-    // ✅ Cleanup old object URL trước khi tạo URL mới
     if (avatarObjectUrlRef.current) {
       URL.revokeObjectURL(avatarObjectUrlRef.current);
     }
 
-    // ✅ Tạo object URL mới và lưu vào ref
     const objectUrl = URL.createObjectURL(file);
-    console.log("Created object URL:", objectUrl);
     avatarObjectUrlRef.current = objectUrl;
 
     setAvatarFile(file);
     setAvatarPreview(objectUrl);
+    setHasAvatarChange(true);
   };
 
-  // ✅ Đổi mật khẩu
   const handleChangePassword = async (values: any) => {
     try {
       const token = getAuthToken();
@@ -198,7 +281,6 @@ const Profile: React.FC = () => {
     }
   };
 
-  // ✅ Khi chọn tỉnh/huyện
   const handleProvinceChange = (provinceCode: string) => {
     const filtered = districts.filter((d) => d.province_code === provinceCode);
     setDistrictList(filtered);
@@ -212,33 +294,46 @@ const Profile: React.FC = () => {
     addressForm.setFieldsValue({ commune: null });
   };
 
-  // ✅ Lưu địa chỉ
   const handleSaveAddress = async (values: any) => {
     try {
       const token = getAuthToken();
 
       if (editAddress) {
-        await axios.put(`/api/profile/address/${editAddress.id}`, values, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await axios.put(
+          `/api/profile/address/${editAddress.id}`,
+          values,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
         message.success("Cập nhật địa chỉ thành công");
+
+        setAddresses((prev) =>
+          prev.map((addr) =>
+            addr.id === editAddress.id
+              ? res.data.address || { ...addr, ...values }
+              : addr
+          )
+        );
       } else {
-        await axios.post("/api/profile/address", values, {
+        const res = await axios.post("/api/profile/address", values, {
           headers: { Authorization: `Bearer ${token}` },
         });
         message.success("Thêm địa chỉ thành công");
+
+        if (res.data.address) {
+          setAddresses((prev) => [...prev, res.data.address]);
+        }
       }
 
       setAddressModal(false);
       setEditAddress(null);
       addressForm.resetFields();
-      fetchProfile();
     } catch {
       message.error("Không thể lưu địa chỉ");
     }
   };
 
-  // ✅ Đặt làm địa chỉ mặc định
   const handleSetDefault = async (addressId: number) => {
     try {
       const token = getAuthToken();
@@ -255,7 +350,13 @@ const Profile: React.FC = () => {
       });
 
       message.success("Đã đặt làm địa chỉ mặc định");
-      fetchProfile();
+
+      setAddresses((prev) =>
+        prev.map((addr) => ({
+          ...addr,
+          is_default: addr.id === addressId,
+        }))
+      );
     } catch (err: any) {
       console.error(err.response?.data);
       message.error(
@@ -264,8 +365,6 @@ const Profile: React.FC = () => {
     }
   };
 
-
-
   const handleDeleteAddress = async (addressId: number) => {
     try {
       const token = getAuthToken();
@@ -273,7 +372,8 @@ const Profile: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       message.success("Đã xóa địa chỉ");
-      fetchProfile();
+
+      setAddresses((prev) => prev.filter((addr) => addr.id !== addressId));
     } catch {
       message.error("Không thể xóa địa chỉ");
     }
@@ -305,6 +405,8 @@ const Profile: React.FC = () => {
     const communeName = wards.find((w) => w.code === addr.commune)?.name || "";
     return `${addr.village}, ${communeName}, ${districtName}, ${cityName}`;
   };
+
+  const hasAnyChanges = hasChanges || hasAvatarChange;
 
   return (
     <div className="max-w-5xl mx-auto p-6">
@@ -343,87 +445,171 @@ const Profile: React.FC = () => {
             </Title>
             <Divider className="mt-0 mb-4" />
 
-            <Form
-              form={form}
-              layout="vertical"
-              onFinish={handleUpdateProfile}
-              className="flex flex-col gap-4"
-              onValuesChange={() => setHasChanges(true)}
-            >
-              {/* Họ và tên */}
-              <Form.Item
-                label={
-                  <div className="flex justify-between items-center">
-                    <span className="mr-3">Họ và tên</span>
-                    <EditOutlined
-                      onClick={() =>
-                        setEditing((prev) => ({ ...prev, name: !prev.name }))
-                      }
-                      className="cursor-pointer text-gray-500 hover:text-blue-500"
-                    />
-                  </div>
-                }
-                name="name"
-                rules={[{ required: true, message: "Vui lòng nhập họ tên" }]}
-              >
-                <Input
-                  placeholder="Nhập họ và tên"
-                  disabled={!editing.name}
-                />
-              </Form.Item>
+            <Tabs
+              defaultActiveKey="1"
+              items={[
+                {
+                  key: "1",
+                  label: "Thông tin chung",
+                  children: (
+                    <Form
+                      form={form}
+                      layout="vertical"
+                      onFinish={handleUpdateProfile}
+                      className="flex flex-col gap-4"
+                      onValuesChange={checkFormChanges}
+                    >
+                      <Form.Item
+                        label={
+                          <div className="flex justify-between items-center">
+                            <span className="mr-3">Họ và tên</span>
+                            <EditOutlined
+                              onClick={() =>
+                                setEditing((prev) => ({
+                                  ...prev,
+                                  name: !prev.name,
+                                }))
+                              }
+                              className="cursor-pointer text-gray-500 hover:text-blue-500"
+                            />
+                          </div>
+                        }
+                        name="name"
+                        rules={[
+                          { required: true, message: "Vui lòng nhập họ tên" },
+                        ]}
+                      >
+                        <Input
+                          placeholder="Nhập họ và tên"
+                          disabled={!editing.name}
+                        />
+                      </Form.Item>
 
-              {/* Email */}
-              <Form.Item label="Email" name="email">
-                <Input disabled />
-              </Form.Item>
+                      <Form.Item label="Email" name="email">
+                        <Input disabled />
+                      </Form.Item>
 
-              {/* Số điện thoại */}
-              <Form.Item
-                label={
-                  <div className="flex justify-between items-center">
-                    <span className="mr-3">Số điện thoại</span>
-                    <EditOutlined
-                      onClick={() =>
-                        setEditing((prev) => ({ ...prev, phone: !prev.phone }))
-                      }
-                      className="cursor-pointer text-gray-500 hover:text-blue-500"
-                    />
-                  </div>
-                }
-                name="phone"
-                rules={[
-                  { required: true, message: "Nhập số điện thoại" },
-                  { pattern: /^\d{10}$/, message: "Số điện thoại phải gồm 10 chữ số" },
-                ]}
-              >
-                <Input
-                  placeholder="Nhập số điện thoại"
-                  disabled={!editing.phone}
-                />
-              </Form.Item>
+                      <Form.Item
+                        label={
+                          <div className="flex justify-between items-center">
+                            <span className="mr-3">Số điện thoại</span>
+                            <EditOutlined
+                              onClick={() =>
+                                setEditing((prev) => ({
+                                  ...prev,
+                                  phone: !prev.phone,
+                                }))
+                              }
+                              className="cursor-pointer text-gray-500 hover:text-blue-500"
+                            />
+                          </div>
+                        }
+                        name="phone"
+                        rules={[
+                          { required: true, message: "Nhập số điện thoại" },
+                          {
+                            pattern: /^\d{10}$/,
+                            message: "Số điện thoại phải gồm 10 chữ số",
+                          },
+                        ]}
+                      >
+                        <Input
+                          placeholder="Nhập số điện thoại"
+                          disabled={!editing.phone}
+                        />
+                      </Form.Item>
 
-              {/* Nút hành động */}
-              <div className="flex flex-col md:flex-row gap-3 mt-2">
-                <Button
-  type="primary"
-  icon={<SaveOutlined />}
-  htmlType="submit"
-  className="flex-1"
-  disabled={!hasChanges || loading}
-  loading={loading}
->
-  Lưu thay đổi
-</Button>
-                <Button
-                  icon={<LockOutlined />}
-                  onClick={() => setPasswordModal(true)}
-                  className="flex-1"
-                >
-                  Đổi mật khẩu
-                </Button>
-              </div>
-            </Form>
+                      <div className="flex flex-col md:flex-row gap-3 mt-2">
+                        <Button
+                          type="primary"
+                          icon={<SaveOutlined />}
+                          htmlType="submit"
+                          className="flex-1"
+                          loading={saving}
+                          disabled={!hasAnyChanges}
+                        >
+                          Lưu thay đổi
+                        </Button>
+                        <Button
+                          icon={<LockOutlined />}
+                          onClick={() => setPasswordModal(true)}
+                          className="flex-1"
+                        >
+                          Đổi mật khẩu
+                        </Button>
+                      </div>
+                    </Form>
+                  ),
+                },
+                {
+                  key: "2",
+                  label: (
+                    <span>
+                      <BankOutlined /> Ngân hàng
+                    </span>
+                  ),
+                  children: (
+                    <Form
+                      form={bankForm}
+                      layout="vertical"
+                      className="flex flex-col gap-4"
+                      onValuesChange={checkBankChanges}
+                    >
+                      <Form.Item
+                        label={
+                          <div className="flex justify-between items-center">
+                            <span className="mr-3">Số tài khoản</span>
+                            <EditOutlined
+                              onClick={() =>
+                                setEditing((prev) => ({
+                                  ...prev,
+                                  bank: !prev.bank,
+                                }))
+                              }
+                              className="cursor-pointer text-gray-500 hover:text-blue-500"
+                            />
+                          </div>
+                        }
+                        name="bank_account_number"
+                      >
+                        <Input
+                          placeholder="Nhập số tài khoản"
+                          disabled={!editing.bank}
+                        />
+                      </Form.Item>
 
+                      <Form.Item label="Tên ngân hàng" name="bank_name">
+                        <Input
+                          placeholder="Nhập tên ngân hàng"
+                          disabled={!editing.bank}
+                        />
+                      </Form.Item>
+
+                      <Form.Item
+                        label="Tên chủ tài khoản"
+                        name="bank_account_name"
+                      >
+                        <Input
+                          placeholder="Nhập tên chủ tài khoản"
+                          disabled={!editing.bank}
+                        />
+                      </Form.Item>
+
+                      <Button
+                        type="primary"
+                        icon={<SaveOutlined />}
+                        onClick={handleBankFormSubmit}
+                        className="w-full"
+                        loading={saving}
+                        disabled={!hasBankChanges}
+                      >
+                        Lưu thông tin ngân hàng
+                      </Button>
+                    </Form>
+                  ),
+                },
+              ]}
+            />
           </div>
         </div>
       </Card>
@@ -484,18 +670,19 @@ const Profile: React.FC = () => {
                   </Popconfirm>
                 </div>
               </div>
-
             }
           >
             <p>{renderFullAddress(addr)}</p>
             {addr.notes && (
-              <p className="italic text-gray-600 mt-2">Ghi chú: {addr.notes}</p>
+              <p className="italic text-gray-600 mt-2">
+                Ghi chú: {addr.notes}
+              </p>
             )}
           </Card>
         ))}
-
       </Card>
 
+      {/* Modal đổi mật khẩu */}
       <Modal
         open={passwordModal}
         title="Đổi mật khẩu"
@@ -541,12 +728,49 @@ const Profile: React.FC = () => {
             <Input.Password />
           </Form.Item>
 
-          <Button type="primary" htmlType="submit" block icon={<EditOutlined />}>
+          <Button
+            type="primary"
+            htmlType="submit"
+            block
+            icon={<EditOutlined />}
+          >
             Cập nhật mật khẩu
           </Button>
         </Form>
       </Modal>
 
+      {/* Modal xác nhận mật khẩu khi cập nhật ngân hàng */}
+      <Modal
+        open={bankPasswordModal}
+        title="Xác nhận mật khẩu"
+        onCancel={() => setBankPasswordModal(false)}
+        footer={null}
+      >
+        <p className="mb-4 text-gray-600">
+          Vui lòng nhập mật khẩu để xác nhận thay đổi thông tin ngân hàng
+        </p>
+        <Form layout="vertical" onFinish={handleUpdateBankInfo}>
+          <Form.Item
+            label="Mật khẩu"
+            name="password"
+            rules={[{ required: true, message: "Vui lòng nhập mật khẩu" }]}
+          >
+            <Input.Password placeholder="Nhập mật khẩu của bạn" />
+          </Form.Item>
+
+          <Button
+            type="primary"
+            htmlType="submit"
+            block
+            loading={saving}
+            icon={<LockOutlined />}
+          >
+            Xác nhận
+          </Button>
+        </Form>
+      </Modal>
+
+      {/* Modal địa chỉ */}
       <Modal
         open={addressModal}
         title={editAddress ? "Sửa địa chỉ" : "Thêm địa chỉ mới"}
@@ -556,7 +780,11 @@ const Profile: React.FC = () => {
         }}
         footer={null}
       >
-        <Form form={addressForm} layout="vertical" onFinish={handleSaveAddress}>
+        <Form
+          form={addressForm}
+          layout="vertical"
+          onFinish={handleSaveAddress}
+        >
           <Form.Item
             label="Họ tên người nhận"
             name="recipient_name"
@@ -622,7 +850,10 @@ const Profile: React.FC = () => {
           </Form.Item>
 
           <Form.Item label="Ghi chú" name="notes">
-            <Input.TextArea rows={2} placeholder="Ghi chú giao hàng (nếu có)" />
+            <Input.TextArea
+              rows={2}
+              placeholder="Ghi chú giao hàng (nếu có)"
+            />
           </Form.Item>
           <Button type="primary" htmlType="submit" block>
             {editAddress ? "Cập nhật địa chỉ" : "Thêm mới"}

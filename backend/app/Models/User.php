@@ -28,6 +28,11 @@ class User extends Authenticatable
         'phone',
         'status',
         'role',
+
+        'bank_account_number',
+        'bank_name',
+        'bank_account_name',
+
     ];
 
     /**
@@ -63,6 +68,10 @@ class User extends Authenticatable
         return $this->hasMany(AddressBook::class, 'user_id');
     }
 
-    
+        // ✅ Thêm quan hệ reviews
+    public function reviews()
+    {
+        return $this->hasMany(ProductReview::class, 'user_id');
+    }
 
 }

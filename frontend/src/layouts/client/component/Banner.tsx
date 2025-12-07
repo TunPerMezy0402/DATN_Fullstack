@@ -5,17 +5,17 @@ const Banner = () => {
     {
       id: 1,
       title: "Giày thể thao mới nhất",
-      image: "",
+      image: "https://naidecor.vn/wp-content/uploads/2020/08/BST-GD-02.jpg",
     },
     {
       id: 2,
       title: "Giảm giá cực sốc 50%",
-      image: "",
+      image: "https://cdn.chiaki.vn/unsafe/0x800/left/top/smart/filters:quality(75)/https://chiaki.vn/upload/news/2024/11/12-cach-chup-giay-dep-de-ban-hang-online-chuan-studio-20112024163318.jpg",
     },
     {
       id: 3,
       title: "Sưu tập giày xuân 2025",
-      image: "",
+      image: "https://cdn.chiaki.vn/unsafe/0x480/left/top/smart/filters:quality(75)/https://chiaki.vn/upload/news/content/2024/11/chup-nhieu-hang-giay-trung-bay-tren-ke-jpg-1732095002-20112024163002.jpg",
     },
   ];
 

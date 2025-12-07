@@ -2,10 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class SupportTicket extends Model
 {
+    use HasFactory;
+
     protected $table = 'support_tickets';
 
     protected $fillable = [
@@ -15,7 +18,12 @@ class SupportTicket extends Model
         'status',
     ];
 
-    // Nếu có quan hệ với User
+    protected $casts = [
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+    ];
+
+    // Liên kết user (người tạo ticket)
     public function user()
     {
         return $this->belongsTo(User::class);

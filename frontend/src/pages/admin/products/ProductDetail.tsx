@@ -15,8 +15,9 @@ import {
   Typography,
   message,
   Statistic,
-  Badge,
   Empty,
+  Descriptions,
+  Tooltip,
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -28,11 +29,15 @@ import {
   GlobalOutlined,
   CrownOutlined,
   PictureOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  DollarOutlined,
+  InboxOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { getProduct } from '../../../services/productService';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 // ============= TYPES =============
 interface ProductVariant {
@@ -47,7 +52,7 @@ interface ProductVariant {
   stock_quantity?: number | null;
   is_available?: boolean | number | null;
   image?: string | null;
-  images?: string[] | null;
+  images?: string | string[] | null;
 }
 
 interface Product {
@@ -59,29 +64,43 @@ interface Product {
   brand?: string | null;
   description?: string | null;
   image?: string | null;
+  images?: string | string[] | null;
   variation_status?: boolean | number;
   variants?: ProductVariant[];
   category?: { id: number | string; name: string } | null;
-  category_option?: { value: number; label: string } | null;
 }
 
 // ============= UTILS =============
 const API_URL = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
 const API_ORIGIN = API_URL.replace(/\/?api\/?$/, '');
 
-const getImageUrl = (path?: string | null) => {
+const getImageUrl = (path?: string | null): string => {
   if (!path) return '';
   if (/^https?:\/\//i.test(path)) return path;
   return `${API_ORIGIN}/${path.replace(/^\/+/, '')}`;
 };
 
-const formatPrice = (val?: string | number | null) => {
+const parseImages = (value?: string | string[] | null): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const formatPrice = (val?: string | number | null): string => {
   if (val == null || val === '') return '—';
   const n = Number(val);
   return Number.isFinite(n) ? n.toLocaleString('vi-VN') + ' đ' : String(val);
 };
 
-const toBool = (val: any) => (typeof val === 'boolean' ? val : !!Number(val));
+const toBool = (val: any): boolean => (typeof val === 'boolean' ? val : !!Number(val));
 
 // ============= COMPONENT =============
 export default function ProductDetail() {
@@ -89,9 +108,6 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [product, setProduct] = useState<Product | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewImages, setPreviewImages] = useState<string[]>([]);
-  const [previewIndex, setPreviewIndex] = useState(0);
 
   const loadProduct = useCallback(async () => {
     if (!id) return;
@@ -111,108 +127,106 @@ export default function ProductDetail() {
     loadProduct();
   }, [loadProduct]);
 
-  const openPreview = (imgs: string[], idx = 0) => {
-    if (!imgs?.length) return;
-    setPreviewImages(imgs.map(getImageUrl));
-    setPreviewIndex(idx);
-    setPreviewOpen(true);
-  };
-
   const columns: ColumnsType<ProductVariant> = [
     {
-      title: '#',
+      title: 'STT',
       width: 60,
       align: 'center',
-      render: (_, __, i) => i + 1,
+      render: (_, __, i) => <Text strong>{i + 1}</Text>,
     },
-        {
+    {
       title: 'Hình ảnh',
       dataIndex: 'image',
       width: 100,
+      align: 'center',
       render: (img) => {
         const url = getImageUrl(img);
         return url ? (
-          <Image src={url} width={70} height={70} style={{ borderRadius: 8, objectFit: 'cover' }} />
+          <Image 
+            src={url} 
+            width={60} 
+            height={60} 
+            style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid #f0f0f0' }} 
+            placeholder={<Spin />}
+          />
         ) : (
-          <div style={{ width: 70, height: 70, background: '#f5f5f5', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <PictureOutlined style={{ fontSize: 24, color: '#bfbfbf' }} />
+          <div style={{ 
+            width: 60, 
+            height: 60, 
+            background: '#fafafa', 
+            borderRadius: 8, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            border: '1px solid #f0f0f0'
+          }}>
+            <PictureOutlined style={{ fontSize: 24, color: '#d9d9d9' }} />
           </div>
-        );
-      },
-    },
-    {
-      title: 'Album',
-      dataIndex: 'images',
-      width: 150,
-      render: (arr?: string[]) => {
-        if (!arr?.length) return <Text type="secondary">—</Text>;
-        return (
-          <Space size={4}>
-            {arr.slice(0, 2).map((p, i) => (
-              <Image
-                key={i}
-                src={getImageUrl(p)}
-                width={50}
-                height={50}
-                style={{ borderRadius: 6, objectFit: 'cover', cursor: 'pointer' }}
-                preview={false}
-                onClick={() => openPreview(arr, i)}
-              />
-            ))}
-            {arr.length > 2 && (
-              <Button size="small" type="link" onClick={() => openPreview(arr, 2)}>
-                +{arr.length - 2}
-              </Button>
-            )}
-          </Space>
         );
       },
     },
     {
       title: 'SKU',
       dataIndex: 'sku',
-      width: 120,
-      render: (sku) => (sku ? <Text code copyable={{ text: sku }}>{sku}</Text> : '—'),
+      width: 70,
+      render: (sku) => sku ? (
+        <Text code copyable={{ text: sku }} style={{ fontSize: 12 }}>{sku}</Text>
+      ) : (
+        <Text type="secondary">—</Text>
+      ),
     },
     {
       title: 'Size',
-      width: 50,
-      render: (_, r) => r.size?.value ?? r.size_id ?? '—',
+      width: 80,
+      align: 'center',
+      render: (_, r) => {
+        const val = r.size?.value ?? r.size_id;
+        return val ? <Tag color="blue">{val}</Tag> : <Text type="secondary">—</Text>;
+      },
     },
     {
-      title: 'Màu',
-      width: 50,
-      render: (_, r) => r.color?.value ?? r.color_id ?? '—',
-    },
-    {
-      title: 'Giá',
-      dataIndex: 'price',
+      title: 'Màu sắc',
       width: 100,
+      align: 'center',
+      render: (_, r) => {
+        const val = r.color?.value ?? r.color_id;
+        return val ? <Tag color="purple">{val}</Tag> : <Text type="secondary">—</Text>;
+      },
+    },
+    {
+      title: 'Giá bán',
+      dataIndex: 'price',
+      width: 80,
       align: 'right',
-      render: (v) => <Text strong>{formatPrice(v)}</Text>,
+      render: (v) => <Text strong style={{ color: '#1890ff', fontSize: 14 }}>{formatPrice(v)}</Text>,
     },
     {
       title: 'Giá KM',
       dataIndex: 'discount_price',
-      width: 100,
+      width: 80,
       align: 'right',
       render: (v, r) => {
-        if (v == null || v === '') return '—';
+        if (v == null || v === '') return <Text type="secondary">—</Text>;
         const valid = Number(v) <= Number(r.price ?? v);
-        return <Text type={valid ? 'success' : 'danger'}>{formatPrice(v)}</Text>;
+        return (
+          <Text strong style={{ color: valid ? '#52c41a' : '#ff4d4f', fontSize: 14 }}>
+            {formatPrice(v)}
+          </Text>
+        );
       },
     },
     {
       title: 'Tồn kho',
       dataIndex: 'stock_quantity',
       width: 100,
-      align: 'right',
+      align: 'center',
       render: (v) => {
-        if (v == null) return '—';
+        if (v == null) return <Text type="secondary">—</Text>;
+        const color = v > 10 ? '#52c41a' : v > 0 ? '#faad14' : '#ff4d4f';
         return (
-          <Text strong style={{ color: v > 0 ? '#52c41a' : '#ff4d4f' }}>
+          <Tag color={color} style={{ fontSize: 14, fontWeight: 'bold', minWidth: 40 }}>
             {v}
-          </Text>
+          </Tag>
         );
       },
     },
@@ -221,78 +235,163 @@ export default function ProductDetail() {
       dataIndex: 'is_available',
       width: 110,
       align: 'center',
-      render: (v) => (toBool(v) ? <Tag color="success">Có sẵn</Tag> : <Tag color="error">Hết</Tag>),
+      render: (v) => toBool(v) ? (
+        <Tag icon={<CheckCircleOutlined />} color="success">Có sẵn</Tag>
+      ) : (
+        <Tag icon={<CloseCircleOutlined />} color="error">Hết hàng</Tag>
+      ),
     },
   ];
 
   if (loading) {
     return (
-      <div style={{ height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ 
+        height: '80vh', 
+        display: 'flex', 
+        flexDirection: 'column',
+        alignItems: 'center', 
+        justifyContent: 'center',
+        gap: 16
+      }}>
         <Spin size="large" />
+        <Text type="secondary">Đang tải thông tin sản phẩm...</Text>
       </div>
     );
   }
 
   if (!product) {
     return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
-        <Empty description="Không tìm thấy sản phẩm" />
-        <Button type="primary" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} style={{ marginTop: 16 }}>
-          Quay lại
+      <div style={{ 
+        padding: 60, 
+        textAlign: 'center',
+        background: 'white',
+        borderRadius: 12,
+        margin: 24
+      }}>
+        <Empty 
+          description={<Text strong style={{ fontSize: 16 }}>Không tìm thấy sản phẩm</Text>}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        />
+        <Button 
+          size="large"
+          type="primary" 
+          icon={<ArrowLeftOutlined />} 
+          onClick={() => navigate(-1)} 
+          style={{ marginTop: 24 }}
+        >
+          Quay lại danh sách
         </Button>
       </div>
     );
   }
 
-  const categoryName = product.category?.name || product.category_option?.label || '—';
+  const categoryName = product.category?.name || '—';
   const variants = product.variants || [];
   const totalStock = variants.reduce((sum, v) => sum + (v.stock_quantity || 0), 0);
   const avgPrice = variants.length > 0
     ? variants.reduce((sum, v) => sum + Number(v.price || 0), 0) / variants.length
     : 0;
+  const availableVariants = variants.filter(v => toBool(v.is_available)).length;
+  const productImages = parseImages(product.images);
 
   return (
-    <div style={{ background: '#f5f5f5', minHeight: '100vh', padding: '24px' }}>
-      <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-        {/* Header */}
+    <div style={{ background: '#f0f2f5', minHeight: '100vh', padding: 24 }}>
+      <div style={{ maxWidth: 1600, margin: '0 auto' }}>
+        {/* Header Card */}
         <Card
-          style={{ marginBottom: 24, borderRadius: 12 }}
-          bodyStyle={{ padding: 0 }}
+          style={{ 
+            marginBottom: 24, 
+            borderRadius: 12,
+            overflow: 'hidden',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          }}
         >
-          <div style={{ padding: '24px 32px', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: '12px 12px 0 0' }}>
+          <div style={{ 
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            padding: '32px 40px',
+            marginBottom: 24
+          }}>
             <Row align="middle" justify="space-between">
-              <Col>
-                <Space size="large" align="center">
-                  <div style={{ width: 100, height: 100, borderRadius: 12, overflow: 'hidden', border: '3px solid white', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+              <Col flex="auto">
+                <Space size="large" align="start">
+                  <div style={{ 
+                    width: 120, 
+                    height: 120, 
+                    borderRadius: 12, 
+                    overflow: 'hidden', 
+                    border: '4px solid rgba(255,255,255,0.3)',
+                    boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
+                    background: 'white'
+                  }}>
                     {product.image ? (
-                      <Image src={getImageUrl(product.image)} width={100} height={100} style={{ objectFit: 'cover' }} preview />
+                      <Image 
+                        src={getImageUrl(product.image)} 
+                        width={120} 
+                        height={120} 
+                        style={{ objectFit: 'cover' }}
+                        preview
+                      />
                     ) : (
-                      <div style={{ width: 100, height: 100, background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <ShoppingOutlined style={{ fontSize: 40, color: '#bfbfbf' }} />
+                      <div style={{ 
+                        width: 120, 
+                        height: 120, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        background: '#f5f5f5'
+                      }}>
+                        <ShoppingOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
                       </div>
                     )}
                   </div>
                   <div>
-                    <Title level={3} style={{ color: 'white', margin: 0, marginBottom: 8 }}>
+                    <Title level={2} style={{ color: 'white', margin: 0, marginBottom: 12 }}>
                       {product.name}
                     </Title>
-                    {product.sku && (
+                    <Space size="large" wrap>
+                      {product.sku && (
+                        <Space>
+                          <BarcodeOutlined style={{ color: 'rgba(255,255,255,0.9)', fontSize: 16 }} />
+                          <Text 
+                            code 
+                            style={{ 
+                              background: 'rgba(255,255,255,0.25)', 
+                              color: 'white', 
+                              border: 'none',
+                              fontSize: 13,
+                              padding: '4px 12px',
+                              borderRadius: 4
+                            }} 
+                            copyable={{ text: product.sku }}
+                          >
+                            {product.sku}
+                          </Text>
+                        </Space>
+                      )}
                       <Space>
-                        <BarcodeOutlined style={{ color: 'rgba(255,255,255,0.8)' }} />
-                        <Text code style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }} copyable={{ text: product.sku }}>
-                          {product.sku}
-                        </Text>
+                        <AppstoreOutlined style={{ color: 'rgba(255,255,255,0.9)', fontSize: 16 }} />
+                        <Text style={{ color: 'white', fontSize: 14 }}>{categoryName}</Text>
                       </Space>
-                    )}
+                    </Space>
                   </div>
                 </Space>
               </Col>
               <Col>
                 <Space size="middle">
-                  <Button size="large" icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
+                  <Button 
+                    size="large" 
+                    icon={<ArrowLeftOutlined />} 
+                    onClick={() => navigate(-1)}
+                  >
                     Quay lại
                   </Button>
-                  <Button size="large" type="primary" icon={<EditOutlined />} onClick={() => navigate(`/admin/products/${product.id}/edit`)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>
+                  <Button 
+                    size="large" 
+                    type="primary" 
+                    icon={<EditOutlined />} 
+                    onClick={() => navigate(`/admin/products/${product.id}/edit`)}
+                    style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                  >
                     Chỉnh sửa
                   </Button>
                 </Space>
@@ -300,144 +399,186 @@ export default function ProductDetail() {
             </Row>
           </div>
 
-          {/* Stats */}
-          <div style={{ padding: '24px 32px', background: 'white' }}>
-            <Row gutter={24}>
-              <Col xs={24} sm={12} md={6}>
-                <Card size="small" style={{ background: '#f0f5ff', border: 'none' }}>
-                  <Statistic
-                    title={<Space><AppstoreOutlined /> Danh mục</Space>}
-                    value={categoryName}
-                    valueStyle={{ fontSize: 16, color: '#1890ff' }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <Card size="small" style={{ background: '#f6ffed', border: 'none' }}>
-                  <Statistic
-                    title={<Space><TagOutlined /> Số biến thể</Space>}
-                    value={variants.length}
-                    valueStyle={{ fontSize: 20, color: '#52c41a', fontWeight: 'bold' }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <Card size="small" style={{ background: '#fff7e6', border: 'none' }}>
-                  <Statistic
-                    title={<Space><ShoppingOutlined /> Tổng tồn kho</Space>}
-                    value={totalStock}
-                    valueStyle={{ fontSize: 20, color: '#fa8c16', fontWeight: 'bold' }}
-                  />
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} md={6}>
-                <Card size="small" style={{ background: '#fff0f6', border: 'none' }}>
-                  <Statistic
-                    title="Giá TB"
-                    value={avgPrice > 0 ? avgPrice.toFixed(0) : 0}
-                    suffix="đ"
-                    valueStyle={{ fontSize: 18, color: '#eb2f96' }}
-                  />
-                </Card>
-              </Col>
-            </Row>
-          </div>
+          {/* Statistics */}
+          <Row gutter={[16, 16]} style={{ padding: '0 16px 16px' }}>
+            <Col xs={24} sm={12} lg={6}>
+              <Card 
+                size="small" 
+                style={{ 
+                  background: 'linear-gradient(135deg, #f0f5ff 0%, #e6f4ff 100%)', 
+                  border: '1px solid #b8daff',
+                  borderRadius: 8
+                }}
+              >
+                <Statistic
+                  title={<Text strong><TagOutlined /> Biến thể</Text>}
+                  value={variants.length}
+                  valueStyle={{ color: '#1890ff', fontSize: 28, fontWeight: 'bold' }}
+                  suffix={<Text type="secondary" style={{ fontSize: 14 }}>mẫu</Text>}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <Card 
+                size="small" 
+                style={{ 
+                  background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)', 
+                  border: '1px solid #95de64',
+                  borderRadius: 8
+                }}
+              >
+                <Statistic
+                  title={<Text strong><CheckCircleOutlined /> Còn hàng</Text>}
+                  value={availableVariants}
+                  valueStyle={{ color: '#52c41a', fontSize: 28, fontWeight: 'bold' }}
+                  suffix={<Text type="secondary" style={{ fontSize: 14 }}>/ {variants.length}</Text>}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <Card 
+                size="small" 
+                style={{ 
+                  background: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)', 
+                  border: '1px solid #ffc069',
+                  borderRadius: 8
+                }}
+              >
+                <Statistic
+                  title={<Text strong><InboxOutlined /> Tồn kho</Text>}
+                  value={totalStock}
+                  valueStyle={{ color: '#fa8c16', fontSize: 28, fontWeight: 'bold' }}
+                  suffix={<Text type="secondary" style={{ fontSize: 14 }}>sp</Text>}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} sm={12} lg={6}>
+              <Card 
+                size="small" 
+                style={{ 
+                  background: 'linear-gradient(135deg, #fff0f6 0%, #ffd6e7 100%)', 
+                  border: '1px solid #ffadd2',
+                  borderRadius: 8
+                }}
+              >
+                <Statistic
+                  title={<Text strong><DollarOutlined /> Giá TB</Text>}
+                  value={avgPrice.toFixed(0)}
+                  valueStyle={{ color: '#eb2f96', fontSize: 28, fontWeight: 'bold' }}
+                  suffix={<Text type="secondary" style={{ fontSize: 14 }}>đ</Text>}
+                />
+              </Card>
+            </Col>
+          </Row>
         </Card>
 
-        {/* Info Cards */}
+        {/* Product Info & Album */}
         <Row gutter={24} style={{ marginBottom: 24 }}>
-          <Col xs={24} md={12}>
-            <Card title={<Space><CrownOutlined /> Thông tin chung</Space>} style={{ borderRadius: 12, height: '100%' }}>
-              <Row gutter={[16, 16]}>
-                <Col span={12}>
-                  <Text type="secondary">Thương hiệu</Text>
-                  <div style={{ marginTop: 4 }}>
-                    <Text strong>{product.brand || '—'}</Text>
-                  </div>
-                </Col>
-                <Col span={12}>
-                  <Text type="secondary">Xuất xứ</Text>
-                  <div style={{ marginTop: 4 }}>
-                    <Space>
-                      <GlobalOutlined />
-                      <Text strong>{product.origin || '—'}</Text>
-                    </Space>
-                  </div>
-                </Col>
-                <Col span={24}>
-                  <Text type="secondary">Trạng thái biến thể</Text>
-                  <div style={{ marginTop: 4 }}>
-                    {toBool(product.variation_status) ? (
-                      <Tag color="processing" style={{ fontSize: 14, padding: '4px 12px' }}>✓ Đang bật</Tag>
-                    ) : (
-                      <Tag color="default" style={{ fontSize: 14, padding: '4px 12px' }}>✕ Đang tắt</Tag>
-                    )}
-                  </div>
-                </Col>
-              </Row>
+          {/* Album ảnh sản phẩm */}
+          {productImages.length > 0 && (
+            <Col xs={24} lg={8}>
+              <Card 
+                title={<Space><PictureOutlined /> Album ảnh sản phẩm</Space>}
+                style={{ borderRadius: 12, height: '100%' }}
+              >
+                <Image.PreviewGroup>
+                  <Row gutter={[8, 8]}>
+                    {productImages.map((path, i) => (
+                      <Col span={8} key={i}>
+                        <Image
+                          src={getImageUrl(path)}
+                          width="100%"
+                          height={80}
+                          style={{ borderRadius: 8, objectFit: 'cover' }}
+                        />
+                      </Col>
+                    ))}
+                  </Row>
+                </Image.PreviewGroup>
+              </Card>
+            </Col>
+          )}
+
+          {/* Thông tin chung */}
+          <Col xs={24} lg={productImages.length > 0 ? 8 : 12}>
+            <Card 
+              title={<Space><CrownOutlined /> Thông tin chung</Space>}
+              style={{ borderRadius: 12, height: '100%' }}
+            >
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label={<Text strong>Thương hiệu</Text>}>
+                  {product.brand || <Text type="secondary">Chưa cập nhật</Text>}
+                </Descriptions.Item>
+                <Descriptions.Item label={<Text strong>Xuất xứ</Text>}>
+                  <Space>
+                    <GlobalOutlined />
+                    {product.origin || <Text type="secondary">Chưa cập nhật</Text>}
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label={<Text strong>Biến thể</Text>}>
+                  {toBool(product.variation_status) ? (
+                    <Tag icon={<CheckCircleOutlined />} color="processing">Đang bật</Tag>
+                  ) : (
+                    <Tag icon={<CloseCircleOutlined />} color="default">Đang tắt</Tag>
+                  )}
+                </Descriptions.Item>
+              </Descriptions>
             </Card>
           </Col>
 
-          <Col xs={24} md={12}>
-            <Card title="Mô tả sản phẩm" style={{ borderRadius: 12, height: '100%' }}>
-              <Text style={{ whiteSpace: 'pre-wrap', lineHeight: 1.8, color: '#595959' }}>
-                {product.description || 'Chưa có mô tả'}
-              </Text>
+          {/* Mô tả */}
+          <Col xs={24} lg={productImages.length > 0 ? 8 : 12}>
+            <Card 
+              title="Mô tả sản phẩm"
+              style={{ borderRadius: 12, height: '100%' }}
+            >
+              <Paragraph 
+                style={{ 
+                  whiteSpace: 'pre-wrap', 
+                  lineHeight: 1.8,
+                  color: '#595959',
+                  marginBottom: 0
+                }}
+              >
+                {product.description || <Text type="secondary" italic>Chưa có mô tả cho sản phẩm này</Text>}
+              </Paragraph>
             </Card>
           </Col>
         </Row>
 
         {/* Variants Table */}
         <Card
-          title={<Space style={{ fontSize: 16 }}><AppstoreOutlined /> Danh sách biến thể</Space>}
-          style={{ borderRadius: 12 }}
+          title={
+            <Space style={{ fontSize: 16 }}>
+              <AppstoreOutlined style={{ fontSize: 20 }} />
+              <Text strong>Danh sách biến thể ({variants.length})</Text>
+            </Space>
+          }
+          style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
         >
           {variants.length === 0 ? (
-            <Empty description="Chưa có biến thể" />
+            <Empty 
+              description={<Text>Sản phẩm chưa có biến thể nào</Text>}
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              style={{ padding: '40px 0' }}
+            />
           ) : (
             <Table
               columns={columns}
               dataSource={variants}
               rowKey="id"
-              pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `Tổng ${total}` }}
-              scroll={{ x: 1100 }}
+              pagination={{ 
+                pageSize: 10, 
+                showSizeChanger: true,
+                showTotal: (total, range) => `${range[0]}-${range[1]} trong ${total} biến thể`,
+                pageSizeOptions: ['10', '20', '50', '100']
+              }}
+              scroll={{ x: 1200 }}
+              bordered
+              size="middle"
             />
           )}
         </Card>
-
-        {/* Preview Modal */}
-        {previewOpen && (
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(0,0,0,0.85)',
-              zIndex: 9999,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            onClick={() => setPreviewOpen(false)}
-          >
-            <div style={{ position: 'relative', maxWidth: '90%', maxHeight: '90%' }}>
-              <Image.PreviewGroup
-                preview={{
-                  current: previewIndex,
-                  onChange: setPreviewIndex,
-                  visible: previewOpen,
-                  onVisibleChange: setPreviewOpen,
-                }}
-              >
-                {previewImages.map((src, i) => (
-                  <Image key={i} src={src} style={{ display: i === previewIndex ? 'block' : 'none' }} />
-                ))}
-              </Image.PreviewGroup>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

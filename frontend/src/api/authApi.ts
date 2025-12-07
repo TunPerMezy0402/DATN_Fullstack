@@ -132,15 +132,19 @@ const authApi = {
   },
 
   /**
-   * Quên mật khẩu
+   * Quên mật khẩu - Gửi email reset
    */
   async forgotPassword(email: string): Promise<{ message: string }> {
     try {
       const response = await axiosClient.post<ApiResponse<any>>(
-        "/forgot-password",
+        "/auth/forgot-password",
         { email }
       ) as unknown as ApiResponse<any>;
-      return { message: response.message };
+      
+      if (response.status) {
+        return { message: response.message };
+      }
+      throw new Error(response.message || "Không thể gửi email");
     } catch (error) {
       throw handleApiError(error, "Không thể gửi email reset password");
     }
@@ -154,12 +158,19 @@ const authApi = {
     password: string
   ): Promise<{ message: string }> {
     try {
-      const response = await axiosClient.post<ApiResponse<any>>("/reset-password", {
-        token,
-        password,
-        password_confirmation: password,
-      }) as unknown as ApiResponse<any>;
-      return { message: response.message };
+      const response = await axiosClient.post<ApiResponse<any>>(
+        "/auth/reset-password",
+        {
+          token,
+          password,
+          password_confirmation: password,
+        }
+      ) as unknown as ApiResponse<any>;
+      
+      if (response.status) {
+        return { message: response.message };
+      }
+      throw new Error(response.message || "Không thể reset password");
     } catch (error) {
       throw handleApiError(error, "Không thể reset password");
     }
@@ -225,9 +236,9 @@ export const googleAuthApi = {
         "/auth/google",
         { token: credential }
       );
-      return validateAuthResponse(response as unknown as ApiResponse<AuthResponse>, "Đăng nhập Googsle thất bại");
+      return validateAuthResponse(response as unknown as ApiResponse<AuthResponse>, "Đăng nhập Google thất bại");
     } catch (error) {
-      throw handleApiError(error, "Đăng nhập Goosgle thất bại");
+      throw handleApiError(error, "Đăng nhập Google thất bại");
     }
   },
 

@@ -16,7 +16,8 @@ class Product extends Model
         'description',
         'origin',
         'brand',
-        'image',         
+        'image', 
+        'images',         
         'variation_status',
     ];
 

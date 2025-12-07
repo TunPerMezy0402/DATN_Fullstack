@@ -28,7 +28,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
             aria-describedby="basic-addon2"
           />
           <button className="admin-header-search-btn btn btn-primary" type="button">
-            <i className="fas fa-search fa-sm">Search</i>
+            <i className="fas fa-search fa-sm"></i>
           </button>
         </div>
       </form>
