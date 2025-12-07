@@ -111,11 +111,4 @@ public function category()
     {
         return $this->image ?: null;
     }
-
-    public function likedByUsers()
-{
-    return $this->belongsToMany(User::class, 'user_likes', 'product_id', 'user_id')
-                ->withTimestamps();
-}
-
 }

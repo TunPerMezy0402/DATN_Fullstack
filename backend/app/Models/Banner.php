@@ -2,23 +2,26 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Banner extends Model
 {
-	use SoftDeletes;
+    use HasFactory, SoftDeletes;
 
-	protected $fillable = ['title', 'is_active'];
-	protected $casts = ['is_active' => 'boolean'];
+    protected $fillable = [
+        'title',
+        'link',
+        'is_active',
+    ];
 
-	public function images()
-	{
-		return $this->hasMany(BannerImage::class);
-	}
+    protected $casts = [
+        'is_active' => 'boolean',
+    ];
 
-	public function scopeActive($query)
-	{
-		return $query->where('is_active', true);
-	}
+    public function images()
+    {
+        return $this->hasMany(BannerImage::class);
+    }
 }
