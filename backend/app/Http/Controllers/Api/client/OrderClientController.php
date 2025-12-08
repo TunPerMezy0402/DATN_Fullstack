@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use App\Models\{
     Order,
@@ -22,6 +23,7 @@ use App\Models\{
     ReturnRequest
 };
 
+use App\Mail\OrderConfirmation;
 class OrderClientController extends Controller
 {
     // ============================================================
@@ -75,43 +77,43 @@ class OrderClientController extends Controller
      * 📊 Tính toán chi tiết hoàn tiền
      */
     private function calculateRefundDetails(Order $order, array $returnedItems): array
-{
-    $originalAmount = floatval($order->total_amount);
-    $originalDiscount = floatval($order->discount_amount ?? 0);
-    $oldShippingFee = floatval($order->shipping->shipping_fee ?? 0);
+    {
+        $originalAmount = floatval($order->total_amount);
+        $originalDiscount = floatval($order->discount_amount ?? 0);
+        $oldShippingFee = floatval($order->shipping->shipping_fee ?? 0);
 
-    // Tổng tiền hàng hoàn
-    $totalReturnAmount = array_sum(array_column($returnedItems, 'total'));
+        // Tổng tiền hàng hoàn
+        $totalReturnAmount = array_sum(array_column($returnedItems, 'total'));
 
-    $returnRatio = $originalAmount > 0 ? ($totalReturnAmount / $originalAmount) : 0;
+        $returnRatio = $originalAmount > 0 ? ($totalReturnAmount / $originalAmount) : 0;
 
-    // Giảm giá được hoàn lại (theo tỷ lệ)
-    $refundedDiscount = round($originalDiscount * $returnRatio, 2);
+        // Giảm giá được hoàn lại (theo tỷ lệ)
+        $refundedDiscount = round($originalDiscount * $returnRatio, 2);
 
-    // Số tiền còn lại (dùng cho báo cáo, không dùng để tính ship)
-    $remainingAmount = $originalAmount - $totalReturnAmount;
+        // Số tiền còn lại (dùng cho báo cáo, không dùng để tính ship)
+        $remainingAmount = $originalAmount - $totalReturnAmount;
 
-    // ❌ KHÔNG TÍNH LẠI SHIP — THEO CÁCH 1
-    $newShippingFee = $oldShippingFee;
-    $shippingDiff = 0;
-    $shippingExplanation = "Theo chính sách: không hoàn hoặc thay đổi phí ship khi khách trả hàng";
+        // ❌ KHÔNG TÍNH LẠI SHIP — THEO CÁCH 1
+        $newShippingFee = $oldShippingFee;
+        $shippingDiff = 0;
+        $shippingExplanation = "Theo chính sách: không hoàn hoặc thay đổi phí ship khi khách trả hàng";
 
-    // ✅ CÔNG THỨC TÍNH TIỀN HOÀN (KHÔNG ĐỤNG VÀO SHIP)
-    $estimatedRefund = $totalReturnAmount - $refundedDiscount;
+        // ✅ CÔNG THỨC TÍNH TIỀN HOÀN (KHÔNG ĐỤNG VÀO SHIP)
+        $estimatedRefund = $totalReturnAmount - $refundedDiscount;
 
-    $estimatedRefund = max(0, round($estimatedRefund, 2));
+        $estimatedRefund = max(0, round($estimatedRefund, 2));
 
-    return [
-        'total_return_amount' => $totalReturnAmount,
-        'refunded_discount' => $refundedDiscount,
-        'remaining_amount' => $remainingAmount,
-        'old_shipping_fee' => $oldShippingFee,
-        'new_shipping_fee' => $newShippingFee, // không đổi
-        'shipping_diff' => $shippingDiff,       // luôn = 0
-        'shipping_explanation' => $shippingExplanation,
-        'estimated_refund' => $estimatedRefund,
-    ];
-}
+        return [
+            'total_return_amount' => $totalReturnAmount,
+            'refunded_discount' => $refundedDiscount,
+            'remaining_amount' => $remainingAmount,
+            'old_shipping_fee' => $oldShippingFee,
+            'new_shipping_fee' => $newShippingFee, // không đổi
+            'shipping_diff' => $shippingDiff,       // luôn = 0
+            'shipping_explanation' => $shippingExplanation,
+            'estimated_refund' => $estimatedRefund,
+        ];
+    }
 
 
     // ============================================================
@@ -302,9 +304,6 @@ class OrderClientController extends Controller
         }
     }
 
-    /**
-     * 🛒 Tạo đơn hàng mới
-     */
     public function store(Request $request)
     {
         $user = $request->user();
@@ -450,6 +449,21 @@ class OrderClientController extends Controller
             DB::commit();
 
             $order->load(['items', 'user', 'shipping', 'paymentTransaction']);
+
+            // ============================================================
+            // ✅ GỬI EMAIL XÁC NHẬN ĐẶT HÀNG
+            // ============================================================
+            try {
+                Mail::to($user->email)->send(new OrderConfirmation($order));
+                Log::info('Order confirmation email sent', ['order_id' => $order->id, 'email' => $user->email]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send order confirmation email', [
+                    'order_id' => $order->id,
+                    'email' => $user->email,
+                    'error' => $e->getMessage(),
+                ]);
+                // ✅ Không rollback, chỉ log warning vì email không quan trọng bằng order
+            }
 
             return response()->json([
                 'success' => true,

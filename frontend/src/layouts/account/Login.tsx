@@ -1,4 +1,3 @@
-// src/layouts/client/pages/Login.tsx
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import authService from '../../services/authService';
@@ -135,11 +134,8 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      // Call API to login
-      const response = await authService.login({
-        email: formData.email,
-        password: formData.password,
-      });
+      // Call API to login with a LoginData object
+      const response = await authService.login({ email: formData.email, password: formData.password });
 
       // Save or clear remembered email
       if (rememberMe) {
@@ -167,8 +163,6 @@ const Login: React.FC = () => {
       setLoading(false);
     }
   };
-
-  // Removed manual trigger to avoid unused warnings; SDK button handles auth
 
   const handleForgotPassword = () => {
     navigate('/forgot-password');
@@ -348,17 +342,17 @@ const Login: React.FC = () => {
               <span className="divider-text">Hoặc đăng nhập với</span>
             </div>
 
-            {/* Google Login Button (SDK renders here; không hiện tên/email) */}
+            {/* Google Login Button */}
             <div
               id="google-login-button"
-              ref={(() => {
-                // render khi SDK sẵn sàng
-                if (isGoogleLoaded) {
-                  setTimeout(() => renderGoogleButton('google-login-button'), 0);
-                }
-                return undefined as unknown as React.RefObject<HTMLDivElement>;
-              })()}
-            ></div>
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                marginTop: '12px',
+              }}
+            >
+              {isGoogleLoaded && renderGoogleButton('google-login-button')}
+            </div>
 
             {/* Register Link */}
             <p className="auth-footer-text">

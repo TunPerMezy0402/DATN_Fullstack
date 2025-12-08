@@ -18,7 +18,7 @@ use App\Http\Controllers\Api\client\OrderClientController;
 use App\Http\Controllers\Api\client\CategoryClientController;
 use App\Http\Controllers\Api\client\UserProfileController;
 use App\Http\Controllers\Api\client\ProductReviewController;
-use App\Http\Controllers\Api\client\SupportTicketController;
+use App\Http\Controllers\Api\client\ClientChatController;
 
 
 // ==== ADMIN CONTROLLERS ====
@@ -28,12 +28,10 @@ use App\Http\Controllers\Api\admin\ProductController;
 use App\Http\Controllers\Api\admin\CategoryController;
 use App\Http\Controllers\Api\admin\AttributeController;
 use App\Http\Controllers\Api\admin\ProductVariantController;
-/* use App\Http\Controllers\Api\admin\ProductReviewController; */
 use App\Http\Controllers\Api\admin\AddressBookController;
-use App\Http\Controllers\Api\admin\AdminSupportTicketController;
-
 use App\Http\Controllers\Api\admin\CouponController;
 use App\Http\Controllers\Api\admin\OrderController;
+use App\Http\Controllers\Api\admin\AdminChatController;
 
 
 use App\Http\Controllers\Api\Admin\BannerController;
@@ -41,62 +39,43 @@ use App\Http\Controllers\Api\Admin\BannerImageController;
 use App\Http\Controllers\Api\Client\HomeBannerController;
 
 
-
-// Banner routes - Admin (có middleware auth)
-Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
-    Route::get('banners/trash', [BannerController::class, 'trash']);
-    Route::post('banners/{id}/restore', [BannerController::class, 'restore']);
-    Route::delete('banners/{id}/force', [BannerController::class, 'forceDelete']);
-    Route::apiResource('banners', BannerController::class);
-
-    Route::get('banner-images/trash', [BannerImageController::class, 'trash']);
-    Route::post('banner-images/{id}/restore', [BannerImageController::class, 'restore']);
-    Route::delete('banner-images/{id}/force', [BannerImageController::class, 'forceDelete']);
-
-    Route::post('banners/{banner}/images', [BannerImageController::class, 'store']);
-    Route::match(['put', 'patch'], 'banner-images/{image}', [BannerImageController::class, 'update']);
-    Route::delete('banner-images/{image}', [BannerImageController::class, 'destroy']);
-});
-
-// Banner routes - Client (không cần auth)
-Route::get('banners/active', [HomeBannerController::class, 'active']);
-Route::get('banners', [HomeBannerController::class, 'index']);
-
-
-
-
 Route::prefix('auth')->group(function () {
+    // Public routes
     Route::post('login', [AuthController::class, 'login']);
     Route::post('register', [AuthController::class, 'register']);
     Route::post('google', [AuthController::class, 'googleLogin']);
+
+    // Password reset routes
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
 
+    // Protected routes
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('me', [AuthController::class, 'me']);
     });
 });
 
-// =====================================================================
-// 📤 UPLOAD ROUTES
-// =====================================================================
+Route::get('/password/reset/{token}', function ($token) {
+    $email = request()->query('email');
+    return redirect(
+        config('app.frontend_url')
+        . "/reset-password?token={$token}&email=" . urlencode($email)
+    );
+})->name('password.reset');
+
+
+
 Route::prefix('uploads')->middleware('auth:sanctum')->group(function () {
     Route::post('/', [UploadController::class, 'upload']);
     Route::post('/multiple', [UploadController::class, 'uploadMultiple']);
     Route::delete('/', [UploadController::class, 'delete']);
 });
 
-// =====================================================================
-// 🌐 CLIENT ROUTES
-// =====================================================================
-
 Route::get('/', [HomeClientController::class, 'index']);
 
 Route::get('categories', [CategoryClientController::class, 'getCategoriesWithProducts']);
 
-
-// Sản phẩm
 Route::prefix('client/products')->group(function () {
     Route::get('/', [ProductClientController::class, 'getAllProducts']);
     Route::get('/brands', [ProductClientController::class, 'getBrands']);
@@ -104,10 +83,8 @@ Route::prefix('client/products')->group(function () {
     Route::get('/colors', [ProductClientController::class, 'getColors']);
     Route::get('/{id}', [ProductClientController::class, 'getProductDetail']);
 });
-// Trang chủ
 
 
-// Các route client chung
 Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/profile', [UserProfileController::class, 'show']);
@@ -167,11 +144,7 @@ Route::prefix('products')->group(function () {
     Route::get('/{productId}/reviews', [ProductReviewController::class, 'index']);
 });
 
-// =====================================================================
-// 🧑‍💼 ADMIN ROUTES
-// =====================================================================
 
-// Dashboard
 Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('admin', [AdminController::class, 'index']);
 });
@@ -211,17 +184,12 @@ Route::adminApiResource('admin/orders-admin', OrderController::class);
 
 
 
-
-// ==================== PUBLIC ROUTES (NO AUTH) ====================
-// ✅ VNPay IPN webhook - VNPay gọi tới đây khi thanh toán xong
 Route::post('/vnpay/ipn', [PaymentController::class, 'vnpay_ipn'])
     ->name('payment.vnpay.ipn');
 
-// ✅ VNPay Return URL - User redirect về đây sau khi thanh toán
 Route::get('/vnpay/return', [PaymentController::class, 'vnpay_return'])
     ->name('payment.vnpay.return');
 
-// ==================== AUTHENTICATED ROUTES ====================
 Route::middleware('auth:sanctum')->group(function () {
 
     // ✅ Tạo payment URL cho VNPay
@@ -245,32 +213,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
 });
 
-// Client routes
-Route::middleware('auth:sanctum')->group(function () {
-    Route::prefix('support-tickets')->group(function () {
-        Route::get('/', [SupportTicketController::class, 'index']);
-        Route::get('/{id}', [SupportTicketController::class, 'show']);
-        Route::post('/', [SupportTicketController::class, 'store']);
-        Route::post('/{id}/cancel', [SupportTicketController::class, 'cancel']);
-    });
-});
-
-Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
-    // Danh sách tickets
-    Route::get('/support-tickets', [AdminSupportTicketController::class, 'index']);
-    
-    // Chi tiết ticket
-    Route::get('/support-tickets/{id}', [AdminSupportTicketController::class, 'show']);
-    
-    // Cập nhật status
-    Route::patch('/support-tickets/{id}/status', [AdminSupportTicketController::class, 'updateStatus']);
-    
-    // Cập nhật nội dung
-    Route::put('/support-tickets/{id}', [AdminSupportTicketController::class, 'update']);
-    
-    // Xóa ticket
-    Route::delete('/support-tickets/{id}', [AdminSupportTicketController::class, 'destroy']);
-});
 
 
 // ==================== ADMIN ROUTES ====================
@@ -287,8 +229,60 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     Route::get('orders/{id}/return-requests', [OrderController::class, 'returnRequests']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/approve', [OrderController::class, 'approveReturn']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/reject', [OrderController::class, 'rejectReturn']);
-    
+
+    // ✅ THÊM: Cập nhật trạng thái return request
+    Route::put('orders/{orderId}/return-requests/{returnRequestId}/status', [OrderController::class, 'updateReturnStatus']);
+
     // Return Request Management - Individual Items
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/items/{itemId}/approve', [OrderController::class, 'approveReturnItem']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/items/{itemId}/reject', [OrderController::class, 'rejectReturnItem']);
+});
+
+
+
+// Admin Chat Support
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin/chat')->group(function () {
+    Route::get('/', [AdminChatController::class, 'index']);
+    Route::get('/dashboard', [AdminChatController::class, 'dashboard']);
+    Route::get('/unread-count', [AdminChatController::class, 'unreadCount']);
+    Route::get('/search', [AdminChatController::class, 'search']);
+    
+    Route::get('/{id}', [AdminChatController::class, 'show']);
+    Route::get('/{id}/messages', [AdminChatController::class, 'getMessages']);
+    Route::post('/{id}/send', [AdminChatController::class, 'sendMessage']);
+    Route::post('/{id}/close', [AdminChatController::class, 'closeRoom']);
+    Route::post('/{id}/assign-agent', [AdminChatController::class, 'assignAgent']);
+    
+    Route::delete('/messages/{id}', [AdminChatController::class, 'deleteMessage']);
+    
+    // Agents
+    Route::get('/agents/list', [AdminChatController::class, 'getAgents']);
+    Route::get('/agents/{id}/stats', [AdminChatController::class, 'getAgentStats']);
+});
+
+
+Route::middleware('auth:sanctum')->group(function () {
+    // ✅ Chat routes
+    Route::get('/client/chat', [ClientChatController::class, 'index']);
+    Route::post('/client/chat/create', [ClientChatController::class, 'createRoom']);
+    Route::get('/client/chat/{id}', [ClientChatController::class, 'show']);
+    Route::get('/client/chat/{id}/messages', [ClientChatController::class, 'getMessages']);
+    Route::post('/client/chat/{id}/send', [ClientChatController::class, 'sendMessage']);
+    Route::post('/client/chat/{id}/close', [ClientChatController::class, 'closeRoom']);
+    Route::post('/client/chat/{id}/rate', [ClientChatController::class, 'rateAgent']);
+    Route::get('/client/chat/unread-count', [ClientChatController::class, 'unreadCount']);
+    Route::get('/client/chat/search', [ClientChatController::class, 'search']);
+
+    // ✅ Image routes
+    Route::get('/messages/{messageId}/image-info', [ClientChatController::class, 'getImageInfo']);
+    Route::delete('/messages/{messageId}/image', [ClientChatController::class, 'deleteImage']);
+
+    // ✅ Notification routes
+    Route::get('/notifications', [ClientChatController::class, 'getNotifications']);
+    Route::post('/notifications/{id}/read', [ClientChatController::class, 'markNotificationAsRead']);
+    Route::post('/notifications/read-all', [ClientChatController::class, 'markAllNotificationsAsRead']);
+
+    // ✅ Agent routes
+    Route::get('/agents/available', [ClientChatController::class, 'getAvailableAgents']);
+    Route::get('/agents/{id}/stats', [ClientChatController::class, 'getAgentStats']);
 });

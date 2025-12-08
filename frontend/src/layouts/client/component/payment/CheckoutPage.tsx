@@ -543,10 +543,10 @@ const CheckoutPage: React.FC = () => {
             <Space>
               <GiftOutlined style={{ fontSize: 20, color: valid ? "#1890ff" : "#999" }} />
               <div>
-                <Text strong>{cp.code}</Text>
+                <Text strong> Giảm {cp.discount_type === "percent" ? `${cp.discount_value}%` : `${formatMoney(cp.discount_value)}₫`}</Text>
                 <br />
                 <Text type="secondary" style={{ fontSize: 13 }}>
-                  Giảm {cp.discount_type === "percent" ? `${cp.discount_value}%` : `${formatMoney(cp.discount_value)}₫`}
+                  Đơn hàng tối thiểu {formatMoney(cp.min_purchase)}₫ - Giảm tối đa {formatMoney(cp.max_discount)}₫
                 </Text>
               </div>
             </Space>

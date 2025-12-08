@@ -4,9 +4,13 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use App\Notifications\ResetPasswordApiNotification;
 
 
 class User extends Authenticatable
@@ -28,11 +32,9 @@ class User extends Authenticatable
         'phone',
         'status',
         'role',
-
         'bank_account_number',
         'bank_name',
         'bank_account_name',
-
     ];
 
     /**
@@ -58,20 +60,55 @@ class User extends Authenticatable
         ];
     }
 
-    public function likedProducts()
+    /**
+     * Quan hệ: Sản phẩm yêu thích
+     */
+    public function likedProducts(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'user_likes', 'user_id', 'product_id');
     }
-    
-    public function addresses()
+
+    /**
+     * Quan hệ: Địa chỉ giao hàng
+     */
+    public function addresses(): HasMany
     {
         return $this->hasMany(AddressBook::class, 'user_id');
     }
 
-        // ✅ Thêm quan hệ reviews
-    public function reviews()
+    /**
+     * Quan hệ: Bài đánh giá sản phẩm
+     */
+    public function reviews(): HasMany
     {
         return $this->hasMany(ProductReview::class, 'user_id');
     }
 
+    public function supportAgent(): HasOne
+    {
+        return $this->hasOne(SupportAgent::class);
+    }
+
+    // Quan hệ: phòng chat của user
+    public function chatRooms(): HasMany
+    {
+        return $this->hasMany(ChatRoom::class, 'user_id');
+    }
+
+    // Quan hệ: tin nhắn gửi bởi user
+    public function messages(): HasMany
+    {
+        return $this->hasMany(Message::class, 'sender_id');
+    }
+
+    // Quan hệ: thông báo của user
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
+
+    public function sendPasswordResetNotification($token)
+    {
+        $this->notify(new ResetPasswordApiNotification($token));
+    }
 }

@@ -15,6 +15,8 @@ interface GoogleAccount {
     initialize: (config: GoogleInitConfig) => void;
     renderButton: (element: HTMLElement, config: GoogleButtonConfig) => void;
     prompt: (callback?: (notification: any) => void) => void;
+    cancel: () => void;
+    disableAutoSelect?: () => void;
   };
 }
 
@@ -51,7 +53,6 @@ declare global {
 
 // ======================= HẰNG SỐ =======================
 
-// CRA env
 const GOOGLE_CLIENT_ID = (process.env.REACT_APP_GOOGLE_CLIENT_ID as string) || '';
 const GOOGLE_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
 
@@ -84,23 +85,27 @@ export const useGoogleAuth = (config: GoogleAuthConfig = {}) => {
         try {
           // Thử login trước
           authResponse = await googleAuthService.login(credential);
+          console.log('✅ Google login thành công');
         } catch (loginError: any) {
+          console.log('⚠️ Chưa có tài khoản, thử đăng ký...');
           // Nếu login thất bại do chưa có tài khoản, thử đăng ký
           try {
             const registerRes = await googleAuthService.register(credential);
             if (registerRes && (registerRes as any).message) {
               // Sau khi đăng ký thành công mới login và lưu
               authResponse = await googleAuthService.login(credential);
+              console.log('✅ Google register + login thành công');
             }
           } catch (registerError: any) {
             // Không đăng ký được: đảm bảo không lưu bất cứ dữ liệu nào
-            console.warn('Google register failed, ensuring no local data is stored');
-            try { googleAuthService && (authService as any)?.clearAuth?.(); } catch {}
+            console.error('❌ Google register thất bại');
+            try {
+              googleAuthService && (authService as any)?.clearAuth?.();
+            } catch {}
             throw registerError;
           }
         }
 
-        console.log('✅ Google auth thành công:', authResponse);
         onSuccess?.(authResponse);
       } catch (error: any) {
         console.error('❌ Lỗi Google auth:', error);
@@ -109,7 +114,7 @@ export const useGoogleAuth = (config: GoogleAuthConfig = {}) => {
         setIsLoading(false);
       }
     },
-    [isRegister, onSuccess, onError]
+    [onSuccess, onError]
   );
 
   // ======================= KHỞI TẠO GOOGLE =======================
@@ -118,7 +123,7 @@ export const useGoogleAuth = (config: GoogleAuthConfig = {}) => {
     if (!GOOGLE_CLIENT_ID) {
       if (!clientIdErrorNotified.current) {
         clientIdErrorNotified.current = true;
-        console.error('Chưa cấu hình Google Client ID');
+        console.error('❌ Chưa cấu hình Google Client ID');
         onError?.(new Error('Google Client ID chưa được cấu hình'));
       }
       return false;
@@ -129,24 +134,26 @@ export const useGoogleAuth = (config: GoogleAuthConfig = {}) => {
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
           callback: handleGoogleResponse,
-          auto_select: false,
+          auto_select: false, // ✅ TẮT auto select
           cancel_on_tap_outside: true,
           itp_support: true,
-          // Add context to help with COOP issues
           context: 'signin',
-          // Disable popup blocking
-          use_fedcm_for_prompt: false,
+          use_fedcm_for_prompt: false, // ✅ TẮT FedCM prompt
         });
-        
-        // Force disable auto-select
+
+        // ✅ Force disable auto-select và cancel mọi prompt
         try {
           (window.google.accounts.id as any).disableAutoSelect?.();
-        } catch {}
+          window.google.accounts.id.cancel(); // ✅ Hủy mọi prompt tự động
+        } catch (e) {
+          console.warn('Không thể disable auto-select:', e);
+        }
+
         setIsGoogleLoaded(true);
-        console.log('✅ Google OAuth đã được khởi tạo');
+        console.log('✅ Google OAuth đã được khởi tạo (không auto-prompt)');
         return true;
       } catch (error) {
-        console.error('Lỗi khi khởi tạo Google:', error);
+        console.error('❌ Lỗi khi khởi tạo Google:', error);
         onError?.(new Error('Không thể khởi tạo Google OAuth'));
         return false;
       }
@@ -155,49 +162,25 @@ export const useGoogleAuth = (config: GoogleAuthConfig = {}) => {
     return false;
   }, [handleGoogleResponse, onError]);
 
-  // ======================= KÍCH HOẠT GOOGLE AUTH =======================
+  // ======================= HỦY GOOGLE ONE TAP =======================
 
-  const handleGoogleAuth = useCallback(async () => {
-    if (!isGoogleLoaded) {
-      const initialized = await initializeGoogle();
-      if (!initialized) {
-        onError?.(new Error('Google OAuth chưa sẵn sàng'));
-        return;
-      }
-    }
-
-    if (!window.google?.accounts?.id) {
-      onError?.(new Error('Google OAuth chưa được tải'));
-      return;
-    }
-
-    try {
-      // Try to open popup first to check if it's allowed
-      const popup = window.open('', '_blank', 'width=500,height=600,scrollbars=yes,resizable=yes');
-      if (popup) {
-        popup.close();
-      }
-      
-      // Now try the Google OAuth prompt
-      window.google.accounts.id.prompt();
-    } catch (error: any) {
-      console.warn('Popup blocked, trying alternative method:', error);
-      
-      // Fallback: try to redirect to Google OAuth
+  const cancelGooglePrompt = useCallback(() => {
+    if (window.google?.accounts?.id) {
       try {
-        const authUrl = `https://accounts.google.com/oauth/authorize?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(window.location.origin)}&response_type=code&scope=openid%20email%20profile`;
-        window.location.href = authUrl;
-      } catch (fallbackError) {
-        onError?.(new Error('Không thể mở cửa sổ đăng nhập Google. Vui lòng cho phép popup cho trang web này.'));
+        window.google.accounts.id.cancel();
+        console.log('✅ Đã hủy Google One Tap prompt');
+      } catch (error) {
+        console.warn('⚠️ Không thể hủy Google One Tap:', error);
       }
     }
-  }, [isGoogleLoaded, initializeGoogle, onError]);
+  }, []);
 
   // ======================= HIỂN THỊ NÚT GOOGLE =======================
 
   const renderGoogleButton = useCallback(
     (elementId: string, buttonConfig?: GoogleButtonConfig) => {
       if (!isGoogleLoaded || !window.google?.accounts?.id) {
+        console.warn('⚠️ Google chưa được tải');
         return false;
       }
 
@@ -208,31 +191,27 @@ export const useGoogleAuth = (config: GoogleAuthConfig = {}) => {
       }
 
       try {
-        try { (window.google.accounts.id as any).disableAutoSelect?.(); } catch {}
+        // ✅ Đảm bảo không có auto-select trước khi render
+        try {
+          (window.google.accounts.id as any).disableAutoSelect?.();
+        } catch {}
+
         window.google.accounts.id.renderButton(element, {
           theme: 'outline',
           size: 'large',
-          text: 'signin_with',
+          text: isRegister ? 'signup_with' : 'signin_with',
           shape: 'rectangular',
           logo_alignment: 'left',
           locale: 'vi',
           personalization: 'off',
-          context: 'signin',
-          // Add click handler to handle COOP issues
-          click_listener: () => {
-            // Ensure popup is allowed
-            try {
-              window.open('', '_blank', 'width=500,height=600,scrollbars=yes,resizable=yes');
-            } catch (e) {
-              console.warn('Popup blocked, continuing with OAuth flow');
-            }
-          },
+          context: isRegister ? 'signup' : 'signin',
           ...buttonConfig,
         });
+
         console.log('✅ Nút Google đã được hiển thị');
         return true;
       } catch (error) {
-        console.error('Lỗi khi hiển thị nút Google:', error);
+        console.error('❌ Lỗi khi hiển thị nút Google:', error);
         return false;
       }
     },
@@ -243,46 +222,59 @@ export const useGoogleAuth = (config: GoogleAuthConfig = {}) => {
 
   const loadGoogleScript = useCallback((): Promise<boolean> => {
     return new Promise((resolve) => {
-      const existed = document.querySelector(`script[src="${GOOGLE_SCRIPT_URL}"]`);
-      if (existed) {
+      // Kiểm tra script đã tồn tại chưa
+      const existedScript = document.querySelector(`script[src="${GOOGLE_SCRIPT_URL}"]`);
+      
+      if (existedScript) {
         if (window.google?.accounts?.id) {
           resolve(true);
         } else {
-          existed.addEventListener('load', () => resolve(true));
-          existed.addEventListener('error', () => resolve(false));
+          existedScript.addEventListener('load', () => resolve(true));
+          existedScript.addEventListener('error', () => resolve(false));
         }
         return;
       }
 
+      // Tạo script mới
       const script = document.createElement('script');
       script.src = GOOGLE_SCRIPT_URL;
       script.async = true;
       script.defer = true;
+      
       script.onload = () => {
         scriptRef.current = script;
+        console.log('✅ Google SDK đã được tải');
         resolve(true);
       };
-      script.onerror = () => resolve(false);
+      
+      script.onerror = () => {
+        console.error('❌ Không thể tải Google SDK');
+        resolve(false);
+      };
+      
       document.body.appendChild(script);
     });
   }, []);
 
-  // Tự động tải script và khởi tạo khi mount
+  // ======================= TỰ ĐỘNG TẢI SCRIPT KHI MOUNT =======================
+
   useEffect(() => {
     if (initializationAttempted.current) return;
     initializationAttempted.current = true;
 
-    const run = async () => {
-      const ok = await loadGoogleScript();
-      if (ok) {
+    const initialize = async () => {
+      const scriptLoaded = await loadGoogleScript();
+      
+      if (scriptLoaded) {
         await initializeGoogle();
       } else {
         onError?.(new Error('Không thể tải Google SDK'));
       }
     };
 
-    run();
+    initialize();
 
+    // Cleanup khi unmount
     return () => {
       if (scriptRef.current && scriptRef.current.parentNode) {
         scriptRef.current.parentNode.removeChild(scriptRef.current);
@@ -297,8 +289,8 @@ export const useGoogleAuth = (config: GoogleAuthConfig = {}) => {
     isGoogleLoaded,
     isLoading,
     initializeGoogle,
-    handleGoogleAuth,
     renderGoogleButton,
+    cancelGooglePrompt, // ✅ Export method cancel
   };
 };
 

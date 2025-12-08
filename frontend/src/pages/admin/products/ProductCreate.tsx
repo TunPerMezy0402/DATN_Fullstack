@@ -36,7 +36,7 @@ type VariantForm = {
   discount_price: string;
   stock_quantity: number;
   is_available: boolean;
-  imageFile: UploadFile[]; // Chỉ còn 1 ảnh chính
+  imageFile: UploadFile[];
 };
 
 /* ============================== Axios ============================== */
@@ -131,6 +131,79 @@ function validateVariantsOrToast(variants: VariantForm[]) {
   return true;
 }
 
+// ===== HÀM KIỂM TRA TRÙNG BIẾN THỂ =====
+function checkDuplicateVariants(variants: VariantForm[]): { isDuplicate: boolean; duplicateIndices: number[] } {
+  const seen = new Map<string, number>();
+  const duplicates: number[] = [];
+
+  for (let i = 0; i < variants.length; i++) {
+    const v = variants[i];
+    // Chỉ kiểm tra nếu có ít nhất size hoặc color
+    if (v.size_id === null && v.color_id === null) {
+      continue;
+    }
+
+    const key = `${v.size_id ?? 'null'}-${v.color_id ?? 'null'}`;
+    
+    if (seen.has(key)) {
+      const firstIndex = seen.get(key)!;
+      if (!duplicates.includes(firstIndex)) {
+        duplicates.push(firstIndex);
+      }
+      duplicates.push(i);
+    } else {
+      seen.set(key, i);
+    }
+  }
+
+  return {
+    isDuplicate: duplicates.length > 0,
+    duplicateIndices: duplicates.sort((a, b) => a - b)
+  };
+}
+
+// ===== HÀM SAO CHÉP FILE ẢNH =====
+async function cloneUploadFile(originalFile: UploadFile): Promise<UploadFile> {
+  if (!originalFile.originFileObj) {
+    // Nếu không có originFileObj, tạo bản sao đơn giản
+    return {
+      ...originalFile,
+      uid: `${Date.now()}-${Math.random()}`,
+    };
+  }
+
+  try {
+    // Lấy file gốc
+    const file = originalFile.originFileObj as File;
+    
+    // Tạo file mới từ blob
+    const newFile = new File([file], file.name, { type: file.type });
+    
+    // Tạo preview URL nếu có
+    let thumbUrl = originalFile.thumbUrl;
+    if (!thumbUrl && file.type.startsWith('image/')) {
+      thumbUrl = await getBase64(file);
+    }
+
+    return {
+      uid: `${Date.now()}-${Math.random()}`,
+      name: originalFile.name,
+      status: 'done',
+      type: file.type,
+      size: file.size,
+      originFileObj: newFile as RcFile,
+      thumbUrl: thumbUrl,
+    };
+  } catch (error) {
+    console.error('Error cloning file:', error);
+    // Fallback: trả về bản sao đơn giản
+    return {
+      ...originalFile,
+      uid: `${Date.now()}-${Math.random()}`,
+    };
+  }
+}
+
 /* ============================== Component ============================== */
 export default function ProductCreate() {
   const navigate = useNavigate();
@@ -146,7 +219,6 @@ export default function ProductCreate() {
   const [attrModalOpen, setAttrModalOpen] = useState<null | "size" | "color">(null);
   const [attrValue, setAttrValue] = useState("");
   
-  // Product images: 1 ảnh chính + nhiều ảnh album
   const [productMainFile, setProductMainFile] = useState<UploadFile[]>([]);
   const [productAlbumFiles, setProductAlbumFiles] = useState<UploadFile[]>([]);
   
@@ -214,37 +286,49 @@ export default function ProductCreate() {
 
   const removeVariant = (idx: number) => setVariants((prev) => prev.filter((_, i) => i !== idx));
 
-  const duplicateVariant = (idx: number) => {
+  const duplicateVariant = async (idx: number) => {
     const source = variants[idx];
     if (!source) return;
     
-    const copied: VariantForm = {
-      size_id: source.size_id,
-      color_id: source.color_id,
-      sku: generateSku(9),
-      price: source.price,
-      discount_price: source.discount_price,
-      stock_quantity: source.stock_quantity,
-      is_available: source.is_available,
-      imageFile: [],
-    };
-
-    setVariants((prev) => {
-      const next = [...prev];
-      next.splice(idx + 1, 0, copied);
-      return next;
-    });
-
-    message.success(`Đã sao chép biến thể #${idx + 1} (không bao gồm ảnh, vui lòng upload lại)`);
-    
-    setTimeout(() => {
-      const cards = document.querySelectorAll('.variant-list .ant-card');
-      const targetCard = cards[idx + 1] as HTMLElement;
-      if (targetCard) {
-        targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        targetCard.style.animation = 'highlight-card 1s ease';
+    try {
+      // Sao chép ảnh
+      const clonedImages: UploadFile[] = [];
+      for (const img of source.imageFile) {
+        const clonedImg = await cloneUploadFile(img);
+        clonedImages.push(clonedImg);
       }
-    }, 100);
+
+      const copied: VariantForm = {
+        size_id: source.size_id,
+        color_id: source.color_id,
+        sku: generateSku(9),
+        price: source.price,
+        discount_price: source.discount_price,
+        stock_quantity: source.stock_quantity,
+        is_available: source.is_available,
+        imageFile: clonedImages,
+      };
+
+      setVariants((prev) => {
+        const next = [...prev];
+        next.splice(idx + 1, 0, copied);
+        return next;
+      });
+
+      message.success(`Đã sao chép biến thể #${idx + 1} (bao gồm cả ảnh)`);
+      
+      setTimeout(() => {
+        const cards = document.querySelectorAll('.variant-list .ant-card');
+        const targetCard = cards[idx + 1] as HTMLElement;
+        if (targetCard) {
+          targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          targetCard.style.animation = 'highlight-card 1s ease';
+        }
+      }, 100);
+    } catch (error) {
+      console.error('Error duplicating variant:', error);
+      message.error('Lỗi khi sao chép biến thể');
+    }
   };
 
   const setVariant = <K extends keyof VariantForm>(idx: number, key: K, value: VariantForm[K]) =>
@@ -283,9 +367,45 @@ export default function ProductCreate() {
     try {
       setSaving(true);
 
-      if (variationEnabled && !validateVariantsOrToast(variants)) {
-        setSaving(false);
-        return;
+      if (variationEnabled) {
+        // Kiểm tra validation giá
+        if (!validateVariantsOrToast(variants)) {
+          setSaving(false);
+          return;
+        }
+
+        // Kiểm tra trùng biến thể
+        const duplicateCheck = checkDuplicateVariants(variants);
+        if (duplicateCheck.isDuplicate) {
+          const indices = duplicateCheck.duplicateIndices.map(i => `#${i + 1}`).join(', ');
+          message.error(`Phát hiện biến thể trùng lặp (Size + Màu giống nhau): ${indices}`);
+          
+          // Highlight các card bị trùng
+          setTimeout(() => {
+            const cards = document.querySelectorAll('.variant-list .ant-card');
+            duplicateCheck.duplicateIndices.forEach(idx => {
+              const card = cards[idx] as HTMLElement;
+              if (card) {
+                card.style.animation = 'shake-card 0.5s ease';
+                card.style.border = '2px solid #ff4d4f';
+              }
+            });
+            
+            // Reset animation sau 2s
+            setTimeout(() => {
+              duplicateCheck.duplicateIndices.forEach(idx => {
+                const card = cards[idx] as HTMLElement;
+                if (card) {
+                  card.style.animation = '';
+                  card.style.border = '';
+                }
+              });
+            }, 2000);
+          }, 100);
+          
+          setSaving(false);
+          return;
+        }
       }
 
       const normalizedSku =
@@ -301,13 +421,11 @@ export default function ProductCreate() {
       if (values.brand) fd.append("brand", values.brand);
       fd.append("variation_status", variationEnabled ? "1" : "0");
 
-      // Product main image (1 ảnh chính)
       const mainFile = productMainFile[0]?.originFileObj as RcFile | undefined;
       if (mainFile) {
         fd.append("image", mainFile);
       }
 
-      // Product album images (nhiều ảnh)
       productAlbumFiles.forEach((af) => {
         const file = af.originFileObj as RcFile | undefined;
         if (file) fd.append("images[]", file);
@@ -334,7 +452,6 @@ export default function ProductCreate() {
           );
           fd.append(`variants[${i}][is_available]`, v.is_available ? "1" : "0");
 
-          // Variant chỉ còn 1 ảnh chính
           const variantImageFile = v.imageFile[0]?.originFileObj as RcFile | undefined;
           if (variantImageFile) {
             fd.append(`variants[${i}][image]`, variantImageFile);
@@ -376,7 +493,6 @@ export default function ProductCreate() {
           }}
         >
           <Row gutter={[16, 16]} align="top">
-            {/* Product Images Section */}
             <Col xs={24} md={8}>
               <Card title="Ảnh sản phẩm" size="small" className="rounded-xl shadow-xs">
                 <Form.Item label="Ảnh chính (1 ảnh)">
@@ -427,7 +543,6 @@ export default function ProductCreate() {
               </Card>
             </Col>
 
-            {/* Product Info Section */}
             <Col xs={24} md={16}>
               <Row gutter={[16, 0]}>
                 <Col xs={24} md={12}>

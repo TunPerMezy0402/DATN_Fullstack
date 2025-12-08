@@ -27,6 +27,9 @@ import OrderList from '../pages/admin/orders/OrderList';
 import OrderDetail from '../pages/admin/orders/OrderDetail';
 
 import SupportTickets from '../pages/admin/support/SupportTickets';
+import AdminChatDetail from '../pages/admin/support/AdminChatDetail';
+import AdminChatRooms from '../pages/admin/support/AdminChatRooms';
+
 
 
 

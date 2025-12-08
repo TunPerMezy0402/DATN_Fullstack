@@ -18,6 +18,7 @@ import {
   Rate,
   Checkbox,
   InputNumber,
+  Image as AntImage,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -83,6 +84,7 @@ interface Shipping {
   shipping_status: string;
   reason?: string;
   reason_admin?: string;
+  transfer_image?: string | null;
   city: string;
   district: string;
   commune: string;
@@ -190,13 +192,16 @@ const STATUS_MAPS = {
     vnpay: "VNPAY",
   },
   returnStatus: {
-    pending: "Đang chờ xử lý",
-    processing: "Đang xử lý",
-    completed: "Đã hoàn thành",
-    rejected: "Đã từ chối",
-    // Legacy status (backward compatibility)
+    pending: "Chờ xử lý",
     approved: "Đã chấp nhận",
-    refunded: "Đã hoàn tiền",
+    completed: "Hoàn thành",
+    rejected: "Đã từ chối",
+  },
+  returnItemStatus: {
+    pending: "Chờ xử lý",
+    approved: "Đã duyệt",
+    completed: "Hoàn thành",
+    rejected: "Đã từ chối",
   },
 };
 
@@ -226,13 +231,16 @@ const STATUS_COLORS = {
     vnpay: "green",
   },
   returnStatus: {
-    pending: "orange",
-    processing: "blue",
+    pending: "gold",
+    approved: "blue",
     completed: "green",
     rejected: "red",
-    // Legacy status (backward compatibility)
+  },
+  returnItemStatus: {
+    pending: "gold",
     approved: "blue",
-    refunded: "green",
+    completed: "green",
+    rejected: "red",
   },
 };
 
@@ -259,6 +267,40 @@ const getDaysUntilReturnExpired = (receivedAt: string | null): number => {
   const now = new Date();
   const daysPassed = Math.floor((now.getTime() - received.getTime()) / (1000 * 60 * 60 * 24));
   return Math.max(0, 7 - daysPassed);
+};
+
+// Thêm vào phần helper functions, sau hàm getDaysUntilReturnExpired
+const calculateRefundAmount = (returnRequest: ReturnRequest) => {
+  // Chỉ tính tiền hoàn cho các item đã được duyệt (approved hoặc completed)
+  const approvedItems = returnRequest.items.filter(
+    item => item.status === "approved" || item.status === "completed"
+  );
+
+  const totalApprovedAmount = approvedItems.reduce(
+    (sum, item) => sum + parseFloat(item.refund_amount || "0"),
+    0
+  );
+
+  // Tính tỷ lệ giảm giá được hoàn dựa trên số tiền đã duyệt
+  const totalReturnAmount = parseFloat(returnRequest.total_return_amount || "0");
+  const refundedDiscount = totalReturnAmount > 0
+    ? (totalApprovedAmount / totalReturnAmount) * parseFloat(returnRequest.refunded_discount || "0")
+    : 0;
+
+  // Tính chênh lệch phí ship
+  const shippingDiff = parseFloat(returnRequest.shipping_diff || "0");
+
+  // Số tiền hoàn thực tế = Tiền hàng đã duyệt - Giảm giá được hoàn - Chênh lệch phí ship
+  const estimatedRefund = totalApprovedAmount - refundedDiscount - shippingDiff;
+
+  return {
+    totalApprovedAmount,
+    refundedDiscount,
+    estimatedRefund,
+    approvedItemsCount: approvedItems.length,
+    totalItemsCount: returnRequest.items?.length || 0,
+    shippingDiff
+  };
 };
 
 // ==================== MAIN COMPONENT ====================
@@ -304,12 +346,26 @@ const OrderUserDetail: React.FC = () => {
     return null;
   };
 
+  const getFullImageUrl = (imagePath: string | null | undefined): string => {
+    if (!imagePath) return "";
+    if (imagePath.startsWith("http")) return imagePath;
+    return `http://127.0.0.1:8000/${imagePath.replace(/^\//, "")}`;
+  };
+
   const getReturnStatusText = (status: string): string => {
     return STATUS_MAPS.returnStatus[status as keyof typeof STATUS_MAPS.returnStatus] || status;
   };
 
   const getReturnStatusColor = (status: string): string => {
     return STATUS_COLORS.returnStatus[status as keyof typeof STATUS_COLORS.returnStatus] || 'default';
+  };
+
+  const getReturnItemStatusText = (status: string): string => {
+    return STATUS_MAPS.returnItemStatus[status as keyof typeof STATUS_MAPS.returnItemStatus] || status;
+  };
+
+  const getReturnItemStatusColor = (status: string): string => {
+    return STATUS_COLORS.returnItemStatus[status as keyof typeof STATUS_COLORS.returnItemStatus] || 'default';
   };
 
   // ==================== DATA FETCHING ====================
@@ -415,14 +471,29 @@ const OrderUserDetail: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      message.success("Hủy đơn hàng thành công!");
       setCancelModalVisible(false);
       setCancelReason("");
+
+      // ✅ Delay 2.5 giây rồi mới hiển thị thông báo và load lại
+      await new Promise(resolve => setTimeout(resolve, 2500));
+
+      message.success("Hủy đơn hàng thành công!");
       await fetchOrder();
     } catch (error: any) {
       console.error("Cancel error:", error);
       const errorMsg = error.response?.data?.message || "Không thể hủy đơn hàng!";
+
+      // ✅ Hiển thị thông báo lỗi ngay
       message.error(errorMsg);
+
+      // ✅ Delay 2.5 giây rồi mới load lại trang
+      await new Promise(resolve => setTimeout(resolve, 2500));
+
+      // ✅ Đóng modal và clear dữ liệu TRƯỚC khi fetch
+      setCancelModalVisible(false);
+      setCancelReason("");
+
+      await fetchOrder();
     } finally {
       setCancelling(false);
     }
@@ -937,6 +1008,39 @@ const OrderUserDetail: React.FC = () => {
                   <Text type="warning">{s.reason_admin}</Text>
                 </Descriptions.Item>
               )}
+
+              {s?.transfer_image && (
+                <Descriptions.Item label="Ảnh chuyển khoản" span={2}>
+                  <img
+                    src={getFullImageUrl(s.transfer_image)}
+                    alt="Ảnh chuyển khoản"
+                    style={{
+                      maxWidth: 100,
+                      height: 'auto',
+                      borderRadius: 8,
+                      border: "2px solid #f0f0f0",
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => {
+                      Modal.info({
+                        width: 800,
+                        icon: null,
+                        content: (
+                          <div style={{ textAlign: 'center' }}>
+                            <img
+                              src={getFullImageUrl(s.transfer_image!)}
+                              alt="Ảnh chuyển khoản"
+                              style={{ maxWidth: '100%', borderRadius: 8 }}
+                            />
+                          </div>
+                        ),
+                        okText: 'Đóng',
+                      });
+                    }}
+                  />
+                </Descriptions.Item>
+              )}
+
             </Descriptions>
           </Card>
 
@@ -1056,13 +1160,9 @@ const OrderUserDetail: React.FC = () => {
               }}
             >
               {returnRequests.map((request, idx) => {
-                // ✅ DEBUG LOG
-                console.log('🔍 Return Request:', {
-                  id: request.id,
-                  status: request.status,
-                  itemsCount: request.items?.length || 0,
-                  items: request.items
-                });
+                const refundCalc = calculateRefundAmount(request);
+                const hasPartialApproval = refundCalc.approvedItemsCount > 0 &&
+                  refundCalc.approvedItemsCount < refundCalc.totalItemsCount;
 
                 return (
                   <div
@@ -1074,83 +1174,120 @@ const OrderUserDetail: React.FC = () => {
                       marginBottom: idx < returnRequests.length - 1 ? 16 : 0,
                     }}
                   >
+                    {/* Header với trạng thái */}
                     <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
                       <Col>
-                        <Text strong style={{ fontSize: 16 }}>Yêu cầu hoàn hàng #{request.id}</Text>
+                        <Space direction="vertical" size={4}>
+                          <Space>
+                            <Text strong style={{ fontSize: 16 }}>Yêu cầu hoàn hàng #{request.id}</Text>
+                            {hasPartialApproval && (
+                              <Tag color="blue" style={{ fontSize: 13 }}>
+                                Đã duyệt {refundCalc.approvedItemsCount}/{refundCalc.totalItemsCount} sản phẩm
+                              </Tag>
+                            )}
+                          </Space>
+                          <Text type="secondary" style={{ fontSize: 13 }}>
+                            {formatDate(request.requested_at)}
+                          </Text>
+                        </Space>
                       </Col>
                       <Col>
                         <Tag
                           color={getReturnStatusColor(request.status)}
-                          style={{ fontSize: 14, padding: "4px 12px", fontWeight: 500 }}
+                          style={{ fontSize: 14, padding: "6px 14px", fontWeight: 500 }}
+                          icon={
+                            request.status === "pending" ? <ClockCircleOutlined /> :
+                              request.status === "approved" ? <CheckCircleOutlined /> :
+                                request.status === "completed" ? <CheckCircleOutlined /> :
+                                  request.status === "rejected" ? <CloseCircleOutlined /> :
+                                    <SyncOutlined spin />
+                          }
                         >
                           {getReturnStatusText(request.status)}
                         </Tag>
                       </Col>
                     </Row>
 
-                    <Descriptions column={1} size="small" bordered>
-                      <Descriptions.Item label="Ngày yêu cầu">
-                        {formatDate(request.requested_at)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Tổng tiền hàng hoàn">
-                        <Text strong style={{ color: "#52c41a" }}>
+                    {/* Thông tin tài chính */}
+                    <Descriptions column={1} size="small" bordered style={{ marginBottom: 16 }}>
+                      {/* Tổng tiền hàng yêu cầu hoàn */}
+                      <Descriptions.Item
+                        label={
+                          <span style={{ textDecoration: hasPartialApproval ? 'line-through' : 'none' }}>
+                            Giá trị hàng hoàn
+                          </span>
+                        }
+                      >
+                        <Text
+                          strong
+                          style={{
+                            color: "#52c41a",
+                            textDecoration: hasPartialApproval ? 'line-through' : 'none'
+                          }}
+                        >
                           {formatCurrency(request.total_return_amount)}
                         </Text>
                       </Descriptions.Item>
-                      <Descriptions.Item label="Giảm giá được hoàn">
+
+                      {/* Hiển thị tổng tiền đã duyệt nếu khác với tổng yêu cầu */}
+                      {hasPartialApproval && (
+                        <Descriptions.Item
+                          label={<Text strong style={{ color: "#1890ff" }}>Giá trị đã duyệt</Text>}
+                        >
+                          <Text strong style={{ color: "#1890ff" }}>
+                            {formatCurrency(refundCalc.totalApprovedAmount)}
+                          </Text>
+                        </Descriptions.Item>
+                      )}
+
+                      <Descriptions.Item label="Trừ giảm giá">
                         <Text strong style={{ color: "#ff4d4f" }}>
-                          -{formatCurrency(request.refunded_discount)}
+                          -{formatCurrency(hasPartialApproval ? refundCalc.refundedDiscount : request.refunded_discount)}
                         </Text>
                       </Descriptions.Item>
-                      <Descriptions.Item label="Phí ship cũ">
-                        {formatCurrency(request.old_shipping_fee)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Phí ship mới">
-                        {formatCurrency(request.new_shipping_fee)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Chênh lệch phí ship">
-                        <Text strong style={{ color: parseFloat(request.shipping_diff) < 0 ? "#52c41a" : "#ff4d4f" }}>
-                          {parseFloat(request.shipping_diff) >= 0 ? "+" : ""}{formatCurrency(request.shipping_diff)}
-                        </Text>
-                      </Descriptions.Item>
+
+                      {parseFloat(request.shipping_diff) !== 0 && (
+                        <Descriptions.Item label="Chênh lệch phí ship">
+                          <Text strong style={{ color: parseFloat(request.shipping_diff) > 0 ? "#52c41a" : "#ff4d4f" }}>
+                            {parseFloat(request.shipping_diff) > 0 ? "+" : ""}{formatCurrency(request.shipping_diff)}
+                          </Text>
+                        </Descriptions.Item>
+                      )}
                     </Descriptions>
 
-                    <Divider style={{ margin: "16px 0" }} />
-
-                    <div style={{ backgroundColor: "#fff", padding: 16, borderRadius: 8, border: "2px solid #722ed1" }}>
+                    {/* Box tổng tiền hoàn */}
+                    <div
+                      style={{
+                        backgroundColor: "#fff",
+                        padding: 16,
+                        borderRadius: 8,
+                        border: "2px solid #722ed1",
+                        marginBottom: 16,
+                      }}
+                    >
                       <Row justify="space-between" align="middle">
                         <Col>
-                          <Text strong style={{ fontSize: 18 }}>Số tiền hoàn:</Text>
+                          <Text strong style={{ fontSize: 18 }}>
+                            Số tiền hoàn{hasPartialApproval ? " (dự kiến)" : ""}:
+                          </Text>
                         </Col>
                         <Col>
                           <Text strong style={{ fontSize: 24, color: "#722ed1" }}>
-                            {formatCurrency(request.estimated_refund)}
+                            {formatCurrency(hasPartialApproval ? refundCalc.estimatedRefund : request.estimated_refund)}
                           </Text>
                         </Col>
                       </Row>
                     </div>
 
-                    {/* ✅ DANH SÁCH SẢN PHẨM HOÀN */}
-                    {request.items && request.items.length > 0 ? (
+                    {/* Danh sách sản phẩm hoàn */}
+                    {request.items && request.items.length > 0 && (
                       <>
-                        <Divider style={{ margin: "16px 0" }} />
                         <Text strong style={{ fontSize: 15, display: "block", marginBottom: 12 }}>
-                          Sản phẩm hoàn: ({request.items.length} sản phẩm)
+                          Sản phẩm hoàn: ({request.items.length})
                         </Text>
                         <Space direction="vertical" style={{ width: "100%" }} size="small">
                           {request.items.map((item) => {
                             const orderItem = order.items.find(oi => oi.id === item.order_item_id);
-
-                            // ✅ DEBUG LOG CHO TỪNG ITEM
-                            console.log('📦 Return Item:', {
-                              id: item.id,
-                              order_item_id: item.order_item_id,
-                              orderItem: orderItem,
-                              quantity: item.quantity,
-                              refund_amount: item.refund_amount,
-                              reason: item.reason,
-                              admin_response: item.admin_response
-                            });
 
                             return (
                               <div
@@ -1162,37 +1299,53 @@ const OrderUserDetail: React.FC = () => {
                                   border: "1px solid #d9d9d9",
                                 }}
                               >
-                                <Row justify="space-between" align="middle">
+                                <Row justify="space-between" align="top">
                                   <Col flex={1}>
-                                    <Text strong>{orderItem?.product_name || "❌ Không tìm thấy sản phẩm"}</Text>
-                                    {orderItem?.size && <Tag color="blue" style={{ marginLeft: 8 }}>Size: {orderItem.size}</Tag>}
-                                    {orderItem?.color && <Tag color="purple">Màu: {orderItem.color}</Tag>}
-                                    <br />
-                                    <Text type="secondary" style={{ fontSize: 13 }}>
-                                      Số lượng: {item.quantity} | Hoàn: {formatCurrency(item.refund_amount)}
-                                    </Text>
-
-                                    {/* ✅ HIỂN THỊ LÝ DO HOÀN */}
-                                    {item.reason && (
-                                      <div style={{ marginTop: 8 }}>
-                                        <Text type="secondary" style={{ fontSize: 13, display: "block" }}>
-                                          <strong>Lý do:</strong> {item.reason}
-                                        </Text>
+                                    <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                      {/* Tên sản phẩm */}
+                                      <div>
+                                        <Text strong>{orderItem?.product_name || "Không tìm thấy sản phẩm"}</Text>
+                                        {orderItem?.size && <Tag color="blue" style={{ marginLeft: 8 }}>Size: {orderItem.size}</Tag>}
+                                        {orderItem?.color && <Tag color="purple">Màu: {orderItem.color}</Tag>}
                                       </div>
-                                    )}
 
-                                    {/* ✅ HIỂN THỊ PHẢN HỒI ADMIN (NẾU CÓ) */}
-                                    {item.admin_response && (
-                                      <div style={{ marginTop: 4 }}>
-                                        <Text type="warning" style={{ fontSize: 13, display: "block" }}>
-                                          <strong>Admin:</strong> {item.admin_response}
-                                        </Text>
-                                      </div>
-                                    )}
+                                      {/* Số lượng và giá */}
+                                      <Text type="secondary" style={{ fontSize: 13 }}>
+                                        Số lượng: {item.quantity} | Hoàn: {formatCurrency(item.refund_amount)}
+                                      </Text>
+
+                                      {/* Lý do hoàn */}
+                                      {item.reason && (
+                                        <div style={{ marginTop: 4 }}>
+                                          <Text type="secondary" style={{ fontSize: 13 }}>
+                                            <strong>Lý do:</strong> {item.reason}
+                                          </Text>
+                                        </div>
+                                      )}
+
+                                      {/* Phản hồi admin */}
+                                      {item.admin_response && (
+                                        <div style={{ marginTop: 4 }}>
+                                          <Text type="warning" style={{ fontSize: 13 }}>
+                                            <strong>Phản hồi:</strong> {item.admin_response}
+                                          </Text>
+                                        </div>
+                                      )}
+                                    </Space>
                                   </Col>
+
+                                  {/* Trạng thái item */}
                                   <Col>
-                                    <Tag color={getReturnStatusColor(item.status)}>
-                                      {getReturnStatusText(item.status)}
+                                    <Tag
+                                      color={getReturnItemStatusColor(item.status)}
+                                      icon={
+                                        item.status === "pending" ? <ClockCircleOutlined /> :
+                                          item.status === "approved" ? <CheckCircleOutlined /> :
+                                            item.status === "completed" ? <CheckCircleOutlined /> :
+                                              <CloseCircleOutlined />
+                                      }
+                                    >
+                                      {getReturnItemStatusText(item.status)}
                                     </Tag>
                                   </Col>
                                 </Row>
@@ -1201,29 +1354,12 @@ const OrderUserDetail: React.FC = () => {
                           })}
                         </Space>
                       </>
-                    ) : (
-                      <>
-                        <Divider style={{ margin: "16px 0" }} />
-                        <div style={{
-                          padding: 16,
-                          backgroundColor: "#fff7e6",
-                          borderRadius: 8,
-                          textAlign: "center"
-                        }}>
-                          <Text type="warning">
-                            ⚠️ Không có sản phẩm nào trong yêu cầu hoàn này
-                          </Text>
-                        </div>
-                      </>
                     )}
                   </div>
                 );
               })}
             </Card>
           )}
-
-
-
 
         </Col>
 

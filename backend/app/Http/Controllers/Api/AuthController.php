@@ -97,6 +97,7 @@ class AuthController extends Controller
             'email' => 'required|email',
         ]);
 
+        // Kiểm tra email có tồn tại không
         $user = User::where('email', $request->email)->first();
         
         if (!$user) {
@@ -106,6 +107,7 @@ class AuthController extends Controller
             ], 404);
         }
 
+        // Gửi email reset password
         $status = Password::sendResetLink(
             $request->only('email')
         );
@@ -130,37 +132,21 @@ class AuthController extends Controller
     {
         $request->validate([
             'token' => 'required',
+            'email' => 'required|email',
             'password' => 'required|min:6|confirmed',
         ]);
 
-        // Tìm email từ token trong bảng password_reset_tokens
-        $tokenRecord = DB::table('password_reset_tokens')
-            ->whereNotNull('token')
-            ->get()
-            ->first(function ($record) use ($request) {
-                return Hash::check($request->token, $record->token);
-            });
-
-        if (!$tokenRecord) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Token không hợp lệ hoặc đã hết hạn.',
-            ], 400);
-        }
-
+        // Reset password sử dụng Laravel's Password facade
         $status = Password::reset(
-            [
-                'email' => $tokenRecord->email,
-                'password' => $request->password,
-                'password_confirmation' => $request->password_confirmation,
-                'token' => $request->token,
-            ],
+            $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) {
                 $user->forceFill([
                     'password' => Hash::make($password),
                 ])->setRememberToken(Str::random(60));
 
                 $user->save();
+                
+                // Xóa tất cả token API cũ
                 $user->tokens()->delete();
 
                 event(new PasswordReset($user));
@@ -174,9 +160,16 @@ class AuthController extends Controller
             ]);
         }
 
+        // Xử lý các trường hợp lỗi
+        $message = match($status) {
+            Password::INVALID_TOKEN => 'Token không hợp lệ hoặc đã hết hạn.',
+            Password::INVALID_USER => 'Email không tồn tại trong hệ thống.',
+            default => 'Không thể đặt lại mật khẩu. Vui lòng thử lại.',
+        };
+
         return response()->json([
             'status' => false,
-            'message' => 'Token không hợp lệ hoặc đã hết hạn.',
+            'message' => $message,
         ], 400);
     }
 

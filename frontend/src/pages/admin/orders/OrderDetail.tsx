@@ -22,7 +22,6 @@ import {
   Table,
   Collapse,
   Timeline,
-  Drawer,
   Popconfirm,
 } from "antd";
 import {
@@ -42,16 +41,16 @@ import {
   CheckCircleOutlined,
   CloseCircleOutlined,
   SyncOutlined,
-  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 import type { UploadFile, UploadProps } from "antd";
 import axios from "axios";
+import { provinces, districts, wards } from "vietnam-provinces";
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
 
 // ============================================================
-//                         INTERFACES
+//                         TYPES & CONSTANTS
 // ============================================================
 
 interface ReturnItem {
@@ -90,8 +89,6 @@ interface ReturnRequest {
 
 interface OrderItem {
   id: number;
-  product_id: number;
-  variant_id?: number;
   product_name: string;
   product_image?: string;
   size?: string;
@@ -110,13 +107,13 @@ interface Shipping {
   reason?: string;
   reason_admin?: string;
   transfer_image?: string | null;
-  city: string;
-  district: string;
-  commune: string;
-  village: string;
-  notes?: string | null;
   full_address?: string;
   received_at?: string;
+  city?: string;
+  district?: string;
+  commune?: string;
+  village?: string;
+  notes?: string;
 }
 
 interface User {
@@ -144,93 +141,77 @@ interface Order {
   return_requests?: ReturnRequest[];
 }
 
-// ============================================================
-//                         CONSTANTS
-// ============================================================
-
 const API_URL = "http://127.0.0.1:8000/api";
 const token = localStorage.getItem("access_token") || "";
 
-const paymentStatusMap: Record<string, string> = {
-  unpaid: "Chưa thanh toán",
-  paid: "Đã thanh toán",
-  refunded: "Đã hoàn tiền",
-  refund_processing: "Đang xử lý hoàn tiền",
-  failed: "Thanh toán thất bại",
+const STATUS_MAPS = {
+  payment: {
+    unpaid: "Chưa thanh toán",
+    paid: "Đã thanh toán",
+    refunded: "Đã hoàn tiền",
+    refund_processing: "Đang xử lý hoàn tiền",
+    failed: "Thanh toán thất bại",
+  },
+  shipping: {
+    pending: "Chờ xử lý",
+    in_transit: "Đang vận chuyển",
+    delivered: "Đã giao hàng",
+    failed: "Giao thất bại",
+    returned: "Hoàn hàng thành công",
+    none: "Đã hủy",
+    nodone: "Chờ thanh toán lại",
+    evaluated: "Đã đánh giá",
+    return_processing: "Đang xử lý hoàn hàng",
+    return_fail: "Hoàn hàng thất bại",
+    received: "Đã nhận được hàng",
+  },
+  return: {
+    pending: "Chờ xử lý",
+    approved: "Đã chấp nhận",
+    completed: "Hoàn thành",
+    rejected: "Đã từ chối",
+  },
+  returnItem: {
+    pending: "Chờ xử lý",
+    approved: "Đã duyệt",
+    rejected: "Đã từ chối",
+    completed: "Hoàn thành",
+  },
 };
 
-const paymentStatusColors: Record<string, string> = {
-  unpaid: "default",
-  paid: "green",
-  refunded: "purple",
-  refund_processing: "orange",
-  failed: "red",
-};
-
-const shippingStatusMap: Record<string, string> = {
-  pending: "Chờ xử lý",
-  in_transit: "Đang vận chuyển",
-  delivered: "Đã giao hàng",
-  failed: "Giao thất bại",
-  returned: "Hoàn hàng thành công",
-  none: "Đã hủy",
-  nodone: "Chờ thanh toán lại",
-  evaluated: "Đã đánh giá",
-  return_processing: "Đang xử lý hoàn hàng",
-  return_fail: "Hoàn hàng thất bại",
-  received: "Đã nhận được hàng",
-};
-
-const shippingStatusColors: Record<string, string> = {
-  pending: "gold",
-  in_transit: "blue",
-  delivered: "green",
-  failed: "red",
-  returned: "purple",
-  none: "default",
-  nodone: "orange",
-  evaluated: "cyan",
-  return_processing: "geekblue",
-  return_fail: "volcano",
-  received: "lime",
-};
-
-const returnStatusMap: Record<string, string> = {
-  pending: "Chờ xử lý",
-  processing: "Đang xử lý",
-  completed: "Hoàn thành",
-  rejected: "Đã từ chối",
-};
-
-const returnStatusColors: Record<string, string> = {
-  pending: "gold",
-  processing: "blue",
-  completed: "green",
-  rejected: "red",
-};
-
-const returnItemStatusMap: Record<string, string> = {
-  pending: "Chờ xử lý",
-  approved: "Đã duyệt",
-  rejected: "Đã từ chối",
-  completed: "Hoàn thành",
-};
-
-const returnItemStatusColors: Record<string, string> = {
-  pending: "gold",
-  approved: "blue",
-  rejected: "red",
-  completed: "green",
-};
-
-const paymentMethodMap: Record<string, string> = {
-  cod: "Thanh toán khi nhận hàng",
-  vnpay: "VNPAY",
-};
-
-const paymentMethodColors: Record<string, string> = {
-  cod: "orange",
-  vnpay: "blue",
+const STATUS_COLORS = {
+  payment: {
+    unpaid: "default",
+    paid: "green",
+    refunded: "purple",
+    refund_processing: "orange",
+    failed: "red",
+  },
+  shipping: {
+    pending: "gold",
+    in_transit: "blue",
+    delivered: "green",
+    failed: "red",
+    returned: "purple",
+    none: "default",
+    nodone: "orange",
+    evaluated: "cyan",
+    return_processing: "geekblue",
+    return_fail: "volcano",
+    received: "lime",
+  },
+  return: {
+    pending: "gold",
+    approved: "blue",
+    completed: "green",
+    rejected: "red",
+  },
+  returnItem: {
+    pending: "gold",
+    approved: "blue",
+    rejected: "red",
+    completed: "green",
+  },
 };
 
 // ============================================================
@@ -245,12 +226,12 @@ const OrderDetail: React.FC = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
-  const [form] = Form.useForm();
+  const [updatingReturnStatus, setUpdatingReturnStatus] = useState<number | null>(null);
   const [itemActionLoading, setItemActionLoading] = useState<number | null>(null);
-  const [returnDrawer, setReturnDrawer] = useState<ReturnRequest | null>(null);
+  const [form] = Form.useForm();
 
   // ============================================================
-  //                      FETCH ORDER
+  //                      API CALLS
   // ============================================================
 
   const fetchOrder = useCallback(async () => {
@@ -262,18 +243,15 @@ const OrderDetail: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const orderData = res.data.data;
-      setOrder(orderData);
+      setOrder(res.data.data);
 
-      if (orderData.shipping?.transfer_image) {
-        setFileList([
-          {
-            uid: "-1",
-            name: "transfer_image",
-            status: "done",
-            url: orderData.shipping.transfer_image,
-          },
-        ]);
+      if (res.data.data.shipping?.transfer_image) {
+        setFileList([{
+          uid: "-1",
+          name: "transfer_image",
+          status: "done",
+          url: res.data.data.shipping.transfer_image,
+        }]);
       }
     } catch (error) {
       console.error(error);
@@ -294,154 +272,12 @@ const OrderDetail: React.FC = () => {
         payment_status: order.payment_status,
         reason_admin: order.shipping.reason_admin || "",
       });
-
-      if (order.shipping?.transfer_image) {
-        setFileList([
-          {
-            uid: "-1",
-            name: "transfer_image",
-            status: "done",
-            url: order.shipping.transfer_image,
-          },
-        ]);
-      } else {
-        setFileList([]);
-      }
     }
   }, [order, isEditMode, form]);
 
-
-
-  const getFullImageUrl = (imagePath: string | null | undefined): string => {
-    if (!imagePath) return '';
-
-    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-      return imagePath;
-    }
-
-    const baseUrl = API_URL.replace('/api', '');
-    const path = imagePath.startsWith('/') ? imagePath : `/${imagePath}`;
-    return `${baseUrl}${path}`;
-  };
-
-  const handleCancelEdit = () => {
-    setIsEditMode(false);
-    if (order) {
-      form.setFieldsValue({
-        shipping_status: order.shipping?.shipping_status,
-        payment_status: order.payment_status,
-        reason_admin: order.shipping?.reason_admin,
-      });
-
-      if (order.shipping?.transfer_image) {
-        setFileList([
-          {
-            uid: "-1",
-            name: "transfer_image",
-            status: "done",
-            url: order.shipping.transfer_image,
-          },
-        ]);
-      } else {
-        setFileList([]);
-      }
-    }
-  };
-
-  const getAvailableShippingStatuses = (
-    currentStatus: string,
-    paymentStatus: string
-  ) => {
-    const statusFlow: Record<string, string[]> = {
-      pending: ["pending", "in_transit"],
-      in_transit: ["in_transit", "delivered", "failed"],
-      delivered: ["delivered", "nodode", "evaluated"],
-      failed: ["failed", "return_processing"],
-      nodone: ["nodone", "return_processing"],
-      return_processing: ["return_processing", "returned", "return_fail"],
-      returned: ["returned"],
-      return_fail: ["return_fail"],
-      evaluated: ["evaluated"],
-    };
-
-    let allowedStatuses = statusFlow[currentStatus] || [currentStatus];
-
-    if (paymentStatus === "refund_processing") {
-      allowedStatuses = allowedStatuses.filter(
-        (status) =>
-          status === currentStatus ||
-          status === "return_fail" ||
-          status === "returned"
-      );
-    }
-
-    return allowedStatuses.map((status) => ({
-      value: status,
-      label: shippingStatusMap[status] || status,
-      disabled: status === currentStatus,
-    }));
-  };
-
-  const getAvailablePaymentStatuses = (
-    currentPaymentStatus: string,
-    shippingStatus: string,
-    paymentMethod: string
-  ) => {
-    const statuses: Array<{
-      value: string;
-      label: string;
-      disabled?: boolean;
-    }> = [];
-
-    statuses.push({
-      value: currentPaymentStatus,
-      label: paymentStatusMap[currentPaymentStatus] || currentPaymentStatus,
-      disabled: true,
-    });
-
-    const validPaymentTransitions: Record<string, string[]> = {
-      unpaid: ["paid", "failed"],
-      paid: ["refund_processing"],
-      refund_processing: ["refunded", "failed"],
-      refunded: [],
-      failed: [],
-    };
-
-    const allowedTransitions =
-      validPaymentTransitions[currentPaymentStatus] || [];
-
-    allowedTransitions.forEach((status) => {
-      if (status === "paid" && currentPaymentStatus === "unpaid") {
-        if (
-          (paymentMethod === "cod" && shippingStatus === "delivered") ||
-          paymentMethod === "vnpay"
-        ) {
-          statuses.push({
-            value: "paid",
-            label: paymentStatusMap["paid"],
-          });
-        }
-        return;
-      }
-
-      if (status === "refund_processing" && currentPaymentStatus === "paid") {
-        if (["return_processing", "returned"].includes(shippingStatus)) {
-          statuses.push({
-            value: "refund_processing",
-            label: paymentStatusMap["refund_processing"],
-          });
-        }
-        return;
-      }
-
-      statuses.push({
-        value: status,
-        label: paymentStatusMap[status],
-      });
-    });
-
-    return statuses;
-  };
+  // ============================================================
+  //                      HANDLERS
+  // ============================================================
 
   const handleUpload = async (file: File): Promise<string | null> => {
     const formData = new FormData();
@@ -457,80 +293,23 @@ const OrderDetail: React.FC = () => {
       message.success("Tải ảnh lên thành công");
       return response.data.url;
     } catch (error) {
-      console.error("Upload error:", error);
       message.error("Tải ảnh lên thất bại");
       return null;
     }
   };
 
-  const uploadProps: UploadProps = {
-    onRemove: () => {
-      setFileList([]);
-      return true;
-    },
-    beforeUpload: (file) => {
-      const isImage = file.type.startsWith("image/");
-      if (!isImage) {
-        message.error("Chỉ được tải lên file ảnh!");
-        return Upload.LIST_IGNORE;
-      }
-
-      const isLt5M = file.size / 1024 / 1024 < 5;
-      if (!isLt5M) {
-        message.error("Kích thước ảnh không được vượt quá 5MB!");
-        return Upload.LIST_IGNORE;
-      }
-
-      const newFile: UploadFile = {
-        uid: file.uid,
-        name: file.name,
-        status: "uploading",
-      };
-
-      setFileList([newFile]);
-
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const url = await handleUpload(file);
-        if (url) {
-          setFileList([
-            {
-              ...newFile,
-              status: "done",
-              url: url,
-            },
-          ]);
-        } else {
-          setFileList([]);
-        }
-      };
-      reader.readAsDataURL(file);
-
-      return false;
-    },
-    fileList,
-    maxCount: 1,
-    listType: "picture-card",
-    accept: "image/*",
-    disabled: !isEditMode,
-  };
-
-  const handleUpdateForm = async () => {
+  const handleUpdateOrder = async () => {
     if (!order) return;
 
     try {
       await form.validateFields();
       setUpdating(true);
 
-      const shippingStatus = form.getFieldValue("shipping_status");
-      const paymentStatus = form.getFieldValue("payment_status");
-      const reasonAdmin = form.getFieldValue("reason_admin");
+      const values = form.getFieldsValue();
 
       if (
-        ["return_processing", "returned", "return_fail"].includes(
-          shippingStatus
-        ) &&
-        !reasonAdmin?.trim() &&
+        ["return_processing", "returned", "return_fail"].includes(values.shipping_status) &&
+        !values.reason_admin?.trim() &&
         !order.shipping?.reason_admin
       ) {
         message.error("Vui lòng nhập phản hồi admin khi xử lý hoàn hàng!");
@@ -538,28 +317,26 @@ const OrderDetail: React.FC = () => {
         return;
       }
 
-      let transferImage = order?.shipping?.transfer_image;
+      let transferImage = order.shipping?.transfer_image;
       if (fileList.length > 0 && fileList[0].url) {
         transferImage = fileList[0].url;
       } else if (fileList.length > 0 && fileList[0].originFileObj) {
         const uploadedUrl = await handleUpload(fileList[0].originFileObj);
-        if (uploadedUrl) {
-          transferImage = uploadedUrl;
-        } else {
-          message.error("Không thể tải lên ảnh chuyển khoản");
+        if (!uploadedUrl) {
           setUpdating(false);
           return;
         }
+        transferImage = uploadedUrl;
       } else if (fileList.length === 0) {
         transferImage = null;
       }
 
-      const response = await axios.put(
+      await axios.put(
         `${API_URL}/admin/orders-admin/${orderId}`,
         {
-          shipping_status: shippingStatus,
-          payment_status: paymentStatus,
-          reason_admin: reasonAdmin,
+          shipping_status: values.shipping_status,
+          payment_status: values.payment_status,
+          reason_admin: values.reason_admin,
           transfer_image: transferImage,
         },
         {
@@ -571,33 +348,14 @@ const OrderDetail: React.FC = () => {
       );
 
       message.success("Cập nhật đơn hàng thành công");
-
-      setOrder({
-        ...order,
-        payment_status: response.data.data.payment_status,
-        shipping: {
-          ...order.shipping,
-          shipping_status: response.data.data.shipping.shipping_status,
-          reason_admin: response.data.data.shipping.reason_admin,
-          transfer_image: response.data.data.shipping.transfer_image,
-        },
-      });
-
+      await fetchOrder();
       setIsEditMode(false);
     } catch (error: any) {
-      console.error("Error updating order:", error);
-      const errorMessage =
-        error.response?.data?.message ||
-        "Có lỗi xảy ra khi cập nhật đơn hàng";
-      message.error(errorMessage);
+      message.error(error.response?.data?.message || "Bạn chưa nhập đầy đủ thông tin!");
     } finally {
       setUpdating(false);
     }
   };
-
-  // ============================================================
-  //                      RENDER FUNCTIONS
-  // ============================================================
 
   const handleApproveItem = async (returnRequestId: number, itemId: number, adminResponse?: string) => {
     try {
@@ -609,25 +367,29 @@ const OrderDetail: React.FC = () => {
       );
 
       message.success("Đã duyệt sản phẩm hoàn hàng!");
-
-      // ✅ Cập nhật state trực tiếp thay vì fetchOrder()
+      
+      // ✅ Cập nhật local state thay vì refetch
       setOrder((prevOrder) => {
         if (!prevOrder) return prevOrder;
+        
+        const updatedReturnRequests = prevOrder.return_requests?.map((req) => {
+          if (req.id === returnRequestId) {
+            return {
+              ...req,
+              ...response.data.data,
+              items: response.data.data.items || req.items.map((item) => 
+                item.id === itemId 
+                  ? { ...item, status: 'approved', admin_response: adminResponse }
+                  : item
+              ),
+            };
+          }
+          return req;
+        });
 
         return {
           ...prevOrder,
-          return_requests: prevOrder.return_requests?.map((req) =>
-            req.id === returnRequestId
-              ? {
-                ...req,
-                items: req.items.map((item) =>
-                  item.id === itemId
-                    ? { ...item, status: "approved", admin_response: adminResponse }
-                    : item
-                ),
-              }
-              : req
-          ),
+          return_requests: updatedReturnRequests,
         };
       });
     } catch (error: any) {
@@ -652,25 +414,29 @@ const OrderDetail: React.FC = () => {
       );
 
       message.success("Đã từ chối sản phẩm hoàn hàng!");
-
-      // ✅ Cập nhật state trực tiếp thay vì fetchOrder()
+      
+      // ✅ Cập nhật local state
       setOrder((prevOrder) => {
         if (!prevOrder) return prevOrder;
+        
+        const updatedReturnRequests = prevOrder.return_requests?.map((req) => {
+          if (req.id === returnRequestId) {
+            return {
+              ...req,
+              ...response.data.data,
+              items: response.data.data.items || req.items.map((item) => 
+                item.id === itemId 
+                  ? { ...item, status: 'rejected', admin_response: adminResponse }
+                  : item
+              ),
+            };
+          }
+          return req;
+        });
 
         return {
           ...prevOrder,
-          return_requests: prevOrder.return_requests?.map((req) =>
-            req.id === returnRequestId
-              ? {
-                ...req,
-                items: req.items.map((item) =>
-                  item.id === itemId
-                    ? { ...item, status: "rejected", admin_response: adminResponse }
-                    : item
-                ),
-              }
-              : req
-          ),
+          return_requests: updatedReturnRequests,
         };
       });
     } catch (error: any) {
@@ -680,10 +446,176 @@ const OrderDetail: React.FC = () => {
     }
   };
 
-  const renderReturnRequests = () => {
-    if (!order?.return_requests || order.return_requests.length === 0) {
-      return null;
+  const handleUpdateReturnStatus = async (returnRequestId: number, newStatus: string) => {
+    try {
+      setUpdatingReturnStatus(returnRequestId);
+
+      const response = await axios.put(
+        `${API_URL}/admin/orders/${orderId}/return-requests/${returnRequestId}/status`,
+        { status: newStatus },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      message.success("Cập nhật trạng thái yêu cầu hoàn hàng thành công!");
+      
+      // ✅ Cập nhật local state
+      setOrder((prevOrder) => {
+        if (!prevOrder) return prevOrder;
+        
+        const updatedReturnRequests = prevOrder.return_requests?.map((req) =>
+          req.id === returnRequestId ? { ...req, ...response.data.data } : req
+        );
+
+        return {
+          ...prevOrder,
+          return_requests: updatedReturnRequests,
+        };
+      });
+    } catch (error: any) {
+      message.error(error.response?.data?.message || "Có lỗi xảy ra khi cập nhật trạng thái");
+    } finally {
+      setUpdatingReturnStatus(null);
     }
+  };
+
+  // ============================================================
+  //                      HELPERS
+  // ============================================================
+
+  const getFullImageUrl = (imagePath: string | null | undefined): string => {
+    if (!imagePath) return "";
+    if (imagePath.startsWith("http")) return imagePath;
+    const baseUrl = API_URL.replace("/api", "");
+    return `${baseUrl}/${imagePath.replace(/^\//, "")}`;
+  };
+
+  const calculateRefundAmount = (returnRequest: ReturnRequest) => {
+    const approvedItems = returnRequest.items.filter(
+      (item) => item.status === "approved" || item.status === "completed"
+    );
+
+    const totalApprovedAmount = approvedItems.reduce((sum, item) => sum + item.refund_amount, 0);
+
+    const refundedDiscount =
+      returnRequest.total_return_amount > 0
+        ? (totalApprovedAmount / returnRequest.total_return_amount) * returnRequest.refunded_discount
+        : 0;
+
+    const shippingDiff = returnRequest.shipping_diff || 0;
+    const estimatedRefund = totalApprovedAmount - refundedDiscount - shippingDiff;
+
+    return {
+      totalApprovedAmount,
+      refundedDiscount,
+      estimatedRefund: Math.max(0, estimatedRefund),
+      approvedItemsCount: approvedItems.length,
+      totalItemsCount: returnRequest.items.length,
+      shippingDiff,
+    };
+  };
+
+  const getAvailableReturnStatuses = (currentStatus: string) => {
+    const transitions: Record<string, string[]> = {
+      pending: ["pending", "approved", "rejected"],
+      approved: ["approved", "completed"],
+      rejected: ["rejected"],
+      completed: ["completed"],
+    };
+
+    return (transitions[currentStatus] || [currentStatus]).map((status) => ({
+      value: status,
+      label: STATUS_MAPS.return[status as keyof typeof STATUS_MAPS.return] || status,
+      disabled: status === currentStatus,
+    }));
+  };
+
+const formatAddress = (shipping: Shipping | null | undefined): string => {
+  if (!shipping) return "—";
+
+  const parts: string[] = [];
+
+  // ✅ 1. Thêm số nhà/thôn xóm
+  if (shipping.village) {
+    parts.push(shipping.village);
+  }
+
+  // ✅ 2. Tìm và thêm TÊN xã/phường (không phải code)
+  if (shipping.commune) {
+    const communeName = wards.find((w) => w.code === shipping.commune)?.name || shipping.commune;
+    parts.push(communeName);
+  }
+
+  // ✅ 3. Tìm và thêm TÊN quận/huyện
+  if (shipping.district) {
+    const districtName = districts.find((d) => d.code === shipping.district)?.name || shipping.district;
+    parts.push(districtName);
+  }
+
+  // ✅ 4. Tìm và thêm TÊN tỉnh/thành phố
+  if (shipping.city) {
+    const cityName = provinces.find((p) => p.code === shipping.city)?.name || shipping.city;
+    parts.push(cityName);
+  }
+
+  // ✅ 5. Thêm ghi chú nếu có
+  if (shipping.notes) {
+    parts.push(`(${shipping.notes})`);
+  }
+
+  return parts.length > 0 ? parts.join(", ") : "—";
+};
+
+  // ============================================================
+  //                      UPLOAD PROPS
+  // ============================================================
+
+  const uploadProps: UploadProps = {
+    onRemove: () => {
+      setFileList([]);
+      return true;
+    },
+    beforeUpload: (file) => {
+      if (!file.type.startsWith("image/")) {
+        message.error("Chỉ được tải lên file ảnh!");
+        return Upload.LIST_IGNORE;
+      }
+
+      if (file.size / 1024 / 1024 > 5) {
+        message.error("Kích thước ảnh không được vượt quá 5MB!");
+        return Upload.LIST_IGNORE;
+      }
+
+      const newFile: UploadFile = {
+        uid: file.uid,
+        name: file.name,
+        status: "uploading",
+      };
+
+      setFileList([newFile]);
+
+      handleUpload(file).then((url) => {
+        if (url) {
+          setFileList([{ ...newFile, status: "done", url }]);
+        } else {
+          setFileList([]);
+        }
+      });
+
+      return false;
+    },
+    fileList,
+    maxCount: 1,
+    listType: "picture-card",
+    accept: "image/*",
+    disabled: !isEditMode,
+  };
+
+  // ============================================================
+  //                      RENDER RETURN REQUESTS
+  // ============================================================
+
+  const renderReturnRequests = () => {
+    if (!order?.return_requests || order.return_requests.length === 0) return null;
 
     return (
       <Card
@@ -703,21 +635,40 @@ const OrderDetail: React.FC = () => {
                 <Col>
                   <Space>
                     <Text strong>Yêu cầu #{returnRequest.id}</Text>
-                    <Tag color={returnStatusColors[returnRequest.status]}>
-                      {returnStatusMap[returnRequest.status]}
+                    <Tag color={STATUS_COLORS.return[returnRequest.status as keyof typeof STATUS_COLORS.return]}>
+                      {STATUS_MAPS.return[returnRequest.status as keyof typeof STATUS_MAPS.return]}
                     </Tag>
                   </Space>
                 </Col>
                 <Col>
-                  <Text type="secondary">
-                    {new Date(returnRequest.requested_at).toLocaleString("vi-VN")}
-                  </Text>
+                  <Space size="large">
+                    <Text type="secondary">
+                      {new Date(returnRequest.requested_at).toLocaleString("vi-VN")}
+                    </Text>
+
+                    <Select
+                      value={returnRequest.status}
+                      onChange={(value) => {
+                        Modal.confirm({
+                          title: "Xác nhận cập nhật trạng thái",
+                          content: `Bạn có chắc chắn muốn chuyển sang "${STATUS_MAPS.return[value as keyof typeof STATUS_MAPS.return]}"?`,
+                          okText: "Xác nhận",
+                          cancelText: "Hủy",
+                          onOk: () => handleUpdateReturnStatus(returnRequest.id, value),
+                        });
+                      }}
+                      loading={updatingReturnStatus === returnRequest.id}
+                      style={{ minWidth: 160 }}
+                      options={getAvailableReturnStatuses(returnRequest.status)}
+                      onClick={(e) => e.stopPropagation()}
+                      disabled={updatingReturnStatus === returnRequest.id}
+                    />
+                  </Space>
                 </Col>
               </Row>
             ),
             children: (
               <div>
-                {/* Timeline trạng thái */}
                 <Timeline
                   style={{ marginBottom: 24 }}
                   items={[
@@ -735,60 +686,53 @@ const OrderDetail: React.FC = () => {
                     },
                     ...(returnRequest.processed_at
                       ? [
-                        {
-                          color: "green",
-                          children: (
-                            <div>
-                              <Text strong>Đã xử lý</Text>
-                              <br />
-                              <Text type="secondary">
-                                {new Date(returnRequest.processed_at).toLocaleString("vi-VN")}
-                              </Text>
-                            </div>
-                          ),
-                        },
-                      ]
+                          {
+                            color: "green",
+                            children: (
+                              <div>
+                                <Text strong>Đã xử lý</Text>
+                                <br />
+                                <Text type="secondary">
+                                  {new Date(returnRequest.processed_at).toLocaleString("vi-VN")}
+                                </Text>
+                              </div>
+                            ),
+                          },
+                        ]
                       : []),
                     ...(returnRequest.rejected_at
                       ? [
-                        {
-                          color: "red",
-                          children: (
-                            <div>
-                              <Text strong>Đã từ chối</Text>
-                              <br />
-                              <Text type="secondary">
-                                {new Date(returnRequest.rejected_at).toLocaleString("vi-VN")}
-                              </Text>
-                            </div>
-                          ),
-                        },
-                      ]
+                          {
+                            color: "red",
+                            children: (
+                              <div>
+                                <Text strong>Đã từ chối</Text>
+                                <br />
+                                <Text type="secondary">
+                                  {new Date(returnRequest.rejected_at).toLocaleString("vi-VN")}
+                                </Text>
+                              </div>
+                            ),
+                          },
+                        ]
                       : []),
                   ]}
                 />
 
-                {/* Chi tiết sản phẩm hoàn */}
-                <Card
-                  type="inner"
-                  title="Danh sách sản phẩm hoàn"
-                  style={{ marginBottom: 16 }}
-                >
+                <Card type="inner" title="Danh sách sản phẩm hoàn" style={{ marginBottom: 16 }}>
                   <Table
                     dataSource={returnRequest.items}
                     rowKey="id"
                     pagination={false}
                     columns={[
-
                       {
                         title: "Hình ảnh",
                         dataIndex: "product_image",
-                        key: "image",
                         width: 100,
-                        render: (image: string, item: ReturnItem) => (
+                        render: (image: string, item: ReturnItem) =>
                           item.product_image ? (
                             <img
-                              src={getFullImageUrl(item.product_image)}  // ✅ Thêm hàm getFullImageUrl
+                              src={getFullImageUrl(item.product_image)}
                               alt={item.product_name}
                               style={{
                                 width: 80,
@@ -810,41 +754,31 @@ const OrderDetail: React.FC = () => {
                                 justifyContent: "center",
                               }}
                             >
-                              <ShoppingCartOutlined
-                                style={{ fontSize: 32, color: "#ccc" }}
-                              />
+                              <ShoppingCartOutlined style={{ fontSize: 32, color: "#ccc" }} />
                             </div>
-                          )
-                        ),
+                          ),
                       },
                       {
                         title: "Sản phẩm",
                         dataIndex: "product_name",
-                        key: "product",
                         render: (name: string, record: ReturnItem) => (
                           <div>
                             <Text strong>{name || "—"}</Text>
                             <br />
-                            {record.size && (
-                              <Text type="secondary">Size: {record.size} </Text>
-                            )}
-                            {record.color && (
-                              <Text type="secondary">Màu: {record.color}</Text>
-                            )}
+                            {record.size && <Text type="secondary">Size: {record.size} </Text>}
+                            {record.color && <Text type="secondary">Màu: {record.color}</Text>}
                           </div>
                         ),
                       },
                       {
                         title: "Số lượng",
                         dataIndex: "quantity",
-                        key: "quantity",
                         align: "center",
                         width: 100,
                       },
                       {
                         title: "Tiền hoàn",
                         dataIndex: "refund_amount",
-                        key: "refund_amount",
                         align: "right",
                         width: 120,
                         render: (amount: number) => (
@@ -856,12 +790,11 @@ const OrderDetail: React.FC = () => {
                       {
                         title: "Trạng thái",
                         dataIndex: "status",
-                        key: "status",
                         align: "center",
                         width: 120,
                         render: (status: string) => (
-                          <Tag color={returnItemStatusColors[status]}>
-                            {returnItemStatusMap[status] || status}
+                          <Tag color={STATUS_COLORS.returnItem[status as keyof typeof STATUS_COLORS.returnItem]}>
+                            {STATUS_MAPS.returnItem[status as keyof typeof STATUS_MAPS.returnItem] || status}
                           </Tag>
                         ),
                       },
@@ -876,7 +809,6 @@ const OrderDetail: React.FC = () => {
                               <Space direction="vertical" size="small">
                                 <Popconfirm
                                   title="Duyệt sản phẩm hoàn?"
-                                  description="Bạn có muốn duyệt sản phẩm này không?"
                                   onConfirm={() => handleApproveItem(returnRequest.id, record.id)}
                                   okText="Duyệt"
                                   cancelText="Hủy"
@@ -915,7 +847,9 @@ const OrderDetail: React.FC = () => {
                                       cancelText: "Hủy",
                                       okButtonProps: { danger: true },
                                       onOk: () => {
-                                        const reason = (document.getElementById("reject-reason") as HTMLTextAreaElement)?.value;
+                                        const reason = (
+                                          document.getElementById("reject-reason") as HTMLTextAreaElement
+                                        )?.value;
                                         return handleRejectItem(returnRequest.id, record.id, reason);
                                       },
                                     });
@@ -929,8 +863,8 @@ const OrderDetail: React.FC = () => {
                           }
 
                           return (
-                            <Tag color={returnItemStatusColors[record.status]}>
-                              {returnItemStatusMap[record.status]}
+                            <Tag color={STATUS_COLORS.returnItem[record.status as keyof typeof STATUS_COLORS.returnItem]}>
+                              {STATUS_MAPS.returnItem[record.status as keyof typeof STATUS_MAPS.returnItem]}
                             </Tag>
                           );
                         },
@@ -955,60 +889,99 @@ const OrderDetail: React.FC = () => {
                   />
                 </Card>
 
-                {/* Chi tiết tính tiền hoàn */}
                 <Card type="inner" title="Chi tiết hoàn tiền">
-                  <Row gutter={[16, 16]}>
-                    <Col span={24}>
-                      <div
-                        style={{
-                          backgroundColor: "#fafafa",
-                          padding: 16,
-                          borderRadius: 8,
-                        }}
-                      >
-                        <Space
-                          direction="vertical"
-                          size="middle"
-                          style={{ width: "100%" }}
-                        >
-                          <Row justify="space-between">
-                            <Text>Tổng tiền hàng hoàn:</Text>
-                            <Text strong>
-                              {returnRequest.total_return_amount?.toLocaleString("vi-VN")}₫
-                            </Text>
-                          </Row>
+                  {(() => {
+                    const refundCalc = calculateRefundAmount(returnRequest);
+                    const hasPartialApproval =
+                      refundCalc.approvedItemsCount > 0 &&
+                      refundCalc.approvedItemsCount < refundCalc.totalItemsCount;
 
-                          {returnRequest.refunded_discount > 0 && (
-                            <Row justify="space-between">
-                              <Text>Giảm giá được hoàn:</Text>
-                              <Text strong style={{ color: "#ff4d4f" }}>
-                                -
-                                {returnRequest.refunded_discount?.toLocaleString("vi-VN", {
-                                  maximumFractionDigits: 0,
-                                })}
-                                ₫
-                              </Text>
-                            </Row>
+                    return (
+                      <Row gutter={[16, 16]}>
+                        <Col span={24}>
+                          {hasPartialApproval && (
+                            <Alert
+                              message={`Đã duyệt ${refundCalc.approvedItemsCount}/${refundCalc.totalItemsCount} sản phẩm`}
+                              type="info"
+                              showIcon
+                              style={{ marginBottom: 16 }}
+                            />
                           )}
 
-                          <Divider style={{ margin: "8px 0" }} />
+                          <div style={{ backgroundColor: "#fafafa", padding: 16, borderRadius: 8 }}>
+                            <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+                              <Row justify="space-between">
+                                <Text
+                                  style={{ textDecoration: hasPartialApproval ? "line-through" : "none" }}
+                                >
+                                  Giá trị hàng hoàn:
+                                </Text>
+                                <Text
+                                  style={{ textDecoration: hasPartialApproval ? "line-through" : "none" }}
+                                >
+                                  {returnRequest.total_return_amount?.toLocaleString("vi-VN")}₫
+                                </Text>
+                              </Row>
 
-                          <Row justify="space-between">
-                            <Text strong style={{ fontSize: 16 }}>
-                              Số tiền hoàn:
-                            </Text>
-                            <Text strong style={{ fontSize: 18, color: "#ff4d4f" }}>
-                              {returnRequest.estimated_refund?.toLocaleString("vi-VN", {
-                                maximumFractionDigits: 0,
-                              })}
-                              ₫
-                            </Text>
-                          </Row>
+                              {refundCalc.totalApprovedAmount !== returnRequest.total_return_amount && (
+                                <Row justify="space-between">
+                                  <Text strong style={{ color: "#1890ff" }}> 
+                                    Tổng tiền hàng đã duyệt:
+                                  </Text>
+                                  <Text strong style={{ color: "#1890ff" }}>
+                                    {refundCalc.totalApprovedAmount?.toLocaleString("vi-VN")}₫
+                                  </Text>
+                                </Row>
+                              )}
 
-                        </Space>
-                      </div>
-                    </Col>
-                  </Row>
+                              {refundCalc.refundedDiscount > 0 && (
+                                <Row justify="space-between">
+                                  <Text>Trừ giảm giá tỷ lệ:</Text>
+                                  <Text strong style={{ color: "#ff4d4f" }}>
+                                    -{refundCalc.refundedDiscount?.toLocaleString("vi-VN", {
+                                      maximumFractionDigits: 0,
+                                    })}₫
+                                  </Text>
+                                </Row>
+                              )}
+
+                              {Math.abs(refundCalc.shippingDiff) > 0 && (
+                                <Row justify="space-between">
+                                  <Text>
+                                    {refundCalc.shippingDiff > 0
+                                      ? "Cộng phí ship được hoàn:"
+                                      : "Trừ phí ship mới:"}
+                                  </Text>
+                                  <Text
+                                    strong
+                                    style={{
+                                      color: refundCalc.shippingDiff > 0 ? "#52c41a" : "#ff4d4f",
+                                    }}
+                                  >
+                                    {refundCalc.shippingDiff > 0 ? "+" : ""}
+                                    {Math.abs(refundCalc.shippingDiff)?.toLocaleString("vi-VN")}₫
+                                  </Text>
+                                </Row>
+                              )}
+
+                              <Divider style={{ margin: "8px 0" }} />
+
+                              <Row justify="space-between">
+                                <Text strong style={{ fontSize: 16 }}>
+                                  Số tiền hoàn:
+                                </Text>
+                                <Text strong style={{ fontSize: 18, color: "#52c41a" }}>
+                                  {refundCalc.estimatedRefund?.toLocaleString("vi-VN", {
+                                    maximumFractionDigits: 0,
+                                  })}₫
+                                </Text>
+                              </Row>
+                            </Space>
+                          </div>
+                        </Col>
+                      </Row>
+                    );
+                  })()}
                 </Card>
               </div>
             ),
@@ -1019,19 +992,12 @@ const OrderDetail: React.FC = () => {
   };
 
   // ============================================================
-  //                      MAIN RENDER
+  //                      RENDER MAIN UI
   // ============================================================
 
   if (loading) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "100vh",
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh" }}>
         <Spin size="large" />
       </div>
     );
@@ -1047,18 +1013,6 @@ const OrderDetail: React.FC = () => {
     );
   }
 
-  const s = order.shipping;
-  const fullAddress = s?.full_address || "";
-  const availableShippingStatuses = getAvailableShippingStatuses(
-    s?.shipping_status || "none",
-    order.payment_status
-  );
-  const availablePaymentStatuses = getAvailablePaymentStatuses(
-    order.payment_status,
-    s?.shipping_status || "none",
-    order.payment_method
-  );
-
   const shippingFee = 30000;
   const totalAmount = parseFloat(order.total_amount);
   const finalAmount = parseFloat(order.final_amount);
@@ -1072,29 +1026,91 @@ const OrderDetail: React.FC = () => {
     couponDiscount = totalAmount + shippingFee - finalAmount;
   }
 
+  const getAvailableShippingStatuses = (currentStatus: string, paymentStatus: string) => {
+    const transitions: Record<string, string[]> = {
+      pending: ["pending", "in_transit"],
+      in_transit: ["in_transit", "delivered"],
+      delivered: ["delivered"],
+      received: ["received", "evaluated", "return_processing"],
+      failed: ["failed", "return_processing"],
+      nodone: ["nodone", "return_processing"],
+      return_processing: ["return_processing", "returned", "return_fail"],
+      returned: ["returned"],
+      return_fail: ["return_fail"],
+      evaluated: ["evaluated"],
+    };
+
+    let allowedStatuses = transitions[currentStatus] || [currentStatus];
+
+    if (paymentStatus === "refund_processing") {
+      allowedStatuses = allowedStatuses.filter(
+        (status) => status === currentStatus || status === "return_fail" || status === "returned"
+      );
+    }
+
+    return allowedStatuses.map((status) => ({
+      value: status,
+      label: STATUS_MAPS.shipping[status as keyof typeof STATUS_MAPS.shipping] || status,
+      disabled: status === currentStatus,
+    }));
+  };
+
+  const getAvailablePaymentStatuses = (currentPaymentStatus: string, shippingStatus: string) => {
+    const statuses: Array<{ value: string; label: string; disabled?: boolean }> = [];
+
+    statuses.push({
+      value: currentPaymentStatus,
+      label: STATUS_MAPS.payment[currentPaymentStatus as keyof typeof STATUS_MAPS.payment] || currentPaymentStatus,
+      disabled: true,
+    });
+
+    const validPaymentTransitions: Record<string, string[]> = {
+      unpaid: ["paid", "failed"],
+      paid: ["refund_processing"],
+      refund_processing: ["refunded", "failed"],
+      refunded: [],
+      failed: [],
+    };
+
+    const allowedTransitions = validPaymentTransitions[currentPaymentStatus] || [];
+
+    allowedTransitions.forEach((status) => {
+      if (status === "paid" && currentPaymentStatus === "unpaid") {
+        if ((order.payment_method === "cod" && shippingStatus === "delivered") || order.payment_method === "vnpay") {
+          statuses.push({
+            value: "paid",
+            label: STATUS_MAPS.payment["paid"],
+          });
+        }
+        return;
+      }
+
+      if (status === "refund_processing" && currentPaymentStatus === "paid") {
+        if (["return_processing", "returned"].includes(shippingStatus)) {
+          statuses.push({
+            value: "refund_processing",
+            label: STATUS_MAPS.payment["refund_processing"],
+          });
+        }
+        return;
+      }
+
+      statuses.push({
+        value: status,
+        label: STATUS_MAPS.payment[status as keyof typeof STATUS_MAPS.payment],
+      });
+    });
+
+    return statuses;
+  };
+
   return (
-    <div
-      style={{
-        padding: "24px",
-        backgroundColor: "#f0f2f5",
-        minHeight: "100vh",
-      }}
-    >
-      {/* Header */}
-      <Card
-        style={{
-          marginBottom: 24,
-          borderRadius: 8,
-          boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-        }}
-      >
+    <div style={{ padding: "24px", backgroundColor: "#f0f2f5", minHeight: "100vh" }}>
+      <Card style={{ marginBottom: 24, borderRadius: 8 }}>
         <Row justify="space-between" align="middle">
           <Col>
             <Space>
-              <Button
-                icon={<ArrowLeftOutlined />}
-                onClick={() => navigate("/admin/orders")}
-              >
+              <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/admin/orders")}>
                 Quay lại
               </Button>
               <Title level={3} style={{ margin: 0 }}>
@@ -1104,21 +1120,13 @@ const OrderDetail: React.FC = () => {
           </Col>
           <Col>
             {!isEditMode ? (
-              <Button
-                type="primary"
-                icon={<EditOutlined />}
-                onClick={() => setIsEditMode(true)}
-              >
+              <Button type="primary" icon={<EditOutlined />} onClick={() => setIsEditMode(true)}>
                 Chỉnh sửa
               </Button>
             ) : (
               <Space>
-                <Button onClick={handleCancelEdit}>Hủy</Button>
-                <Button
-                  type="primary"
-                  loading={updating}
-                  onClick={handleUpdateForm}
-                >
+                <Button onClick={() => setIsEditMode(false)}>Hủy</Button>
+                <Button type="primary" loading={updating} onClick={handleUpdateOrder}>
                   Cập nhật
                 </Button>
               </Space>
@@ -1128,9 +1136,7 @@ const OrderDetail: React.FC = () => {
       </Card>
 
       <Row gutter={[24, 24]}>
-        {/* Cột trái - Thông tin chi tiết */}
         <Col xs={24} lg={16}>
-          {/* Thông tin vận chuyển */}
           <Card
             title={
               <Space>
@@ -1138,18 +1144,16 @@ const OrderDetail: React.FC = () => {
                 <span>Thông tin vận chuyển</span>
               </Space>
             }
-            style={{ borderRadius: 8 }}
+            style={{ marginBottom: 24, borderRadius: 8 }}
           >
             <Descriptions column={1} size="middle">
               <Descriptions.Item label="Mã vận đơn">
-                <Text strong>{s?.sku || "—"}</Text>
+                <Text strong>{order.shipping?.sku || "—"}</Text>
               </Descriptions.Item>
               <Descriptions.Item label="Người nhận">
-                <Text strong>{s?.shipping_name || "—"}</Text>
+                <Text strong>{order.shipping?.shipping_name || "—"}</Text>
               </Descriptions.Item>
-              <Descriptions.Item label="Số điện thoại">
-                {s?.shipping_phone || "—"}
-              </Descriptions.Item>
+              <Descriptions.Item label="Số điện thoại">{order.shipping?.shipping_phone || "—"}</Descriptions.Item>
               <Descriptions.Item
                 label={
                   <Space>
@@ -1158,9 +1162,9 @@ const OrderDetail: React.FC = () => {
                   </Space>
                 }
               >
-                {fullAddress || "—"}
+                {formatAddress(order.shipping)}
               </Descriptions.Item>
-              {s?.received_at && (
+              {order.shipping?.received_at && (
                 <Descriptions.Item
                   label={
                     <Space>
@@ -1169,12 +1173,12 @@ const OrderDetail: React.FC = () => {
                     </Space>
                   }
                 >
-                  {new Date(s.received_at).toLocaleString("vi-VN")}
+                  {new Date(order.shipping.received_at).toLocaleString("vi-VN")}
                 </Descriptions.Item>
               )}
             </Descriptions>
           </Card>
-          {/* Chi tiết sản phẩm */}
+
           <Card
             title={
               <Space>
@@ -1212,9 +1216,7 @@ const OrderDetail: React.FC = () => {
                           justifyContent: "center",
                         }}
                       >
-                        <ShoppingCartOutlined
-                          style={{ fontSize: 32, color: "#ccc" }}
-                        />
+                        <ShoppingCartOutlined style={{ fontSize: 32, color: "#ccc" }} />
                       </div>
                     )}
                   </Col>
@@ -1223,19 +1225,13 @@ const OrderDetail: React.FC = () => {
                       {item.product_name}
                     </Text>
                     <Space size="large" style={{ marginTop: 8 }}>
-                      {item.size && (
-                        <Text type="secondary">Kích thước: {item.size}</Text>
-                      )}
-                      {item.color && (
-                        <Text type="secondary">Màu sắc: {item.color}</Text>
-                      )}
+                      {item.size && <Text type="secondary">Kích thước: {item.size}</Text>}
+                      {item.color && <Text type="secondary">Màu sắc: {item.color}</Text>}
                       <Text type="secondary">Số lượng: {item.quantity}</Text>
                     </Space>
                     <div style={{ marginTop: 8 }}>
                       <Text type="secondary">Đơn giá: </Text>
-                      <Text strong>
-                        {parseFloat(item.price).toLocaleString("vi-VN")}₫
-                      </Text>
+                      <Text strong>{parseFloat(item.price).toLocaleString("vi-VN")}₫</Text>
                     </div>
                   </Col>
                   <Col>
@@ -1250,44 +1246,18 @@ const OrderDetail: React.FC = () => {
 
             <Divider />
 
-            {/* Chi tiết thanh toán */}
-            <div
-              style={{
-                backgroundColor: "#fafafa",
-                padding: 20,
-                borderRadius: 8,
-              }}
-            >
+            <div style={{ backgroundColor: "#fafafa", padding: 20, borderRadius: 8 }}>
               <Row justify="end">
                 <Col>
-                  <Space
-                    direction="vertical"
-                    align="end"
-                    size="middle"
-                    style={{ width: "100%" }}
-                  >
-                    <div
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 60,
-                      }}
-                    >
+                  <Space direction="vertical" align="end" size="middle" style={{ width: "100%" }}>
+                    <Row justify="space-between" style={{ width: "100%", gap: 60 }}>
                       <Text style={{ fontSize: 15 }}>Tạm tính:</Text>
                       <Text strong style={{ fontSize: 15 }}>
-                        {parseFloat(order.total_amount).toLocaleString("vi-VN")}₫
+                        {totalAmount.toLocaleString("vi-VN")}₫
                       </Text>
-                    </div>
+                    </Row>
 
-                    <div
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 60,
-                      }}
-                    >
+                    <Row justify="space-between" style={{ width: "100%", gap: 60 }}>
                       <Text style={{ fontSize: 15 }}>Phí vận chuyển:</Text>
                       {isFreeShipping ? (
                         <Text strong style={{ fontSize: 15, color: "#52c41a" }}>
@@ -1298,213 +1268,142 @@ const OrderDetail: React.FC = () => {
                           {shippingFee.toLocaleString("vi-VN")}₫
                         </Text>
                       )}
-                    </div>
+                    </Row>
 
                     {couponDiscount > 0 && (
-                      <div
-                        style={{
-                          width: "100%",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 60,
-                        }}
-                      >
+                      <Row justify="space-between" style={{ width: "100%", gap: 60 }}>
                         <Text style={{ fontSize: 15 }}>Mã giảm giá:</Text>
                         <Text strong style={{ fontSize: 15, color: "#ff4d4f" }}>
                           - {couponDiscount.toLocaleString("vi-VN")}₫
                         </Text>
-                      </div>
+                      </Row>
                     )}
 
                     <Divider style={{ margin: "8px 0" }} />
 
-                    <div
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 60,
-                      }}
-                    >
+                    <Row justify="space-between" style={{ width: "100%", gap: 60 }}>
                       <Text strong style={{ fontSize: 18 }}>
                         Tổng cộng:
                       </Text>
                       <Text strong style={{ fontSize: 20, color: "#ff4d4f" }}>
-                        {parseFloat(order.final_amount).toLocaleString("vi-VN")}₫
+                        {finalAmount.toLocaleString("vi-VN")}₫
                       </Text>
-                    </div>
+                    </Row>
                   </Space>
                 </Col>
               </Row>
             </div>
           </Card>
 
-          {/* Lịch sử hoàn hàng */}
           {renderReturnRequests()}
         </Col>
 
-        {/* Cột phải - Cập nhật trạng thái */}
         <Col xs={24} lg={8}>
-          <Card
-            title="Cập nhật trạng thái"
-            style={{ marginBottom: 24, borderRadius: 8 }}
-          >
+          <Card title="Cập nhật trạng thái" style={{ marginBottom: 24, borderRadius: 8 }}>
             {!isEditMode ? (
               <Space direction="vertical" size="large" style={{ width: "100%" }}>
                 <div>
-                  <Text
-                    type="secondary"
-                    style={{ display: "block", marginBottom: 8 }}
-                  >
+                  <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                     Hình thức thanh toán:
                   </Text>
-                  <Tag
-                    color={paymentMethodColors[order.payment_method] || "default"}
-                    style={{ fontSize: 14, padding: "4px 12px" }}
-                  >
-                    {paymentMethodMap[order.payment_method] ||
-                      order.payment_method}
+                  <Tag color={order.payment_method === "cod" ? "orange" : "blue"} style={{ fontSize: 14, padding: "4px 12px" }}>
+                    {order.payment_method === "cod" ? "Thanh toán khi nhận hàng" : "VNPAY"}
                   </Tag>
                 </div>
 
                 <div>
-                  <Text
-                    type="secondary"
-                    style={{ display: "block", marginBottom: 8 }}
-                  >
+                  <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                     Trạng thái vận chuyển:
                   </Text>
-                  <Tag
-                    color={
-                      shippingStatusColors[s?.shipping_status || "none"] ||
-                      "default"
-                    }
-                  >
-                    {shippingStatusMap[s?.shipping_status || "none"] ||
-                      s?.shipping_status ||
-                      "—"}
+                  <Tag color={STATUS_COLORS.shipping[order.shipping.shipping_status as keyof typeof STATUS_COLORS.shipping]}>
+                    {STATUS_MAPS.shipping[order.shipping.shipping_status as keyof typeof STATUS_MAPS.shipping]}
                   </Tag>
                 </div>
 
                 <div>
-                  <Text
-                    type="secondary"
-                    style={{ display: "block", marginBottom: 8 }}
-                  >
+                  <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                     Trạng thái thanh toán:
                   </Text>
-                  <Tag
-                    color={paymentStatusColors[order.payment_status] || "default"}
-                  >
-                    {paymentStatusMap[order.payment_status] ||
-                      order.payment_status}
+                  <Tag color={STATUS_COLORS.payment[order.payment_status as keyof typeof STATUS_COLORS.payment]}>
+                    {STATUS_MAPS.payment[order.payment_status as keyof typeof STATUS_MAPS.payment]}
                   </Tag>
                 </div>
 
-                {s?.transfer_image && (
+                {order.shipping?.transfer_image && (
                   <div>
-                    <Text
-                      type="secondary"
-                      style={{ display: "block", marginBottom: 8 }}
-                    >
+                    <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                       Ảnh chuyển khoản:
                     </Text>
                     <Image
-                      src={s.transfer_image}
+                      src={order.shipping.transfer_image}
                       alt="Transfer Image"
                       style={{ maxWidth: "100%", borderRadius: 8 }}
-                      preview={{
-                        mask: <PictureOutlined style={{ fontSize: 24 }} />,
-                      }}
+                      preview={{ mask: <PictureOutlined style={{ fontSize: 24 }} /> }}
                     />
                   </div>
                 )}
 
                 {order.note && (
                   <div>
-                    <Text
-                      type="secondary"
-                      style={{ display: "block", marginBottom: 8 }}
-                    >
+                    <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                       Ghi chú:
                     </Text>
                     <Text>{order.note}</Text>
                   </div>
                 )}
 
-                {s?.reason && (
+                {order.shipping?.reason && (
                   <div>
-                    <Text
-                      type="secondary"
-                      style={{ display: "block", marginBottom: 8 }}
-                    >
+                    <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                       Lý do hủy/hoàn hàng:
                     </Text>
-                    <Text>{s.reason}</Text>
+                    <Text>{order.shipping.reason}</Text>
                   </div>
                 )}
 
-                {s?.reason_admin && (
+                {order.shipping?.reason_admin && (
                   <div>
-                    <Text
-                      type="secondary"
-                      style={{ display: "block", marginBottom: 8 }}
-                    >
+                    <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                       Phản hồi Admin:
                     </Text>
-                    <Text>{s.reason_admin}</Text>
+                    <Text>{order.shipping.reason_admin}</Text>
                   </div>
                 )}
               </Space>
             ) : (
               <Form form={form} layout="vertical">
                 <div style={{ marginBottom: 16 }}>
-                  <Text
-                    type="secondary"
-                    style={{ display: "block", marginBottom: 8 }}
-                  >
+                  <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                     Hình thức thanh toán:
                   </Text>
-                  <Tag
-                    color={paymentMethodColors[order.payment_method] || "default"}
-                    style={{ fontSize: 14, padding: "4px 12px" }}
-                  >
-                    {paymentMethodMap[order.payment_method] ||
-                      order.payment_method}
+                  <Tag color={order.payment_method === "cod" ? "orange" : "blue"} style={{ fontSize: 14, padding: "4px 12px" }}>
+                    {order.payment_method === "cod" ? "Thanh toán khi nhận hàng" : "VNPAY"}
                   </Tag>
                 </div>
 
                 <Form.Item
                   label="Trạng thái vận chuyển"
                   name="shipping_status"
-                  rules={[
-                    {
-                      required: true,
-                      message: "Vui lòng chọn trạng thái vận chuyển",
-                    },
-                  ]}
+                  rules={[{ required: true, message: "Vui lòng chọn trạng thái vận chuyển" }]}
                 >
                   <Select
                     style={{ width: "100%" }}
-                    options={availableShippingStatuses}
+                    options={getAvailableShippingStatuses(order.shipping.shipping_status, order.payment_status)}
                   />
                 </Form.Item>
 
-                <Form.Item
-                  label="Trạng thái thanh toán"
-                  name="payment_status"
-                  rules={[
-                    {
-                      required: true,
-                      message: "Vui lòng chọn trạng thái thanh toán",
-                    },
-                  ]}
-                >
-                  <Select
-                    style={{ width: "100%" }}
-                    options={availablePaymentStatuses}
-                  />
-                </Form.Item>
+                {order.payment_status === "refund_processing" && (
+                  <Form.Item
+                    label="Trạng thái thanh toán"
+                    name="payment_status"
+                    rules={[{ required: true, message: "Vui lòng chọn trạng thái thanh toán" }]}
+                  >
+                    <Select
+                      style={{ width: "100%" }}
+                      options={getAvailablePaymentStatuses(order.payment_status, order.shipping.shipping_status)}
+                    />
+                  </Form.Item>
+                )}
 
                 <Form.Item
                   label={
@@ -1514,17 +1413,11 @@ const OrderDetail: React.FC = () => {
                     </Space>
                   }
                 >
-                  <Upload
-                    {...uploadProps}
-                    listType="picture-card"
-                    className="transfer-image-uploader"
-                  >
+                  <Upload {...uploadProps} listType="picture-card">
                     {fileList.length >= 1 ? null : (
                       <div>
-                        <div style={{ marginTop: 8 }}>
-                          <UploadOutlined />
-                          <div style={{ marginTop: 8 }}>Tải ảnh lên</div>
-                        </div>
+                        <UploadOutlined />
+                        <div style={{ marginTop: 8 }}>Tải ảnh lên</div>
                       </div>
                     )}
                   </Upload>
@@ -1535,25 +1428,19 @@ const OrderDetail: React.FC = () => {
 
                 {order.note && (
                   <div style={{ marginBottom: 16 }}>
-                    <Text
-                      type="secondary"
-                      style={{ display: "block", marginBottom: 8 }}
-                    >
+                    <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                       Ghi chú:
                     </Text>
                     <Text>{order.note}</Text>
                   </div>
                 )}
 
-                {s?.reason && (
+                {order.shipping?.reason && (
                   <div style={{ marginBottom: 16 }}>
-                    <Text
-                      type="secondary"
-                      style={{ display: "block", marginBottom: 8 }}
-                    >
+                    <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
                       Lý do hủy/hoàn hàng:
                     </Text>
-                    <Text>{s.reason}</Text>
+                    <Text>{order.shipping.reason}</Text>
                   </div>
                 )}
 
@@ -1563,34 +1450,20 @@ const OrderDetail: React.FC = () => {
                   rules={[
                     {
                       validator: async (_, value) => {
-                        const shippingStatus =
-                          form.getFieldValue("shipping_status");
-                        if (
-                          [
-                            "return_processing",
-                            "returned",
-                            "return_fail",
-                          ].includes(shippingStatus) &&
-                          !value?.trim()
-                        ) {
-                          throw new Error(
-                            "Phản hồi admin là bắt buộc khi xử lý hoàn hàng"
-                          );
+                        const shippingStatus = form.getFieldValue("shipping_status");
+                        if (["return_processing", "returned", "return_fail"].includes(shippingStatus) && !value?.trim()) {
+                          throw new Error("Phản hồi admin là bắt buộc khi xử lý hoàn hàng");
                         }
                       },
                     },
                   ]}
                 >
-                  <TextArea
-                    rows={4}
-                    placeholder="Nhập phản hồi của admin về yêu cầu hủy/hoàn hàng..."
-                  />
+                  <TextArea rows={4} placeholder="Nhập phản hồi của admin về yêu cầu hủy/hoàn hàng..." />
                 </Form.Item>
               </Form>
             )}
           </Card>
 
-          {/* Thông tin khách hàng */}
           <Card
             title={
               <Space>
@@ -1604,7 +1477,8 @@ const OrderDetail: React.FC = () => {
               <Descriptions.Item
                 label={
                   <Space>
-                    <UserOutlined />Họ tên
+                    <UserOutlined />
+                    Họ tên
                   </Space>
                 }
               >
