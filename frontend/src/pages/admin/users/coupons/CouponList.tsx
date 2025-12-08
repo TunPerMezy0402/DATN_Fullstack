@@ -841,7 +841,7 @@ const CouponList: React.FC = () => {
                 }}
               >
                 <Button danger icon={<DeleteOutlined />}>
-                  Xóa
+                  Xóa 2
                 </Button>
               </Popconfirm>
             </Space>
