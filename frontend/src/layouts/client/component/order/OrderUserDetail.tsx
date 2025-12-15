@@ -18,6 +18,9 @@ import {
   Rate,
   Checkbox,
   InputNumber,
+  Tooltip,
+  Form,
+  Image as AntImage,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -33,8 +36,12 @@ import {
   RollbackOutlined,
   StopOutlined,
   DollarOutlined,
+  AlertOutlined,
+  InfoCircleOutlined,
+
 } from "@ant-design/icons";
 import axios from "axios";
+import { provinces, districts, wards } from "vietnam-provinces";
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -73,6 +80,9 @@ interface User {
   name: string;
   phone: string;
   email: string;
+  bank_account_number?: string;  
+  bank_name?: string;            
+  bank_account_name?: string;
 }
 
 interface Shipping {
@@ -83,6 +93,7 @@ interface Shipping {
   shipping_status: string;
   reason?: string;
   reason_admin?: string;
+  transfer_image?: string | null;
   city: string;
   district: string;
   commune: string;
@@ -131,9 +142,29 @@ interface ReturnItem {
   product_name: string;
   quantity: number;
   max_quantity: number;
+  product_image?: string;
   reason: string;
   selected: boolean;
+  images: string[];
 }
+
+
+interface ReturnRequest {
+  id: number;
+  order_id: number;
+  status: string;
+  refund_30k: boolean;
+  created_at: string;
+  items_count: number;
+  total_return_amount: string;
+  estimated_refund: string;
+  estimated_refund_min: string; // ✅ THÊM LẠI
+  estimated_refund_max: string; // ✅ THÊM LẠI
+  refund_explanation: string;
+  admin_note?: string;
+  items: ReturnRequestItem[];
+}
+
 
 interface ReturnRequestItem {
   id: number;
@@ -144,21 +175,7 @@ interface ReturnRequestItem {
   reason: string;
   refund_amount: string;
   admin_response?: string;
-}
-
-interface ReturnRequest {
-  id: number;
-  order_id: number;
-  status: string;
-  total_return_amount: string;
-  refunded_discount: string;
-  old_shipping_fee: string;
-  new_shipping_fee: string;
-  shipping_diff: string;
-  estimated_refund: string;
-  remaining_amount: string;
-  requested_at: string;
-  items: ReturnRequestItem[];
+  images?: string[];
 }
 
 // ==================== CONSTANTS ====================
@@ -190,13 +207,16 @@ const STATUS_MAPS = {
     vnpay: "VNPAY",
   },
   returnStatus: {
-    pending: "Đang chờ xử lý",
-    processing: "Đang xử lý",
-    completed: "Đã hoàn thành",
+    pending: "Chờ xử lý",
+    approved: "Đang xử lý",
+    completed: "Hoàn thành",
     rejected: "Đã từ chối",
-    // Legacy status (backward compatibility)
-    approved: "Đã chấp nhận",
-    refunded: "Đã hoàn tiền",
+  },
+  returnItemStatus: {
+    pending: "Chờ xử lý",
+    approved: "Đã duyệt",
+    completed: "Hoàn thành",
+    rejected: "Đã từ chối",
   },
 };
 
@@ -226,13 +246,16 @@ const STATUS_COLORS = {
     vnpay: "green",
   },
   returnStatus: {
-    pending: "orange",
-    processing: "blue",
+    pending: "gold",
+    approved: "blue",
     completed: "green",
     rejected: "red",
-    // Legacy status (backward compatibility)
+  },
+  returnItemStatus: {
+    pending: "gold",
     approved: "blue",
-    refunded: "green",
+    completed: "green",
+    rejected: "red",
   },
 };
 
@@ -251,7 +274,7 @@ const formatDate = (dateString: string) => {
 };
 
 const formatCurrency = (amount: number | string) => {
-  return Math.round(parseFloat(String(amount))).toLocaleString("vi-VN") + "₫";
+  return Math.round(parseFloat(String(amount))).toLocaleString("vi-VN") + " VNĐ";
 };
 const getDaysUntilReturnExpired = (receivedAt: string | null): number => {
   if (!receivedAt) return 0;
@@ -260,6 +283,7 @@ const getDaysUntilReturnExpired = (receivedAt: string | null): number => {
   const daysPassed = Math.floor((now.getTime() - received.getTime()) / (1000 * 60 * 60 * 24));
   return Math.max(0, 7 - daysPassed);
 };
+
 
 // ==================== MAIN COMPONENT ====================
 const OrderUserDetail: React.FC = () => {
@@ -275,12 +299,14 @@ const OrderUserDetail: React.FC = () => {
   const [returnModalVisible, setReturnModalVisible] = useState(false);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
   const [returning, setReturning] = useState(false);
+   const [bankForm] = Form.useForm();
 
   // Review Modal State
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [viewReviewsModalVisible, setViewReviewsModalVisible] = useState(false);
   const [reviewForms, setReviewForms] = useState<ReviewFormItem[]>([]);
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [needsBankInfo, setNeedsBankInfo] = useState(false);
 
   // Cancel Modal State
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
@@ -304,12 +330,26 @@ const OrderUserDetail: React.FC = () => {
     return null;
   };
 
+  const getFullImageUrl = (imagePath: string | null | undefined): string => {
+    if (!imagePath) return "";
+    if (imagePath.startsWith("http")) return imagePath;
+    return `http://127.0.0.1:8000/${imagePath.replace(/^\//, "")}`;
+  };
+
   const getReturnStatusText = (status: string): string => {
     return STATUS_MAPS.returnStatus[status as keyof typeof STATUS_MAPS.returnStatus] || status;
   };
 
   const getReturnStatusColor = (status: string): string => {
     return STATUS_COLORS.returnStatus[status as keyof typeof STATUS_COLORS.returnStatus] || 'default';
+  };
+
+  const getReturnItemStatusText = (status: string): string => {
+    return STATUS_MAPS.returnItemStatus[status as keyof typeof STATUS_MAPS.returnItemStatus] || status;
+  };
+
+  const getReturnItemStatusColor = (status: string): string => {
+    return STATUS_COLORS.returnItemStatus[status as keyof typeof STATUS_COLORS.returnItemStatus] || 'default';
   };
 
   // ==================== DATA FETCHING ====================
@@ -351,6 +391,49 @@ const OrderUserDetail: React.FC = () => {
 
   // ==================== PERMISSION CHECKS ====================
   const canConfirmReceived = (status: string) => status === "delivered";
+
+  const formatAddress = (shipping: Shipping | null | undefined): string => {
+    if (!shipping) return "—";
+
+    const parts: string[] = [];
+
+    // 1. Số nhà/đường
+    if (shipping.village?.trim()) {
+      parts.push(shipping.village.trim());
+    }
+
+    // 2. Phường/xã - SO SÁNH TRỰC TIẾP, KHÔNG PARSE
+    if (shipping.commune?.trim()) {
+      const ward = wards.find((w) => w.code === shipping.commune);
+      if (ward?.name) {
+        parts.push(ward.name);
+      } else {
+        parts.push(shipping.commune); // Fallback hiển thị code
+      }
+    }
+
+    // 3. Quận/huyện - SO SÁNH TRỰC TIẾP, KHÔNG PARSE
+    if (shipping.district?.trim()) {
+      const district = districts.find((d) => d.code === shipping.district);
+      if (district?.name) {
+        parts.push(district.name);
+      } else {
+        parts.push(shipping.district); // Fallback
+      }
+    }
+
+    // 4. Tỉnh/thành phố - SO SÁNH TRỰC TIẾP, KHÔNG PARSE
+    if (shipping.city?.trim()) {
+      const province = provinces.find((p) => p.code === shipping.city);
+      if (province?.name) {
+        parts.push(province.name);
+      } else {
+        parts.push(shipping.city); // Fallback
+      }
+    }
+
+    return parts.length > 0 ? parts.join(", ") : "—";
+  };
 
   const canReturnOrder = (shipping: Shipping | undefined): boolean => {
     if (!shipping) return false;
@@ -415,101 +498,169 @@ const OrderUserDetail: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      message.success("Hủy đơn hàng thành công!");
       setCancelModalVisible(false);
       setCancelReason("");
+
+      // ✅ Delay 2.5 giây rồi mới hiển thị thông báo và load lại
+      await new Promise(resolve => setTimeout(resolve, 2500));
+
+      message.success("Hủy đơn hàng thành công!");
       await fetchOrder();
     } catch (error: any) {
       console.error("Cancel error:", error);
       const errorMsg = error.response?.data?.message || "Không thể hủy đơn hàng!";
+
+      // ✅ Hiển thị thông báo lỗi ngay
       message.error(errorMsg);
+
+      // ✅ Delay 2.5 giây rồi mới load lại trang
+      await new Promise(resolve => setTimeout(resolve, 2500));
+
+      // ✅ Đóng modal và clear dữ liệu TRƯỚC khi fetch
+      setCancelModalVisible(false);
+      setCancelReason("");
+
+      await fetchOrder();
     } finally {
       setCancelling(false);
     }
   };
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+  };
 
   const handleOpenReturnModal = () => {
-    if (!order) return;
+  if (!order) return;
 
-    const returnableItems: ReturnItem[] = (order.items || [])
-      .filter(item => {
-        const hasNoReview = !item.reviews || item.reviews.length === 0;
-        const availableQty = item.available_return_quantity ?? 0;
-        return hasNoReview && availableQty > 0;
-      })
-      .map(item => {
-        const availableQty = item.available_return_quantity ?? 0;
-        return {
-          order_item_id: item.id,
-          variant_id: item.variant_id,
-          product_name: `${item.product_name}${item.size ? ` - Size: ${item.size}` : ""}${item.color ? ` - Màu: ${item.color}` : ""}`,
-          quantity: availableQty,
-          max_quantity: availableQty,
-          reason: "",
-          selected: false,
-        };
-      });
+  // ✅ KIỂM TRA THÔNG TIN NGÂN HÀNG
+  const hasBankInfo = !!(
+    order.user.bank_account_number && 
+    order.user.bank_name && 
+    order.user.bank_account_name
+  );
+  
+  setNeedsBankInfo(!hasBankInfo);
 
-    if (returnableItems.length === 0) {
-      message.warning("Không có sản phẩm nào có thể hoàn trả!");
-      return;
-    }
+  // ✅ NẾU CHƯA CÓ, SET FORM RỖNG
+  if (!hasBankInfo) {
+    bankForm.resetFields();
+  } else {
+    // ✅ NẾU CÓ RỒI, ĐIỀN SẴN
+    bankForm.setFieldsValue({
+      bank_account_number: order.user.bank_account_number,
+      bank_name: order.user.bank_name,
+      bank_account_name: order.user.bank_account_name,
+    });
+  }
 
-    setReturnItems(returnableItems);
-    setReturnModalVisible(true);
-  };
+  const returnableItems: ReturnItem[] = (order.items || [])
+    .filter(item => {
+      const hasNoReview = !item.reviews || item.reviews.length === 0;
+      const availableQty = item.available_return_quantity ?? 0;
+      return hasNoReview && availableQty > 0;
+    })
+    .map(item => {
+      const availableQty = item.available_return_quantity ?? 0;
+      return {
+        order_item_id: item.id,
+        variant_id: item.variant_id,
+        product_name: `${item.product_name}${item.size ? ` - Size: ${item.size}` : ""}${item.color ? ` - Màu: ${item.color}` : ""}`,
+        product_image: item.product_image,
+        quantity: availableQty,
+        max_quantity: availableQty,
+        reason: "",
+        selected: false,
+        images: [],
+      };
+    });
+
+  if (returnableItems.length === 0) {
+    message.warning("Không có sản phẩm nào có thể hoàn trả!");
+    return;
+  }
+
+  setReturnItems(returnableItems);
+  setReturnModalVisible(true);
+};
 
   const handleReturnOrder = async () => {
-    const selectedItems = returnItems.filter(item => item.selected);
+  const selectedItems = returnItems.filter(item => item.selected);
 
-    if (selectedItems.length === 0) {
-      message.warning("Vui lòng chọn ít nhất một sản phẩm để hoàn!");
-      return;
-    }
+  if (selectedItems.length === 0) {
+    message.warning("Vui lòng chọn ít nhất một sản phẩm để hoàn!");
+    return;
+  }
 
-    const hasEmptyReason = selectedItems.some(item => !item.reason.trim());
-    if (hasEmptyReason) {
-      message.warning("Vui lòng nhập lý do hoàn cho tất cả sản phẩm đã chọn!");
-      return;
-    }
+  const hasEmptyReason = selectedItems.some(item => !item.reason.trim());
+  if (hasEmptyReason) {
+    message.warning("Vui lòng nhập lý do hoàn cho tất cả sản phẩm đã chọn!");
+    return;
+  }
 
-    const hasInvalidQuantity = selectedItems.some(
-      item => item.quantity <= 0 || item.quantity > item.max_quantity
-    );
-    if (hasInvalidQuantity) {
-      message.warning("Số lượng hoàn không hợp lệ!");
-      return;
-    }
+  const hasInvalidQuantity = selectedItems.some(
+    item => item.quantity <= 0 || item.quantity > item.max_quantity
+  );
+  if (hasInvalidQuantity) {
+    message.warning("Số lượng hoàn không hợp lệ!");
+    return;
+  }
 
+  // ✅ KIỂM TRA THÔNG TIN NGÂN HÀNG NẾU CẦN
+  if (needsBankInfo) {
     try {
-      setReturning(true);
-      const token = getAuthToken();
-
-      const items = selectedItems.map(item => ({
-        order_item_id: Number(item.order_item_id),
-        variant_id: Number(item.variant_id),
-        quantity: Number(item.quantity),
-        reason: String(item.reason.trim()),
-      }));
-
-      await axios.post(
-        `${API_URL}/orders/${id}/return`,
-        { items },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-
-      message.success("Yêu cầu hoàn hàng đã được gửi thành công!");
-      setReturnModalVisible(false);
-      setReturnItems([]);
-      await fetchOrder();
-    } catch (error: any) {
-      console.error("Return error:", error);
-      const errorMsg = error.response?.data?.message || error.response?.data?.error || "Không thể tạo yêu cầu hoàn hàng!";
-      message.error(errorMsg);
-    } finally {
-      setReturning(false);
+      await bankForm.validateFields();
+    } catch {
+      message.warning("Vui lòng điền đầy đủ thông tin ngân hàng!");
+      return;
     }
-  };
+  }
+
+  try {
+    setReturning(true);
+    const token = getAuthToken();
+
+    const items = selectedItems.map(item => ({
+      order_item_id: Number(item.order_item_id),
+      variant_id: Number(item.variant_id),
+      quantity: Number(item.quantity),
+      reason: String(item.reason.trim()),
+      images: item.images,
+    }));
+
+    // ✅ THÊM THÔNG TIN NGÂN HÀNG VÀO PAYLOAD NẾU CẦN
+    const payload: any = { items };
+    
+    if (needsBankInfo) {
+      const bankValues = bankForm.getFieldsValue();
+      payload.bank_account_number = bankValues.bank_account_number;
+      payload.bank_name = bankValues.bank_name;
+      payload.bank_account_name = bankValues.bank_account_name;
+    }
+
+    await axios.post(
+      `${API_URL}/orders/${id}/return`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    message.success("Yêu cầu hoàn hàng đã được gửi thành công!");
+    setReturnModalVisible(false);
+    setReturnItems([]);
+    bankForm.resetFields(); // ✅ RESET FORM
+    await fetchOrder();
+  } catch (error: any) {
+    console.error("Return error:", error);
+    const errorMsg = error.response?.data?.message || error.response?.data?.error || "Không thể tạo yêu cầu hoàn hàng!";
+    message.error(errorMsg);
+  } finally {
+    setReturning(false);
+  }
+};
 
   const handleOpenReviewModal = () => {
     if (!order) return;
@@ -719,8 +870,11 @@ const OrderUserDetail: React.FC = () => {
     if (!s) return null;
 
     const daysLeft = s.received_at ? getDaysUntilReturnExpired(s.received_at) : 0;
-    const canReturn = canReturnOrder(s);
     const canCancel = ["pending", "nodone"].includes(s.shipping_status);
+
+    // ✅ Kiểm tra trạng thái đã giao hàng
+    const isDelivered = s.shipping_status === "delivered";
+    const isReceived = s.shipping_status === "received";
 
     const hasReturnableItems = (order?.items || []).some(item => {
       const hasNoReview = !item.reviews || item.reviews.length === 0;
@@ -730,6 +884,7 @@ const OrderUserDetail: React.FC = () => {
 
     return (
       <Space size="middle" wrap>
+        {/* Nút hủy đơn */}
         {canCancel && (
           <Button
             danger
@@ -742,53 +897,87 @@ const OrderUserDetail: React.FC = () => {
           </Button>
         )}
 
-        {canConfirmReceived(s.shipping_status) && (
+        {/* ✅ Nút xác nhận nhận hàng - CHỈ hiển thị khi delivered */}
+        {isDelivered && (
           <Button
             type="primary"
             icon={<CheckCircleOutlined />}
             size="large"
             onClick={handleConfirmReceived}
             loading={confirmReceivedLoading}
-            style={{ height: 45, fontSize: 16, fontWeight: 500, backgroundColor: "#52c41a", borderColor: "#52c41a" }}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#52c41a",
+              borderColor: "#52c41a"
+            }}
           >
             Đã nhận được hàng
           </Button>
         )}
 
+        {/* ✅ Nút hoàn hàng - CHỈ hiển thị khi delivered (song song với nút nhận hàng) */}
+        {isDelivered && hasReturnableItems && (
+          <Button
+            icon={<SyncOutlined />}
+            size="large"
+            onClick={handleOpenReturnModal}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#722ed1",
+              color: "white",
+              borderColor: "#722ed1"
+            }}
+          >
+            Hoàn hàng
+          </Button>
+        )}
+
+        {/* Nút xem đánh giá */}
         {hasReviewedVariants && (
           <Button
             icon={<StarOutlined />}
             size="large"
             onClick={() => setViewReviewsModalVisible(true)}
-            style={{ height: 45, fontSize: 16, fontWeight: 500, backgroundColor: "#fff", color: "#faad14", borderColor: "#faad14" }}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#fff",
+              color: "#faad14",
+              borderColor: "#faad14"
+            }}
           >
             Xem đánh giá
           </Button>
         )}
 
+        {/* ✅ Nút đánh giá - CHỈ hiển thị khi received hoặc return_processing */}
         {canReview(s.shipping_status) && hasUnreviewedVariants && (
           <Button
             icon={<StarOutlined />}
             size="large"
             onClick={handleOpenReviewModal}
-            style={{ height: 45, fontSize: 16, fontWeight: 500, backgroundColor: "#faad14", color: "white", borderColor: "#faad14" }}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#faad14",
+              color: "white",
+              borderColor: "#faad14"
+            }}
           >
             Đánh giá đơn hàng
           </Button>
         )}
 
-        {canReturn && hasReturnableItems && (
-          <Button
-            icon={<SyncOutlined />}
-            size="large"
-            onClick={handleOpenReturnModal}
-            style={{ height: 45, fontSize: 16, fontWeight: 500, backgroundColor: "#722ed1", color: "white", borderColor: "#722ed1" }}
-          >
-            Hoàn hàng {daysLeft > 0 && `(còn ${daysLeft} ngày)`}
-          </Button>
-        )}
+        {/* ✅ BỎ NÚT HOÀN HÀNG Ở ĐÂY - Không hiển thị song song với đánh giá nữa */}
 
-        {s.shipping_status === "received" && !canReturn && daysLeft === 0 && (
+        {/* Nút hết hạn hoàn hàng - CHỈ hiển thị khi received và hết hạn */}
+        {isReceived && daysLeft === 0 && (
           <Button
             icon={<CloseCircleOutlined />}
             size="large"
@@ -819,9 +1008,7 @@ const OrderUserDetail: React.FC = () => {
 
   // ==================== DERIVED DATA ====================
   const s = order.shipping;
-  const fullAddress = [s?.village, s?.commune, s?.district, s?.city]
-    .filter(Boolean)
-    .join(", ");
+  const fullAddress = formatAddress(s);
 
   const totalAmount = parseFloat(order.total_amount);
   const finalAmount = parseFloat(order.final_amount);
@@ -937,10 +1124,42 @@ const OrderUserDetail: React.FC = () => {
                   <Text type="warning">{s.reason_admin}</Text>
                 </Descriptions.Item>
               )}
+
+              {s?.transfer_image && (
+                <Descriptions.Item label="Ảnh chuyển khoản" span={2}>
+                  <img
+                    src={getFullImageUrl(s.transfer_image)}
+                    alt="Ảnh chuyển khoản"
+                    style={{
+                      maxWidth: 100,
+                      height: 'auto',
+                      borderRadius: 8,
+                      border: "2px solid #f0f0f0",
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => {
+                      Modal.info({
+                        width: 800,
+                        icon: null,
+                        content: (
+                          <div style={{ textAlign: 'center' }}>
+                            <img
+                              src={getFullImageUrl(s.transfer_image!)}
+                              alt="Ảnh chuyển khoản"
+                              style={{ maxWidth: '100%', borderRadius: 8 }}
+                            />
+                          </div>
+                        ),
+                        okText: 'Đóng',
+                      });
+                    }}
+                  />
+                </Descriptions.Item>
+              )}
+
             </Descriptions>
           </Card>
 
-          {/* Product Details */}
           <Card
             title={<span style={{ fontSize: 18, fontWeight: 600 }}>Chi tiết sản phẩm</span>}
             style={{ marginBottom: 24, borderRadius: 12, boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}
@@ -983,13 +1202,6 @@ const OrderUserDetail: React.FC = () => {
                         {item.color && <Tag color="purple">Màu: {item.color}</Tag>}
                         {item.reviews && item.reviews.length > 0 && (
                           <Tag color="green" icon={<CheckCircleOutlined />}>Đã đánh giá</Tag>
-                        )}
-
-                        {/* ✅ Hiển thị trạng thái hoàn hàng */}
-                        {returnStatus && (
-                          <Tag color={getReturnStatusColor(returnStatus.status)} icon={<SyncOutlined />}>
-                            {getReturnStatusText(returnStatus.status)} ({returnStatus.returnedQty} sản phẩm)
-                          </Tag>
                         )}
                       </Space>
                       <div style={{ marginTop: 8 }}>
@@ -1056,13 +1268,18 @@ const OrderUserDetail: React.FC = () => {
               }}
             >
               {returnRequests.map((request, idx) => {
-                // ✅ DEBUG LOG
-                console.log('🔍 Return Request:', {
-                  id: request.id,
-                  status: request.status,
-                  itemsCount: request.items?.length || 0,
-                  items: request.items
-                });
+                const totalReturnAmount = parseFloat(request.total_return_amount || "0");
+                const estimatedRefund = parseFloat(request.estimated_refund || "0");
+                const estimatedRefundMin = parseFloat(request.estimated_refund_min || "0");
+                const estimatedRefundMax = parseFloat(request.estimated_refund_max || "0");
+                const orderTotal = parseFloat(order.total_amount);
+                const isFreeship = orderTotal >= 500000;
+                const canRefund30k = !isFreeship;
+
+                // ✅ KIỂM TRA XEM CÓ KHOẢNG GIÁ KHÔNG (chỉ hiển thị nếu status = pending)
+                const hasRange = request.status === "pending" &&
+                  estimatedRefundMin !== estimatedRefundMax &&
+                  estimatedRefundMin !== estimatedRefund;
 
                 return (
                   <div
@@ -1072,127 +1289,270 @@ const OrderUserDetail: React.FC = () => {
                       backgroundColor: "#f9f0ff",
                       borderRadius: 12,
                       marginBottom: idx < returnRequests.length - 1 ? 16 : 0,
+                      border: `2px solid ${request.status === "pending"
+                        ? "#faad14"
+                        : request.status === "completed"
+                          ? "#52c41a"
+                          : "#ff4d4f"
+                        }`,
                     }}
                   >
+                    {/* ==================== HEADER ====================  */}
                     <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
                       <Col>
-                        <Text strong style={{ fontSize: 16 }}>Yêu cầu hoàn hàng #{request.id}</Text>
+                        <Space direction="vertical" size={4}>
+                          <Text strong style={{ fontSize: 16 }}>
+                            Yêu cầu hoàn hàng
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 13 }}>
+                            {formatDate(request.created_at)} • {request.items_count} sản phẩm
+                          </Text>
+                        </Space>
                       </Col>
                       <Col>
                         <Tag
                           color={getReturnStatusColor(request.status)}
-                          style={{ fontSize: 14, padding: "4px 12px", fontWeight: 500 }}
+                          style={{ fontSize: 14, padding: "6px 14px", fontWeight: 500 }}
+                          icon={
+                            request.status === "pending" ? (
+                              <ClockCircleOutlined />
+                            ) : request.status === "completed" ? (
+                              <CheckCircleOutlined />
+                            ) : (
+                              <CloseCircleOutlined />
+                            )
+                          }
                         >
                           {getReturnStatusText(request.status)}
                         </Tag>
                       </Col>
                     </Row>
 
-                    <Descriptions column={1} size="small" bordered>
-                      <Descriptions.Item label="Ngày yêu cầu">
-                        {formatDate(request.requested_at)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Tổng tiền hàng hoàn">
-                        <Text strong style={{ color: "#52c41a" }}>
-                          {formatCurrency(request.total_return_amount)}
-                        </Text>
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Giảm giá được hoàn">
-                        <Text strong style={{ color: "#ff4d4f" }}>
-                          -{formatCurrency(request.refunded_discount)}
-                        </Text>
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Phí ship cũ">
-                        {formatCurrency(request.old_shipping_fee)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Phí ship mới">
-                        {formatCurrency(request.new_shipping_fee)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="Chênh lệch phí ship">
-                        <Text strong style={{ color: parseFloat(request.shipping_diff) < 0 ? "#52c41a" : "#ff4d4f" }}>
-                          {parseFloat(request.shipping_diff) >= 0 ? "+" : ""}{formatCurrency(request.shipping_diff)}
-                        </Text>
-                      </Descriptions.Item>
-                    </Descriptions>
+                    <div
+                      style={{
+                        backgroundColor: "#fff",
+                        padding: 16,
+                        borderRadius: 8,
+                        border: "2px solid #722ed1",
+                        marginBottom: 16,
+                      }}
+                    >
+                      <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                        <Row justify="space-between" align="middle">
+                          <Col>
+                            <Text strong style={{ fontSize: 16 }}>
+                              {request.status === "pending" ? "Tiền hoàn dự kiến:" : "Tiền hoàn thực tế:"}
+                            </Text>
+                          </Col>
+                          <Col>
+                            {request.status === "pending" && hasRange ? (
+                              // Pending với range: hiển thị khoảng giá
+                              <Text strong style={{ fontSize: 20, color: "#722ed1" }}>
+                                {formatCurrency(estimatedRefundMin)} - {formatCurrency(estimatedRefundMax)}
+                              </Text>
+                            ) : (
+                              // Approved/Completed hoặc Pending không có range: hiển thị số tiền chính xác
+                              <Text strong style={{ fontSize: 20, color: "#722ed1" }}>
+                                {formatCurrency(estimatedRefund)}
+                              </Text>
+                            )}
+                          </Col>
+                        </Row>
 
-                    <Divider style={{ margin: "16px 0" }} />
+                        {/* ✅ HIỂN THỊ HOÀN 30K NẾU ĐƯỢC TÍCH */}
+                        {request.refund_30k && canRefund30k && (
+                          <div
+                            style={{
+                              padding: 12,
+                              backgroundColor: "#f6ffed",
+                              borderRadius: 6,
+                              border: "2px solid #52c41a",
+                            }}
+                          >
+                            <Space>
+                              <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 16 }} />
+                              <Text strong style={{ fontSize: 14, color: "#389e0d" }}>
+                                Được hoàn thêm 30.000đ tiền ship
+                              </Text>
+                            </Space>
+                          </div>
+                        )}
 
-                    <div style={{ backgroundColor: "#fff", padding: 16, borderRadius: 8, border: "2px solid #722ed1" }}>
-                      <Row justify="space-between" align="middle">
-                        <Col>
-                          <Text strong style={{ fontSize: 18 }}>Số tiền hoàn:</Text>
-                        </Col>
-                        <Col>
-                          <Text strong style={{ fontSize: 24, color: "#722ed1" }}>
-                            {formatCurrency(request.estimated_refund)}
-                          </Text>
-                        </Col>
-                      </Row>
+                        {/* ❌ THÔNG BÁO KHÔNG ÁP DỤNG NẾU ĐƠN >= 500K */}
+                        {request.refund_30k && !canRefund30k && (
+                          <div
+                            style={{
+                              padding: 12,
+                              backgroundColor: "#fff1f0",
+                              borderRadius: 6,
+                              border: "1px solid #ffccc7",
+                            }}
+                          >
+                            <Space>
+                              <InfoCircleOutlined style={{ color: "#ff4d4f", fontSize: 16 }} />
+                              <Text type="secondary" style={{ fontSize: 13 }}>
+                                Đơn hàng {'>='} 500k (đã freeship), không áp dụng hoàn 30k
+                              </Text>
+                            </Space>
+                          </div>
+                        )}
+                      </Space>
                     </div>
 
-                    {/* ✅ DANH SÁCH SẢN PHẨM HOÀN */}
-                    {request.items && request.items.length > 0 ? (
+                    {/* ==================== DANH SÁCH SẢN PHẨM HOÀN ====================  */}
+                    {request.items && request.items.length > 0 && (
                       <>
                         <Divider style={{ margin: "16px 0" }} />
-                        <Text strong style={{ fontSize: 15, display: "block", marginBottom: 12 }}>
-                          Sản phẩm hoàn: ({request.items.length} sản phẩm)
+                        <Text
+                          strong
+                          style={{ fontSize: 15, display: "block", marginBottom: 12 }}
+                        >
+                          Sản phẩm hoàn ({request.items.length})
                         </Text>
-                        <Space direction="vertical" style={{ width: "100%" }} size="small">
-                          {request.items.map((item) => {
-                            const orderItem = order.items.find(oi => oi.id === item.order_item_id);
 
-                            // ✅ DEBUG LOG CHO TỪNG ITEM
-                            console.log('📦 Return Item:', {
-                              id: item.id,
-                              order_item_id: item.order_item_id,
-                              orderItem: orderItem,
-                              quantity: item.quantity,
-                              refund_amount: item.refund_amount,
-                              reason: item.reason,
-                              admin_response: item.admin_response
-                            });
+                        <Space direction="vertical" style={{ width: "100%" }} size="middle">
+                          {request.items.map((item) => {
+                            const orderItem = order?.items.find(
+                              (oi) => oi.id === item.order_item_id
+                            );
+                            const isApproved =
+                              item.status === "approved" || item.status === "completed";
 
                             return (
                               <div
                                 key={item.id}
                                 style={{
-                                  padding: 12,
-                                  backgroundColor: "#fff",
+                                  padding: 14,
+                                  backgroundColor: isApproved ? "#f6ffed" : "#fff",
                                   borderRadius: 8,
-                                  border: "1px solid #d9d9d9",
+                                  border: `2px solid ${isApproved ? "#52c41a" : "#d9d9d9"
+                                    }`,
                                 }}
                               >
-                                <Row justify="space-between" align="middle">
+                                <Row justify="space-between" align="top" gutter={16}>
+                                  {/* Thông tin sản phẩm */}
                                   <Col flex={1}>
-                                    <Text strong>{orderItem?.product_name || "❌ Không tìm thấy sản phẩm"}</Text>
-                                    {orderItem?.size && <Tag color="blue" style={{ marginLeft: 8 }}>Size: {orderItem.size}</Tag>}
-                                    {orderItem?.color && <Tag color="purple">Màu: {orderItem.color}</Tag>}
-                                    <br />
-                                    <Text type="secondary" style={{ fontSize: 13 }}>
-                                      Số lượng: {item.quantity} | Hoàn: {formatCurrency(item.refund_amount)}
-                                    </Text>
-
-                                    {/* ✅ HIỂN THỊ LÝ DO HOÀN */}
-                                    {item.reason && (
-                                      <div style={{ marginTop: 8 }}>
-                                        <Text type="secondary" style={{ fontSize: 13, display: "block" }}>
-                                          <strong>Lý do:</strong> {item.reason}
+                                    <Space
+                                      direction="vertical"
+                                      size={6}
+                                      style={{ width: "100%" }}
+                                    >
+                                      {/* Tên sản phẩm */}
+                                      <div>
+                                        <Text strong style={{ fontSize: 15 }}>
+                                          {orderItem?.product_name || "Không tìm thấy"}
                                         </Text>
+                                        <Space size="small" style={{ marginLeft: 8 }}>
+                                          {orderItem?.size && (
+                                            <Tag color="blue">Size: {orderItem.size}</Tag>
+                                          )}
+                                          {orderItem?.color && (
+                                            <Tag color="purple">Màu: {orderItem.color}</Tag>
+                                          )}
+                                        </Space>
                                       </div>
-                                    )}
 
-                                    {/* ✅ HIỂN THỊ PHẢN HỒI ADMIN (NẾU CÓ) */}
-                                    {item.admin_response && (
-                                      <div style={{ marginTop: 4 }}>
-                                        <Text type="warning" style={{ fontSize: 13, display: "block" }}>
-                                          <strong>Admin:</strong> {item.admin_response}
-                                        </Text>
-                                      </div>
-                                    )}
+                                      {/* Số lượng & Tiền hoàn */}
+                                      <Text type="secondary" style={{ fontSize: 14 }}>
+                                        Số lượng: <strong>{item.quantity}</strong> |{" "}
+                                        <span style={{ color: "#52c41a" }}>
+                                          Hoàn:{" "}
+                                          <strong>
+                                            {formatCurrency(item.refund_amount)}
+                                          </strong>
+                                        </span>
+                                      </Text>
+
+                                      {/* Lý do hoàn */}
+                                      {item.reason && (
+                                        <div>
+                                          <Text type="secondary" style={{ fontSize: 13 }}>
+                                            <strong>Lý do:</strong> {item.reason}
+                                          </Text>
+                                        </div>
+                                      )}
+
+                                      {/* Phản hồi admin */}
+                                      {item.admin_response && (
+                                        <div
+                                          style={{
+                                            padding: 10,
+                                            backgroundColor: "#ffeaa7",
+                                            borderRadius: 6,
+                                          }}
+                                        >
+                                          <Text type="warning" style={{ fontSize: 13 }}>
+                                            <strong>Phản hồi:</strong>{" "}
+                                            {item.admin_response}
+                                          </Text>
+                                        </div>
+                                      )}
+
+                                      {/* Hình ảnh */}
+                                      {item.images && item.images.length > 0 && (
+                                        <div style={{ marginTop: 8 }}>
+                                          <Text
+                                            type="secondary"
+                                            style={{
+                                              fontSize: 13,
+                                              display: "block",
+                                              marginBottom: 8,
+                                            }}
+                                          >
+                                            <strong>Hình ảnh ({item.images.length}):</strong>
+                                          </Text>
+                                          <AntImage.PreviewGroup>
+                                            <Space size={8} wrap>
+                                              {item.images.map((imgPath, imgIndex) => (
+                                                <AntImage
+                                                  key={imgIndex}
+                                                  src={getFullImageUrl(imgPath)}
+                                                  alt={`Return image ${imgIndex + 1}`}
+                                                  width={70}
+                                                  height={70}
+                                                  style={{
+                                                    objectFit: "cover",
+                                                    borderRadius: 6,
+                                                    border: "2px solid #e8e8e8",
+                                                    cursor: "pointer",
+                                                  }}
+                                                  preview={{
+                                                    mask: (
+                                                      <div style={{ fontSize: 11 }}>
+                                                        Xem ảnh
+                                                      </div>
+                                                    ),
+                                                  }}
+                                                />
+                                              ))}
+                                            </Space>
+                                          </AntImage.PreviewGroup>
+                                        </div>
+                                      )}
+                                    </Space>
                                   </Col>
-                                  <Col>
-                                    <Tag color={getReturnStatusColor(item.status)}>
-                                      {getReturnStatusText(item.status)}
+
+                                  {/* Status badge */}
+                                  <Col style={{ textAlign: "center" }}>
+                                    <Tag
+                                      color={getReturnItemStatusColor(item.status)}
+                                      style={{
+                                        fontSize: 13,
+                                        padding: "6px 10px",
+                                        fontWeight: 500,
+                                      }}
+                                      icon={
+                                        item.status === "pending" ? (
+                                          <ClockCircleOutlined />
+                                        ) : item.status === "approved" ||
+                                          item.status === "completed" ? (
+                                          <CheckCircleOutlined />
+                                        ) : (
+                                          <CloseCircleOutlined />
+                                        )
+                                      }
+                                    >
+                                      {getReturnItemStatusText(item.status)}
                                     </Tag>
                                   </Col>
                                 </Row>
@@ -1201,29 +1561,12 @@ const OrderUserDetail: React.FC = () => {
                           })}
                         </Space>
                       </>
-                    ) : (
-                      <>
-                        <Divider style={{ margin: "16px 0" }} />
-                        <div style={{
-                          padding: 16,
-                          backgroundColor: "#fff7e6",
-                          borderRadius: 8,
-                          textAlign: "center"
-                        }}>
-                          <Text type="warning">
-                            ⚠️ Không có sản phẩm nào trong yêu cầu hoàn này
-                          </Text>
-                        </div>
-                      </>
                     )}
                   </div>
                 );
               })}
             </Card>
           )}
-
-
-
 
         </Col>
 
@@ -1352,7 +1695,6 @@ const OrderUserDetail: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Return Modal */}
       <Modal
         open={returnModalVisible}
         onCancel={() => {
@@ -1360,7 +1702,7 @@ const OrderUserDetail: React.FC = () => {
           setReturnItems([]);
         }}
         footer={null}
-        width={850}
+        width={900}
       >
         <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 20 }}>
           <div
@@ -1382,10 +1724,55 @@ const OrderUserDetail: React.FC = () => {
               Yêu cầu hoàn hàng
             </Title>
             <Text type="secondary" style={{ fontSize: 14 }}>
-              Chọn sản phẩm cần hoàn và nhập lý do cho mỗi sản phẩm
+              Chọn sản phẩm cần hoàn và nhập lý do cho mỗi sản phẩm. Bạn có thể upload tối đa 5 ảnh cho mỗi sản phẩm.
             </Text>
           </div>
         </div>
+         {needsBankInfo && (
+    <div style={{ 
+      marginBottom: 24, 
+      padding: 16, 
+      backgroundColor: "#fff7e6", 
+      borderRadius: 8,
+      border: "2px solid #faad14"
+    }}>
+      <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+        <AlertOutlined style={{ color: "#faad14", fontSize: 18 }} />
+        <Text strong style={{ fontSize: 16, color: "#d48806" }}>
+          Thông tin nhận tiền hoàn
+        </Text>
+      </div>
+      <Text type="secondary" style={{ fontSize: 14, display: "block", marginBottom: 16 }}>
+        Vui lòng cung cấp thông tin tài khoản ngân hàng để nhận tiền hoàn
+      </Text>
+      
+      <Form form={bankForm} layout="vertical">
+        <Form.Item
+          label="Số tài khoản"
+          name="bank_account_number"
+          rules={[{ required: true, message: "Vui lòng nhập số tài khoản" }]}
+        >
+          <Input placeholder="Nhập số tài khoản ngân hàng" />
+        </Form.Item>
+
+        <Form.Item
+          label="Tên ngân hàng"
+          name="bank_name"
+          rules={[{ required: true, message: "Vui lòng nhập tên ngân hàng" }]}
+        >
+          <Input placeholder="VD: Vietcombank, Techcombank, ..." />
+        </Form.Item>
+
+        <Form.Item
+          label="Tên chủ tài khoản"
+          name="bank_account_name"
+          rules={[{ required: true, message: "Vui lòng nhập tên chủ tài khoản" }]}
+        >
+          <Input placeholder="Tên chủ tài khoản (viết hoa, không dấu)" />
+        </Form.Item>
+      </Form>
+    </div>
+  )}
 
         <div style={{ marginBottom: 24, maxHeight: 500, overflowY: "auto" }}>
           {returnItems.map((item, index) => (
@@ -1399,21 +1786,56 @@ const OrderUserDetail: React.FC = () => {
                 backgroundColor: item.selected ? "#f6ffed" : "#fafafa",
               }}
             >
-              <Checkbox
-                checked={item.selected}
-                onChange={(e) => {
-                  const newItems = [...returnItems];
-                  newItems[index].selected = e.target.checked;
-                  setReturnItems(newItems);
-                }}
-                style={{ marginBottom: 12 }}
-              >
-                <Text strong style={{ fontSize: 15 }}>{item.product_name}</Text>
-              </Checkbox>
+              {/* ✅ HEADER: CHECKBOX + ẢNH SẢN PHẨM + TÊN */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                <Checkbox
+                  checked={item.selected}
+                  onChange={(e) => {
+                    const newItems = [...returnItems];
+                    newItems[index].selected = e.target.checked;
+                    setReturnItems(newItems);
+                  }}
+                />
+
+                {/* ✅ ẢNH SẢN PHẨM */}
+                {item.product_image ? (
+                  <img
+                    src={`http://127.0.0.1:8000/${item.product_image}`}
+                    alt={item.product_name}
+                    style={{
+                      width: 60,
+                      height: 60,
+                      objectFit: "cover",
+                      borderRadius: 8,
+                      border: "2px solid #d9d9d9",
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: 60,
+                      height: 60,
+                      backgroundColor: "#f0f0f0",
+                      borderRadius: 8,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <ShoppingOutlined style={{ fontSize: 24, color: "#bfbfbf" }} />
+                  </div>
+                )}
+
+                {/* TÊN SẢN PHẨM */}
+                <Text strong style={{ fontSize: 15, flex: 1 }}>
+                  {item.product_name}
+                </Text>
+              </div>
 
               {item.selected && (
-                <>
-                  <div style={{ marginBottom: 12, marginLeft: 24 }}>
+                <div style={{ paddingLeft: 72 }}>
+                  {/* Số lượng hoàn */}
+                  <div style={{ marginBottom: 12 }}>
                     <Text type="secondary" style={{ fontSize: 14, display: "block", marginBottom: 6 }}>
                       Số lượng hoàn:
                     </Text>
@@ -1432,7 +1854,8 @@ const OrderUserDetail: React.FC = () => {
                     />
                   </div>
 
-                  <div style={{ marginLeft: 24 }}>
+                  {/* Lý do hoàn */}
+                  <div style={{ marginBottom: 12 }}>
                     <Text type="secondary" style={{ fontSize: 14, display: "block", marginBottom: 6 }}>
                       Lý do hoàn:
                     </Text>
@@ -1449,7 +1872,94 @@ const OrderUserDetail: React.FC = () => {
                       style={{ fontSize: 14 }}
                     />
                   </div>
-                </>
+
+                  {/* ✅ UPLOAD ẢNH */}
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 14, display: "block", marginBottom: 6 }}>
+                      Hình ảnh sản phẩm (tối đa 5 ảnh):
+                    </Text>
+
+                    {/* Preview ảnh đã upload */}
+                    {item.images.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+                        {item.images.map((img, imgIndex) => (
+                          <div key={imgIndex} style={{ position: "relative" }}>
+                            <img
+                              src={img}
+                              alt={`Preview ${imgIndex + 1}`}
+                              style={{
+                                width: 80,
+                                height: 80,
+                                objectFit: "cover",
+                                borderRadius: 8,
+                                border: "2px solid #d9d9d9"
+                              }}
+                            />
+                            <Button
+                              type="text"
+                              danger
+                              size="small"
+                              icon={<CloseCircleOutlined />}
+                              onClick={() => {
+                                const newItems = [...returnItems];
+                                newItems[index].images = newItems[index].images.filter((_, i) => i !== imgIndex);
+                                setReturnItems(newItems);
+                              }}
+                              style={{
+                                position: "absolute",
+                                top: -8,
+                                right: -8,
+                                backgroundColor: "white",
+                                borderRadius: "50%",
+                                padding: 2,
+                                minWidth: 24,
+                                height: 24
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Button upload */}
+                    {item.images.length < 5 && (
+                      <Button
+                        icon={<StarOutlined />}
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/jpeg,image/png,image/jpg,image/gif';
+                          input.multiple = true;
+                          input.onchange = async (e: any) => {
+                            const files = Array.from(e.target.files || []) as File[];
+                            const remainingSlots = 5 - item.images.length;
+                            const filesToProcess = files.slice(0, remainingSlots);
+
+                            if (files.length > remainingSlots) {
+                              message.warning(`Chỉ có thể upload thêm ${remainingSlots} ảnh`);
+                            }
+
+                            try {
+                              const base64Images = await Promise.all(
+                                filesToProcess.map(file => convertToBase64(file))
+                              );
+
+                              const newItems = [...returnItems];
+                              newItems[index].images = [...newItems[index].images, ...base64Images];
+                              setReturnItems(newItems);
+                              message.success(`Đã thêm ${base64Images.length} ảnh`);
+                            } catch (error) {
+                              message.error("Không thể upload ảnh!");
+                            }
+                          };
+                          input.click();
+                        }}
+                      >
+                        Chọn ảnh ({item.images.length}/5)
+                      </Button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           ))}

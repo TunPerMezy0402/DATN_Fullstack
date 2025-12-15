@@ -14,11 +14,7 @@ class UserProfileController extends Controller
 {
     private const AVATAR_DIR = 'storage/img/avatar';
 
-    /**
-     * -----------------------------------------
-     * 📌 Lấy thông tin user + danh sách địa chỉ
-     * -----------------------------------------
-     */
+
     public function show(Request $request)
     {
         $user = $request->user()->load('addresses');
@@ -43,16 +39,15 @@ class UserProfileController extends Controller
                 'bank_account_number' => $user->bank_account_number,
                 'bank_name' => $user->bank_name,
                 'bank_account_name' => $user->bank_account_name,
+
+                // ⭐ Thêm trường kiểm tra password
+                'has_password' => !empty($user->password),
             ],
             'addresses' => $user->addresses,
         ]);
     }
 
-    /**
-     * -----------------------------------------
-     * ✏️ Cập nhật thông tin cá nhân
-     * -----------------------------------------
-     */
+
     public function update(Request $request)
     {
         $user = $request->user();
@@ -72,32 +67,37 @@ class UserProfileController extends Controller
             'bank_account_number' => 'nullable|string|max:50',
             'bank_name' => 'nullable|string|max:255',
             'bank_account_name' => 'nullable|string|max:255',
-            
-            // ⭐ Thêm validate mật khẩu khi cập nhật thông tin ngân hàng
+
+            // ⭐ Password để xác thực cập nhật ngân hàng
             'password' => 'nullable|string',
         ]);
 
-        // ⭐ Kiểm tra nếu có cập nhật thông tin ngân hàng thì yêu cầu mật khẩu
-        $hasBankData = isset($data['bank_account_number']) || 
-                       isset($data['bank_name']) || 
-                       isset($data['bank_account_name']);
+        // ⭐ Kiểm tra nếu có cập nhật thông tin ngân hàng
+        $hasBankData = isset($data['bank_account_number']) ||
+            isset($data['bank_name']) ||
+            isset($data['bank_account_name']);
 
         if ($hasBankData) {
+            // ⭐ Nếu password = null hoặc empty
             if (empty($data['password'])) {
                 return response()->json([
-                    'message' => 'Vui lòng nhập mật khẩu để cập nhật thông tin ngân hàng'
+                    'message' => 'Vui lòng nhập mật khẩu để xác nhận cập nhật thông tin ngân hàng',
+                    'errors' => [
+                        'password' => ['Mật khẩu là bắt buộc khi cập nhật thông tin ngân hàng']
+                    ]
                 ], 422);
             }
 
-            // Kiểm tra mật khẩu có đúng không
             if (!Hash::check($data['password'], $user->password)) {
                 return response()->json([
-                    'message' => 'Mật khẩu không chính xác'
+                    'message' => 'Mật khẩu không chính xác',
+                    'errors' => [
+                        'password' => ['Mật khẩu bạn nhập không đúng']
+                    ]
                 ], 422);
             }
         }
 
-        // Xóa password khỏi data để không lưu vào DB
         unset($data['password']);
 
         // 🖼 Upload avatar
@@ -252,30 +252,33 @@ class UserProfileController extends Controller
         return response()->json(['message' => 'Xóa địa chỉ thành công']);
     }
 
-    /**
-     * -----------------------------------------
-     * 🔐 Đổi mật khẩu
-     * -----------------------------------------
-     */
     public function changePassword(Request $request)
     {
         $user = $request->user();
 
+        // ⭐ Kiểm tra user có password hay chưa
+        $hasPassword = !empty($user->password);
+
         $data = $request->validate([
-            'current_password' => 'required|string',
+            'current_password' => $hasPassword ? 'required|string' : 'nullable',
             'new_password' => 'required|string|min:6|confirmed',
         ]);
 
-        if (!Hash::check($data['current_password'], $user->password)) {
-            return response()->json([
-                'message' => 'Mật khẩu hiện tại không chính xác'
-            ], 422);
+        // ⭐ Chỉ check current_password nếu user đã có password
+        if ($hasPassword) {
+            if (!Hash::check($data['current_password'], $user->password)) {
+                return response()->json([
+                    'message' => 'Mật khẩu hiện tại không chính xác'
+                ], 422);
+            }
         }
 
         $user->update([
             'password' => Hash::make($data['new_password']),
         ]);
 
-        return response()->json(['message' => 'Đổi mật khẩu thành công']);
+        return response()->json([
+            'message' => $hasPassword ? 'Đổi mật khẩu thành công' : 'Tạo mật khẩu thành công'
+        ]);
     }
 }

@@ -4,9 +4,13 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use App\Notifications\ResetPasswordApiNotification;
 
 
 class User extends Authenticatable
@@ -28,11 +32,9 @@ class User extends Authenticatable
         'phone',
         'status',
         'role',
-
         'bank_account_number',
         'bank_name',
         'bank_account_name',
-
     ];
 
     /**
@@ -58,20 +60,69 @@ class User extends Authenticatable
         ];
     }
 
-    public function likedProducts()
+    /**
+     * Quan hệ: Sản phẩm yêu thích
+     */
+    public function likedProducts(): BelongsToMany
     {
         return $this->belongsToMany(Product::class, 'user_likes', 'user_id', 'product_id');
     }
-    
-    public function addresses()
+
+    /**
+     * Quan hệ: Địa chỉ giao hàng
+     */
+    public function addresses(): HasMany
     {
         return $this->hasMany(AddressBook::class, 'user_id');
     }
 
-        // ✅ Thêm quan hệ reviews
-    public function reviews()
+    /**
+     * Quan hệ: Bài đánh giá sản phẩm
+     */
+    public function reviews(): HasMany
     {
         return $this->hasMany(ProductReview::class, 'user_id');
     }
 
+
+
+    /**
+     * Các phòng chat của user
+     */
+    public function chatRooms(): HasMany
+    {
+        return $this->hasMany(ChatRoom::class, 'user_id');
+    }
+
+    /**
+     * Tin nhắn gửi bởi user
+     */
+    public function messages(): HasMany
+    {
+        return $this->hasMany(Message::class, 'sender_id');
+    }
+
+    /**
+     * Thông báo của user
+     */
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
+
+    /**
+     * Kiểm tra xem user có phải là support agent không
+     */
+    public function isSupportAgent(): bool
+    {
+        return $this->supportAgent()->exists();
+    }
+
+    /**
+     * Kiểm tra xem user có phải là admin không
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
 }

@@ -1,18 +1,11 @@
-// src/layouts/client/pages/ForgotPassword.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import authApi from '../../services/authService';
+import authService from '../../services/authService';
 import Header from "../../components/common/Header";
 import Footer from "../../components/common/Footer";
 import '../../assets/admin/css/Account.css';
 
-// Lưu ý: authApi.forgotPassword đã gọi endpoint /auth/forgot-password
-
 // ======================= TYPES =======================
-
-interface FormData {
-  email: string;
-}
 
 interface FormErrors {
   email: string;
@@ -27,16 +20,15 @@ const validators = {
     return emailRegex.test(email);
   },
 
-  validateForm: (formData: FormData): { isValid: boolean; errors: FormErrors } => {
+  validateForm: (email: string): { isValid: boolean; errors: FormErrors } => {
     const errors: FormErrors = {
       email: '',
       general: '',
     };
 
-    // Validate email
-    if (!formData.email.trim()) {
+    if (!email.trim()) {
       errors.email = 'Email không được để trống';
-    } else if (!validators.email(formData.email)) {
+    } else if (!validators.email(email)) {
       errors.email = 'Email không hợp lệ';
     }
 
@@ -48,26 +40,24 @@ const validators = {
 // ======================= COMPONENT =======================
 
 const ForgotPassword: React.FC = () => {
+  const navigate = useNavigate();
+
   // Form state
-  const [formData, setFormData] = useState<FormData>({
-    email: '',
-  });
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({
     email: '',
     general: '',
   });
 
-  const navigate = useNavigate();
-
   // ======================= FORM HANDLERS =======================
 
-  const handleInputChange = (field: keyof FormData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    // Clear error when user types
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: '' }));
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    // Xóa error khi user nhập
+    if (errors.email) {
+      setErrors((prev) => ({ ...prev, email: '' }));
     }
   };
 
@@ -83,7 +73,7 @@ const ForgotPassword: React.FC = () => {
     clearAllErrors();
 
     // Validate form
-    const { isValid, errors: validationErrors } = validators.validateForm(formData);
+    const { isValid, errors: validationErrors } = validators.validateForm(email);
 
     if (!isValid) {
       setErrors(validationErrors);
@@ -93,20 +83,20 @@ const ForgotPassword: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await authApi.forgotPassword(formData.email);
+      const response = await authService.forgotPassword(email);
 
-      console.log('Forgot password request successful:', response);
+      console.log('Forgot password successful:', response);
 
-      setEmailSent(true);
+      setSuccess(true);
       setErrors((prev) => ({
         ...prev,
-        general: response.message || 'Đã gửi email khôi phục mật khẩu!',
+        general: response.message || 'Đã gửi email reset password! Vui lòng kiểm tra hộp thư.',
       }));
     } catch (error: any) {
       console.error('Forgot password error:', error);
       setErrors((prev) => ({
         ...prev,
-        general: error.message || 'Gửi yêu cầu thất bại! Vui lòng thử lại.',
+        general: error.message || 'Gửi email thất bại! Vui lòng thử lại.',
       }));
     } finally {
       setLoading(false);
@@ -117,11 +107,6 @@ const ForgotPassword: React.FC = () => {
     if (e.key === 'Enter' && !loading) {
       handleSubmit();
     }
-  };
-
-  const handleResendEmail = () => {
-    setEmailSent(false);
-    handleSubmit();
   };
 
   // ======================= RENDER =======================
@@ -137,12 +122,10 @@ const ForgotPassword: React.FC = () => {
 
         <div className="auth-card">
           {/* Header */}
-          <div className="auth-header forgot-password-header">
-            <h2 className="auth-title">Quên mật khẩu</h2>
+          <div className="auth-header">
+            <h2 className="auth-title">Quên mật khẩu?</h2>
             <p className="auth-subtitle">
-              {emailSent
-                ? 'Kiểm tra email của bạn'
-                : 'Nhập email để nhận liên kết đặt lại mật khẩu'}
+              Nhập email của bạn và chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu
             </p>
           </div>
 
@@ -183,101 +166,77 @@ const ForgotPassword: React.FC = () => {
               </div>
             )}
 
-            {/* Email Sent Success View */}
-            {emailSent ? (
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <div style={{ color: '#10b981', marginBottom: '16px' }}>
+            {/* Email Input */}
+            <div className="form-group">
+              <label className="form-label form-label-required" htmlFor="email-input">
+                Email
+              </label>
+              <div className="input-container">
+                <svg
+                  className="input-icon"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+                <input
+                  id="email-input"
+                  type="email"
+                  className={`form-input ${errors.email ? 'input-error' : ''}`}
+                  placeholder="your.email@example.com"
+                  value={email}
+                  onChange={(e) => handleEmailChange(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  disabled={loading || success}
+                  autoComplete="email"
+                  autoFocus
+                />
+              </div>
+              {errors.email && <span className="error-message">{errors.email}</span>}
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              className={`btn-submit btn-forgot-password ${loading ? 'loading' : ''} ${
+                success ? 'success' : ''
+              }`}
+              disabled={loading || success}
+            >
+              {loading ? (
+                <>
+                  <span className="spinner"></span>
+                  Đang gửi...
+                </>
+              ) : success ? (
+                <>
                   <svg
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
-                    width="64"
-                    height="64"
+                    width="20"
+                    height="20"
+                    style={{ marginRight: '8px' }}
                   >
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                      strokeWidth={2}
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
                   </svg>
-                </div>
-                <p style={{ color: '#6b7280', marginBottom: '24px', lineHeight: 1.6 }}>
-                  Chúng tôi đã gửi email đến <strong>{formData.email}</strong>. Vui lòng kiểm
-                  tra hộp thư (bao gồm cả thư mục spam) và làm theo hướng dẫn để đặt lại mật
-                  khẩu.
-                </p>
-                <button
-                  type="button"
-                  className="btn-submit"
-                  onClick={handleResendEmail}
-                  disabled={loading}
-                  style={{ background: 'transparent', border: '1px solid #d1d5db', color: '#374151' }}
-                >
-                  {loading ? (
-                    <>
-                      <span className="spinner"></span>
-                      Đang gửi lại...
-                    </>
-                  ) : (
-                    'Gửi lại email'
-                  )}
-                </button>
-              </div>
-            ) : (
-              <>
-                {/* Email Input */}
-                <div className="form-group">
-                  <label className="form-label form-label-required" htmlFor="email-input">
-                    Email
-                  </label>
-                  <div className="input-container">
-                    <svg
-                      className="input-icon"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                      />
-                    </svg>
-                    <input
-                      id="email-input"
-                      type="email"
-                      className={`form-input ${errors.email ? 'input-error' : ''}`}
-                      placeholder="example@email.com"
-                      value={formData.email}
-                      onChange={(e) => handleInputChange('email', e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      disabled={loading}
-                      autoComplete="email"
-                      autoFocus
-                    />
-                  </div>
-                  {errors.email && <span className="error-message">{errors.email}</span>}
-                </div>
-
-                {/* Submit Button */}
-                <button
-                  type="submit"
-                  className={`btn-submit btn-forgot-password ${loading ? 'loading' : ''}`}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <>
-                      <span className="spinner"></span>
-                      Đang xử lý...
-                    </>
-                  ) : (
-                    'Gửi liên kết đặt lại'
-                  )}
-                </button>
-              </>
-            )}
+                  Đã gửi email
+                </>
+              ) : (
+                'Gửi link reset password'
+              )}
+            </button>
 
             {/* Back to Login Link */}
             <p className="auth-footer-text">

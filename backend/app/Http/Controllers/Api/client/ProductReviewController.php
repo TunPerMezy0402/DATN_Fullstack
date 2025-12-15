@@ -85,6 +85,7 @@ class ProductReviewController extends Controller
                 'rating' => $validated['rating'],
                 'comment' => trim($validated['comment']),
                 'comment_time' => now(),
+                'is_approved' => false, // Mặc định chờ duyệt
             ]);
 
             // Kiểm tra đã review hết tất cả variants chưa
@@ -150,7 +151,7 @@ class ProductReviewController extends Controller
     }
 
     /**
-     * 📋 Lấy danh sách đánh giá của sản phẩm (PUBLIC)
+     * 📋 Lấy danh sách đánh giá của sản phẩm (PUBLIC - chỉ hiện đánh giá đã duyệt)
      */
     public function index(Request $request, $productId)
     {
@@ -160,6 +161,7 @@ class ProductReviewController extends Controller
         }
 
         $reviews = ProductReview::where('product_id', $productId)
+            ->where('is_approved', true) // Chỉ lấy đánh giá đã được duyệt
             ->with(['user:id,name,email'])
             ->orderBy('comment_time', 'desc')
             ->paginate(10);

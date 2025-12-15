@@ -68,18 +68,21 @@ const Profile: React.FC = () => {
   const avatarObjectUrlRef = useRef<string | null>(null);
   const initialValuesRef = useRef<any>({});
   const initialBankValuesRef = useRef<any>({});
+  // Thêm vào phần khai báo state (sau dòng 46)
+const [hasPassword, setHasPassword] = useState(true);
 
   const fetchProfile = async () => {
-    try {
-      setLoading(true);
-      const token = getAuthToken();
-      const res = await axios.get("/api/profile", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+  try {
+    setLoading(true);
+    const token = getAuthToken();
+    const res = await axios.get("/api/profile", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
       setUser(res.data.user);
       setAddresses(res.data.addresses || []);
       setAvatarPreview(res.data.user.image || null);
+      setHasPassword(res.data.user.has_password !== false);
 
       const initialValues = {
         name: res.data.user.name,
@@ -683,61 +686,64 @@ const Profile: React.FC = () => {
       </Card>
 
       {/* Modal đổi mật khẩu */}
-      <Modal
-        open={passwordModal}
-        title="Đổi mật khẩu"
-        onCancel={() => setPasswordModal(false)}
-        footer={null}
+<Modal
+  open={passwordModal}
+  title="Đổi mật khẩu"
+  onCancel={() => setPasswordModal(false)}
+  footer={null}
+>
+  <Form
+    form={passwordForm}
+    layout="vertical"
+    onFinish={handleChangePassword}
+  >
+    {/* ⭐ Chỉ hiện trường này nếu user có password */}
+    {hasPassword && (
+      <Form.Item
+        label="Mật khẩu hiện tại"
+        name="current_password"
+        rules={[{ required: true, message: "Nhập mật khẩu hiện tại" }]}
       >
-        <Form
-          form={passwordForm}
-          layout="vertical"
-          onFinish={handleChangePassword}
-        >
-          <Form.Item
-            label="Mật khẩu hiện tại"
-            name="current_password"
-            rules={[{ required: true, message: "Nhập mật khẩu hiện tại" }]}
-          >
-            <Input.Password />
-          </Form.Item>
+        <Input.Password />
+      </Form.Item>
+    )}
 
-          <Form.Item
-            label="Mật khẩu mới"
-            name="new_password"
-            rules={[{ required: true, message: "Nhập mật khẩu mới" }]}
-          >
-            <Input.Password />
-          </Form.Item>
+    <Form.Item
+      label="Mật khẩu mới"
+      name="new_password"
+      rules={[{ required: true, message: "Nhập mật khẩu mới" }]}
+    >
+      <Input.Password />
+    </Form.Item>
 
-          <Form.Item
-            label="Xác nhận mật khẩu"
-            name="new_password_confirmation"
-            dependencies={["new_password"]}
-            rules={[
-              { required: true, message: "Xác nhận mật khẩu mới" },
-              ({ getFieldValue }) => ({
-                validator(_, value) {
-                  if (!value || getFieldValue("new_password") === value)
-                    return Promise.resolve();
-                  return Promise.reject(new Error("Mật khẩu không khớp"));
-                },
-              }),
-            ]}
-          >
-            <Input.Password />
-          </Form.Item>
+    <Form.Item
+      label="Xác nhận mật khẩu"
+      name="new_password_confirmation"
+      dependencies={["new_password"]}
+      rules={[
+        { required: true, message: "Xác nhận mật khẩu mới" },
+        ({ getFieldValue }) => ({
+          validator(_, value) {
+            if (!value || getFieldValue("new_password") === value)
+              return Promise.resolve();
+            return Promise.reject(new Error("Mật khẩu không khớp"));
+          },
+        }),
+      ]}
+    >
+      <Input.Password />
+    </Form.Item>
 
-          <Button
-            type="primary"
-            htmlType="submit"
-            block
-            icon={<EditOutlined />}
-          >
-            Cập nhật mật khẩu
-          </Button>
-        </Form>
-      </Modal>
+    <Button
+      type="primary"
+      htmlType="submit"
+      block
+      icon={<EditOutlined />}
+    >
+      {hasPassword ? "Cập nhật mật khẩu" : "Tạo mật khẩu"}
+    </Button>
+  </Form>
+</Modal>
 
       {/* Modal xác nhận mật khẩu khi cập nhật ngân hàng */}
       <Modal

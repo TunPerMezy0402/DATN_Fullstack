@@ -70,8 +70,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
       icon: "fa-tag",
       items: [
         { label: "Tất cả mã giảm giá", path: "/admin/coupons" },
-        { label: "Thêm mã giảm giá", path: "/admin/coupons/create" },
-        { label: "Mã lưu trữ", path: "/admin/coupons/trash" },
       ],
     },
     {
@@ -80,7 +78,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
       icon: "fa-comments",
       items: [
         { label: "Tất cả bình luận", path: "/admin/comments" },
-        { label: "Bình luận chờ duyệt", path: "/admin/comments/pending" },
       ],
     },
     {
@@ -88,10 +85,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
       title: "Hỗ Trợ Khách Hàng",
       icon: "fa-headset",
       items: [
-        { label: "Tất cả ticket", path: "/admin/support-tickets" },
-        { label: "Ticket mở", path: "/admin/support-tickets?status=open" },
-        { label: "Đang xử lý", path: "/admin/support-tickets?status=in_progress" },
-        { label: "Đã đóng", path: "/admin/support-tickets?status=closed" },
+        { label: "Tất cả support", path: "/admin/support" },
       ],
     },
   ];

@@ -26,19 +26,16 @@ import CouponList from '../pages/admin/coupons/CouponList';
 import OrderList from '../pages/admin/orders/OrderList';
 import OrderDetail from '../pages/admin/orders/OrderDetail';
 
-import SupportTickets from '../pages/admin/support/SupportTickets';
 
+import CommentList from '../pages/admin/comments/CommentList';
 
-
-
+import AdminChatApp from '../pages/admin/support/AdminChatApp';
 
 import BannerList from "../pages/admin/banner/BannerList";
 import BannerAdd from "../pages/admin/banner/BannerAdd";
 import BannerEdit from "../pages/admin/banner/BannerEdit";
 
 import Payment from "../pages/admin/vnpay/Transaction";
-
-
 
 const AdminRoutes: React.FC = () => {
   return (
@@ -62,30 +59,32 @@ const AdminRoutes: React.FC = () => {
         <Route path="attributes" element={<AttributeList />} />
         <Route path="attributes/trash" element={<AttributeTrash />} />
 
+        <Route path="comments" element={<CommentList />} />
+
+        {/* ✅ Quản lý sản phẩm */}
         <Route path="products" element={<ProductList />} />
         <Route path="products/create" element={<ProductCreate />} />
         <Route path="products/trash" element={<ProductTrash />} />
         <Route path="products/:id" element={<ProductDetail />} />
         <Route path="products/:id/edit" element={<ProductEdit />} />
 
+        {/* ✅ Quản lý mã giảm giá */}
         <Route path="coupons" element={<CouponList />} />
 
+        {/* ✅ Quản lý đơn hàng */}
         <Route path="orders" element={<OrderList />} />
         <Route path="orders/:id" element={<OrderDetail />} />
 
-
-         <Route path="banners" element={<BannerList />} />
-        <Route path="banners/add/" element={<BannerAdd />} />
+        {/* ✅ Quản lý banner */}
+        <Route path="banners" element={<BannerList />} />
+        <Route path="banners/add" element={<BannerAdd />} />
         <Route path="banners/edit/:id" element={<BannerEdit />} />
 
+        {/* ✅ Quản lý thanh toán */}
         <Route path="payment" element={<Payment />} />
+        
 
- 
-
-        <Route path="orders" element={<OrderList />} />
-
-        <Route path="support-tickets" element={<SupportTickets />} />
-
+         <Route path="support" element={<AdminChatApp />} />
       </Route>
     </Routes>
   );

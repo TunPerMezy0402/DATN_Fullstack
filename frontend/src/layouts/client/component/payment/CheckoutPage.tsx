@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
+import { API_URL, IMAGE_BASE_URL, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_FEE, VNPAY_MIN, VNPAY_MAX } from "../../../../api/config/api";
 import {
   Steps,
   Form,
@@ -35,13 +36,6 @@ import { provinces, districts, wards } from "vietnam-provinces";
 
 const { Title, Text, Paragraph } = Typography;
 
-// ==================== CONFIG ====================
-const API_URL = "http://127.0.0.1:8000/api";
-const IMAGE_BASE_URL = "http://127.0.0.1:8000/";
-const FREE_SHIPPING_THRESHOLD = 500000;
-const STANDARD_SHIPPING_FEE = 30000;
-const VNPAY_MIN = 10000;
-const VNPAY_MAX = 500000000;
 
 // ==================== TYPES ====================
 interface CartItem {
@@ -92,7 +86,7 @@ const formatMoney = (val: any) => {
   return isNaN(num) ? "0" : num.toLocaleString("vi-VN");
 };
 
-const getPrice = (variant: CartItem["variant"]) => 
+const getPrice = (variant: CartItem["variant"]) =>
   Number(variant.discount_price ?? variant.price ?? 0);
 
 const isCouponValid = (coupon: Coupon, subtotal: number) => {
@@ -119,7 +113,7 @@ const validateVNPay = (amount: number) => {
 };
 
 const generateSKU = () =>
-  Array.from({ length: 9 }, () => 
+  Array.from({ length: 9 }, () =>
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[Math.floor(Math.random() * 36)]
   ).join("");
 
@@ -162,6 +156,7 @@ const CheckoutPage: React.FC = () => {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddr, setSelectedAddr] = useState<Address | null>(null);
   const [user, setUser] = useState<any>(null);
+  const [redirecting, setRedirecting] = useState(false);
 
   const [coupon, setCoupon] = useState<Coupon | null>(null);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -216,7 +211,7 @@ const CheckoutPage: React.FC = () => {
         const data = json.user || json;
         setUser(data);
         setAddresses(json.addresses || []);
-        
+
         const defaultAddr = (json.addresses || []).find((a: Address) => a.is_default);
         if (defaultAddr) setSelectedAddr(defaultAddr);
       } catch (err) {
@@ -284,7 +279,7 @@ const CheckoutPage: React.FC = () => {
 
       setAddresses((prev) => [...prev, newAddr]);
       setSelectedAddr(newAddr);
-      
+
       message.success("Thêm địa chỉ thành công!");
       setAddressModal(false);
       addressForm.resetFields();
@@ -319,7 +314,8 @@ const CheckoutPage: React.FC = () => {
     message.success("Áp dụng mã thành công!");
   };
 
-  // ==================== SUBMIT ORDER ====================
+  // File: CheckoutPage.tsx - Hàm submitOrder
+
   const submitOrder = async (values: any) => {
     if (!selectedAddr) {
       message.warning("Chọn địa chỉ giao hàng");
@@ -380,30 +376,101 @@ const CheckoutPage: React.FC = () => {
     try {
       setSubmitting(true);
 
-      const orderJson = await api.post("/orders", payload);
+      // ✅ FIX: Hiển thị loading message sớm cho VNPay
+      if (method === "vnpay") {
+        message.loading({
+          content: "Đang xử lý đơn hàng...",
+          key: "order",
+          duration: 0
+        });
+      }
+
+      const createOrderPromise = api.post("/orders", payload);
+      const orderTimeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Tạo đơn hàng timeout")), 10000)
+      );
+
+      const orderJson = await Promise.race([createOrderPromise, orderTimeoutPromise]);
       const orderId = orderJson?.data?.id || orderJson?.id;
 
       if (!orderId) throw new Error("Không tạo được đơn hàng");
 
       if (method === "vnpay") {
-        const vnpayJson = await api.post("/vnpay_payment", {
-          order_id: orderId,
-          bank_code: "",
-        });
+        try {
+          // ✅ Update message
+          message.loading({
+            content: "Đang kết nối VNPay...",
+            key: "order",
+            duration: 0
+          });
 
-        const url = vnpayJson?.payment_url;
-        if (!url) throw new Error("Không nhận được URL thanh toán");
+          setRedirecting(true);
 
-        localStorage.setItem("pending_order_id", String(orderId));
-        window.location.href = url;
-        return;
+          const vnpayJson = await api.post("/vnpay_payment", {
+            order_id: orderId,
+            bank_code: "",
+          });
+
+          const url = vnpayJson?.payment_url;
+          if (!url) throw new Error("Không nhận được URL thanh toán");
+
+          localStorage.setItem("pending_order_id", String(orderId));
+          window.location.href = url;
+          return;
+
+        } catch (err: any) {
+          setRedirecting(false);
+          message.destroy("order");
+
+          if (err.message?.includes("timeout") || err.message?.includes("network")) {
+            Modal.confirm({
+              title: "VNPay đang bận",
+              content: (
+                <div>
+                  <p>Không thể kết nối VNPay lúc này. Bạn có muốn:</p>
+                  <ul>
+                    <li>Thử lại kết nối VNPay</li>
+                    <li>Chuyển sang thanh toán COD</li>
+                  </ul>
+                </div>
+              ),
+              okText: "Thử lại VNPay",
+              cancelText: "Chuyển sang COD",
+              onOk: () => {
+                submitOrder(values);
+              },
+              onCancel: () => {
+                setPayment("cod");
+                payForm.setFieldsValue({ payment: "cod" });
+                message.info("Đã chuyển sang thanh toán COD");
+              },
+            });
+          } else {
+            message.error(err.message || "Lỗi kết nối VNPay");
+          }
+
+          setSubmitting(false);
+          return;
+        }
       }
 
+      // COD flow
       localStorage.removeItem("selectedCartItems");
-      setTimeout(() => (window.location.href = "/payment/success?order_id=" + orderId), 2000);
+      message.success("Đặt hàng thành công!");
+
+      setTimeout(() => {
+        window.location.href = "/payment/success?order_id=" + orderId;
+      }, 1000);
+
     } catch (err: any) {
-      message.error(err.message || "Đặt hàng thất bại");
-    } finally {
+      message.destroy("order"); // ✅ Destroy message nếu có lỗi
+
+      if (err.message?.includes("timeout")) {
+        message.error("Hệ thống đang quá tải, vui lòng thử lại sau");
+      } else {
+        message.error(err.message || "Đặt hàng thất bại");
+      }
+
       setSubmitting(false);
     }
   };
@@ -411,7 +478,7 @@ const CheckoutPage: React.FC = () => {
   // ==================== RENDER HELPERS ====================
   const getAddressName = (code: string | undefined, type: 'city' | 'district' | 'commune') => {
     if (!code) return '';
-    
+
     if (type === 'city') {
       return provinces.find(p => p.code === code)?.name || code;
     } else if (type === 'district') {
@@ -425,7 +492,7 @@ const CheckoutPage: React.FC = () => {
     const cityName = getAddressName(addr.city, 'city');
     const districtName = getAddressName(addr.district, 'district');
     const communeName = getAddressName(addr.commune, 'commune');
-    
+
     return [addr.village, communeName, districtName, cityName]
       .filter(Boolean)
       .join(", ");
@@ -518,10 +585,10 @@ const CheckoutPage: React.FC = () => {
       ? !cp.is_active
         ? "Đã vô hiệu"
         : cp.end_date && new Date(cp.end_date) < new Date()
-        ? "Hết hạn"
-        : cp.used
-        ? "Đã dùng"
-        : `Đơn tối thiểu ${formatMoney(cp.min_purchase)}₫`
+          ? "Hết hạn"
+          : cp.used
+            ? "Đã dùng"
+            : `Đơn tối thiểu ${formatMoney(cp.min_purchase)}₫`
       : "";
 
     return (
@@ -543,10 +610,10 @@ const CheckoutPage: React.FC = () => {
             <Space>
               <GiftOutlined style={{ fontSize: 20, color: valid ? "#1890ff" : "#999" }} />
               <div>
-                <Text strong>{cp.code}</Text>
+                <Text strong> Giảm {cp.discount_type === "percent" ? `${cp.discount_value}%` : `${formatMoney(cp.discount_value)}₫`}</Text>
                 <br />
                 <Text type="secondary" style={{ fontSize: 13 }}>
-                  Giảm {cp.discount_type === "percent" ? `${cp.discount_value}%` : `${formatMoney(cp.discount_value)}₫`}
+                  Đơn hàng tối thiểu {formatMoney(cp.min_purchase)}₫ - Giảm tối đa {formatMoney(cp.max_discount)}₫
                 </Text>
               </div>
             </Space>
@@ -609,13 +676,13 @@ const CheckoutPage: React.FC = () => {
                 </Card>
 
                 {/* Địa chỉ */}
-                <Card 
+                <Card
                   title={<Space><EnvironmentOutlined /> Địa chỉ nhận hàng</Space>}
                   extra={
                     addresses.length < 3 && (
-                      <Button 
-                        type="primary" 
-                        icon={<PlusOutlined />} 
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
                         onClick={openAddAddressModal}
                       >
                         Thêm địa chỉ
@@ -639,9 +706,9 @@ const CheckoutPage: React.FC = () => {
                       <Paragraph type="secondary" style={{ marginBottom: 16 }}>
                         Bạn chưa có địa chỉ giao hàng nào
                       </Paragraph>
-                      <Button 
-                        type="primary" 
-                        icon={<PlusOutlined />} 
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
                         onClick={openAddAddressModal}
                         size="large"
                       >
@@ -674,8 +741,8 @@ const CheckoutPage: React.FC = () => {
                                   </Text>
                                   <br />
                                   <Text type="secondary" style={{ fontSize: 12 }}>
-                                    Giảm {coupon.discount_type === "percent" 
-                                      ? `${coupon.discount_value}%` 
+                                    Giảm {coupon.discount_type === "percent"
+                                      ? `${coupon.discount_value}%`
                                       : `${formatMoney(coupon.discount_value)}₫`}
                                   </Text>
                                 </div>
@@ -711,7 +778,7 @@ const CheckoutPage: React.FC = () => {
                       <Text>Tiền hàng:</Text>
                       <Text strong>{formatMoney(subtotal)}₫</Text>
                     </div>
-                    
+
                     {coupon && discount > 0 && (
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <Text>Giảm giá:</Text>
@@ -720,25 +787,25 @@ const CheckoutPage: React.FC = () => {
                         </Text>
                       </div>
                     )}
-                    
+
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <Text>Phí ship:</Text>
                       <Text strong style={{ color: shipping === 0 ? "#52c41a" : undefined }}>
                         {shipping === 0 ? "Miễn phí" : `${formatMoney(shipping)}₫`}
                       </Text>
                     </div>
-                    
+
                     {shipping === 0 && (
-                      <Alert 
-                        message="Miễn phí vận chuyển cho đơn ≥ 500.000₫" 
-                        type="success" 
-                        showIcon 
+                      <Alert
+                        message="Miễn phí vận chuyển cho đơn ≥ 500.000₫"
+                        type="success"
+                        showIcon
                         style={{ fontSize: 12 }}
                       />
                     )}
-                    
+
                     <Divider style={{ margin: "8px 0" }} />
-                    
+
                     <div
                       style={{
                         display: "flex",
@@ -753,7 +820,7 @@ const CheckoutPage: React.FC = () => {
                         {formatMoney(total)}₫
                       </Text>
                     </div>
-                    
+
                     <Button
                       type="primary"
                       size="large"
@@ -882,7 +949,7 @@ const CheckoutPage: React.FC = () => {
                     <Text>Tiền hàng:</Text>
                     <Text strong>{formatMoney(subtotal)}₫</Text>
                   </div>
-                  
+
                   {coupon && discount > 0 && (
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <Text>Giảm giá:</Text>
@@ -891,14 +958,14 @@ const CheckoutPage: React.FC = () => {
                       </Text>
                     </div>
                   )}
-                  
+
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <Text>Phí ship:</Text>
                     <Text strong style={{ color: shipping === 0 ? "#52c41a" : undefined }}>
                       {shipping === 0 ? "Miễn phí" : `${formatMoney(shipping)}₫`}
                     </Text>
                   </div>
-                  
+
                   <Divider style={{ margin: "8px 0" }} />
 
                   <div
@@ -994,9 +1061,9 @@ const CheckoutPage: React.FC = () => {
                 onChange={handleProvinceChange}
                 showSearch
                 optionFilterProp="label"
-                options={provinces.map((p) => ({ 
-                  label: p.name, 
-                  value: p.code 
+                options={provinces.map((p) => ({
+                  label: p.name,
+                  value: p.code
                 }))}
               />
             </Form.Item>
@@ -1028,9 +1095,9 @@ const CheckoutPage: React.FC = () => {
                 placeholder="Chọn phường/xã"
                 showSearch
                 optionFilterProp="label"
-                options={wardList.map((w) => ({ 
-                  label: w.name, 
-                  value: w.code 
+                options={wardList.map((w) => ({
+                  label: w.name,
+                  value: w.code
                 }))}
                 disabled={!wardList.length}
               />
@@ -1041,9 +1108,9 @@ const CheckoutPage: React.FC = () => {
               name="village"
               rules={[{ required: true, message: "Vui lòng nhập địa chỉ cụ thể" }]}
             >
-              <Input.TextArea 
-                rows={2} 
-                placeholder="Số nhà, tên đường, khu vực..." 
+              <Input.TextArea
+                rows={2}
+                placeholder="Số nhà, tên đường, khu vực..."
                 maxLength={200}
                 showCount
               />
@@ -1060,16 +1127,16 @@ const CheckoutPage: React.FC = () => {
 
             <Form.Item>
               <Space style={{ width: "100%" }} size={8}>
-                <Button 
-                  type="primary" 
-                  htmlType="submit" 
+                <Button
+                  type="primary"
+                  htmlType="submit"
                   loading={savingAddress}
                   icon={<CheckCircleOutlined />}
                   block
                 >
                   Thêm địa chỉ
                 </Button>
-                <Button 
+                <Button
                   onClick={() => {
                     setAddressModal(false);
                     addressForm.resetFields();
@@ -1111,6 +1178,31 @@ const CheckoutPage: React.FC = () => {
           )}
         </Modal>
       </div>
+      {redirecting && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(255, 255, 255, 0.95)",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+          }}
+        >
+          <Spin size="large" />
+          <Title level={4} style={{ marginTop: 24, color: "#1890ff" }}>
+            Đang chuyển sang VNPay...
+          </Title>
+          <Paragraph type="secondary">
+            Vui lòng không tắt trình duyệt
+          </Paragraph>
+        </div>
+      )}
     </div>
   );
 };
