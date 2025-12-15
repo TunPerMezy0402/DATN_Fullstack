@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { message } from "antd";
+import { UserOutlined, MailOutlined, PhoneOutlined, SafetyOutlined } from "@ant-design/icons";
 import userApi, { User } from "../../../api/userApi";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import "../../../assets/admin/users/UserDetail.css";
 
 const UserDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -10,130 +12,158 @@ const UserDetail: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<string>("");
+  const [messageApi, contextHolder] = message.useMessage();
 
-  // 🟦 Lấy dữ liệu user theo id
   useEffect(() => {
     if (!id || id === "create") return;
     const fetchUser = async () => {
       try {
         const res = await userApi.getById(id);
         setUser(res);
+        setSelectedStatus(res.status || "active");
       } catch (err) {
         console.error("Lỗi khi lấy thông tin user:", err);
+        messageApi.error("Không thể tải thông tin người dùng!");
       } finally {
         setLoading(false);
       }
     };
     fetchUser();
-  }, [id]);
+  }, [id, messageApi]);
 
-  // 🟩 Chuyển đổi trạng thái active/inactive
-  const handleChangeStatus = async (newStatus: "active" | "inactive") => {
-    if (!user || updating || user.status === newStatus) return;
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedStatus(e.target.value);
+  };
+
+  const handleSubmit = async () => {
+    if (!user || updating || user.status === selectedStatus) return;
+    
     setUpdating(true);
     try {
-      const updated = await userApi.toggleStatus(user.id, newStatus);
-      setUser(updated);
-    } catch (err) {
+      const updateData = {
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        status: selectedStatus as "active" | "inactive"
+      };
+      await userApi.update(user.id, updateData);
+      
+      messageApi.success({
+        content: "Cập nhật trạng thái thành công!",
+        duration: 2,
+      });
+      
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (err: any) {
       console.error("Lỗi khi cập nhật trạng thái:", err);
-    } finally {
+      messageApi.error(err?.response?.data?.message || "Lỗi khi cập nhật trạng thái!");
+      setSelectedStatus(user.status);
       setUpdating(false);
     }
   };
 
-  if (loading)
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-gray-600">
-        <Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
+        <span>Đang tải dữ liệu...</span>
       </div>
     );
+  }
 
-  if (!user)
+  if (!user) {
     return (
-      <div className="p-6 text-center text-gray-500">
-        Không tìm thấy người dùng.
+      <div className="page-container">
+        <div className="empty-state">Không tìm thấy người dùng.</div>
       </div>
     );
+  }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto bg-white rounded-2xl shadow-sm">
-      <div className="flex items-center justify-between mb-6">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-        >
-          <ArrowLeft size={18} /> Quay lại
-        </button>
-        <h1 className="text-xl font-semibold">Chi tiết người dùng</h1>
+    <div className="page-container">
+      {contextHolder}
+      
+      <div className="page-header">
+        <h1 className="page-title">Chi tiết tài khoản</h1>
       </div>
 
-      <div className="space-y-4">
-        <div>
-          <p className="text-gray-500">Họ và tên</p>
-          <p className="font-medium text-lg">{user.name}</p>
+      <div className="detail-card">
+        <div className="detail-grid">
+          <div className="detail-item">
+            <label className="detail-label">
+              <UserOutlined style={{ marginRight: 8 }} />
+              Họ và tên
+            </label>
+            <p className="detail-value">{user.name}</p>
+          </div>
+
+          <div className="detail-item">
+            <label className="detail-label">
+              <MailOutlined style={{ marginRight: 8 }} />
+              Email
+            </label>
+            <p className="detail-value">{user.email}</p>
+          </div>
+
+          <div className="detail-item">
+            <label className="detail-label">
+              <PhoneOutlined style={{ marginRight: 8 }} />
+              Số điện thoại
+            </label>
+            <p className="detail-value">{user.phone || "Chưa cập nhật"}</p>
+          </div>
+
+          <div className="detail-item">
+            <label className="detail-label">
+              <SafetyOutlined style={{ marginRight: 8 }} />
+              Vai trò
+            </label>
+            <p className="detail-value">
+              <span className={`role-badge ${user.role === "admin" ? "admin" : "user"}`}>
+                {user.role === "admin" ? "Quản trị viên" : "Người dùng"}
+              </span>
+            </p>
+          </div>
+
+          <div className="detail-item">
+            <label className="detail-label">
+              <SafetyOutlined style={{ marginRight: 8 }} />
+              Trạng thái
+            </label>
+            <div className="detail-value">
+              <select
+                value={selectedStatus}
+                onChange={handleStatusChange}
+                className={`status-select ${selectedStatus === "active" ? "active" : "inactive"}`}
+              >
+                <option value="active">Hoạt động</option>
+                <option value="inactive">Khóa tài khoản</option>
+              </select>
+            </div>
+          </div>
         </div>
 
-        <div>
-          <p className="text-gray-500">Email</p>
-          <p>{user.email}</p>
-        </div>
-
-        <div>
-          <p className="text-gray-500">Số điện thoại</p>
-          <p>{user.phone || "Chưa cập nhật"}</p>
-        </div>
-
-        <div>
-          <p className="text-gray-500">Địa chỉ</p>
-          <p>{user.address || "Chưa cập nhật"}</p>
-        </div>
-
-        <div>
-          <p className="text-gray-500">Vai trò</p>
-          <p className="capitalize">{user.role}</p>
-        </div>
-
-        <div>
-          <p className="text-gray-500">Trạng thái</p>
-          <span
-            className={`px-3 py-1 rounded-full text-sm font-semibold ${
-              user.status === "active"
-                ? "bg-green-100 text-green-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
-            {user.status === "active" ? "Hoạt động" : "Ngưng hoạt động"}
-          </span>
-        </div>
-
-        {/* 🟧 Hai nút trạng thái */}
-        <div className="pt-4 flex gap-3">
+        <div className="flex items-center justify-end gap-2 mt-8 pt-6 border-t border-gray-200">
           <button
-            onClick={() => handleChangeStatus("active")}
-            disabled={updating || user.status === "active"}
-            className={`px-4 py-2 rounded-lg font-medium text-white ${
-              user.status === "active"
-                ? "bg-gray-300 cursor-not-allowed"
-                : "bg-green-500 hover:bg-green-600"
-            }`}
+            onClick={() => navigate(-1)}
+            className="px-4 py-2 text-[13px] font-medium bg-white text-gray-700 border border-gray-300 rounded-md cursor-pointer transition-all duration-200 hover:bg-gray-50 hover:border-gray-400 active:bg-gray-100"
           >
-            {updating && user.status !== "active"
-              ? "Đang cập nhật..."
-              : "Hoạt động"}
+            ← Quay lại
           </button>
-
           <button
-            onClick={() => handleChangeStatus("inactive")}
-            disabled={updating || user.status === "inactive"}
-            className={`px-4 py-2 rounded-lg font-medium text-white ${
-              user.status === "inactive"
-                ? "bg-gray-300 cursor-not-allowed"
-                : "bg-red-500 hover:bg-red-600"
+            onClick={handleSubmit}
+            disabled={updating || user.status === selectedStatus}
+            className={`px-5 py-2 text-[13px] font-medium text-white border-none rounded-md cursor-pointer transition-all duration-200 ${
+              updating || user.status === selectedStatus
+                ? 'bg-gray-400 cursor-not-allowed opacity-60'
+                : 'bg-blue-500 hover:bg-blue-600 active:bg-blue-700'
             }`}
           >
-            {updating && user.status !== "inactive"
-              ? "Đang cập nhật..."
-              : "Tạm ngừng"}
+            {updating ? "Đang cập nhật..." : "Cập nhật"}
           </button>
         </div>
       </div>

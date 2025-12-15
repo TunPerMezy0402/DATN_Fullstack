@@ -1,7 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api\admin;
-
+namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Coupon;
@@ -53,7 +52,14 @@ class CouponController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'is_active' => 'boolean',
+
+            // ✅ Các trường mới
+            'usage_limit' => 'nullable|integer|min:1',
+            'limit_per_user' => 'boolean',
         ]);
+
+        // Thêm mặc định used_count = 0
+        $validated['used_count'] = 0;
 
         $coupon = Coupon::create($validated);
 
@@ -79,12 +85,14 @@ class CouponController extends Controller
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date',
             'is_active' => 'boolean',
+            'usage_limit' => 'nullable|integer|min:1',
+            'limit_per_user' => 'boolean',
         ]);
 
         $coupon->update($validated);
 
         return response()->json([
-            'message' => 'Cập nhật thành công.',
+            'message' => 'Cập nhật mã giảm giá thành công.',
             'data' => $coupon,
         ]);
     }
@@ -101,11 +109,14 @@ class CouponController extends Controller
     }
 
     /**
-     * Danh sách các coupon đã xóa (trash)
+     * Danh sách coupon đã xóa (trash)
      */
     public function trash()
     {
-        $trash = Coupon::onlyTrashed()->orderByDesc('deleted_at')->paginate(20);
+        $trash = Coupon::onlyTrashed()
+            ->orderByDesc('deleted_at')
+            ->paginate(20);
+
         return response()->json($trash);
     }
 

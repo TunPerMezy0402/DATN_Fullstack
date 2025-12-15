@@ -20,19 +20,11 @@ import { useNavigate } from "react-router-dom";
 import {
   Product,
   Category,
-  fetchProducts,
   fetchCategories,
   deleteProduct,
-  parseImages, // 👈 vẫn dùng cho variant.images
 } from "../../../api/productApi";
 
-const pageSize = 10;
-
 /* ============================== Asset URL helper ============================== */
-/**
- * Backend trả về 'storage/img/product/xxx.jpg' (relative).
- * Hàm này convert thành absolute URL dựa trên API_URL (bỏ đuôi /api).
- */
 const API_URL =
   (import.meta as any).env?.VITE_API_URL ||
   (import.meta as any).env?.REACT_APP_API_URL ||
@@ -48,6 +40,26 @@ const toAssetUrl = (u?: string | null): string | undefined => {
 
 const unique = <T,>(arr: T[]) => Array.from(new Set(arr));
 
+// ✅ Helper để parse images an toàn
+const safeParseImages = (images: any): string[] => {
+  if (Array.isArray(images)) {
+    return images.filter((x): x is string => typeof x === 'string' && x.trim() !== '');
+  }
+  
+  if (typeof images === 'string' && images.trim() !== '') {
+    try {
+      const parsed = JSON.parse(images);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === 'string' && x.trim() !== '');
+      }
+    } catch (e) {
+      console.warn('Failed to parse images JSON:', images);
+    }
+  }
+  
+  return [];
+};
+
 /* ============================== Component ============================== */
 const ProductList: React.FC = () => {
   const navigate = useNavigate();
@@ -57,17 +69,58 @@ const ProductList: React.FC = () => {
   const [catMap, setCatMap] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState<boolean>(true);
 
-  // tìm kiếm + sắp xếp + phân trang
   const [searchText, setSearchText] = useState<string>("");
-  const [sortNewest, setSortNewest] = useState<boolean>(true);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize] = useState<number>(10);
+  const [total, setTotal] = useState<number>(0);
 
-  const loadAll = async () => {
+  // ✅ Fetch products với pagination từ API
+  const loadProducts = async (page: number = 1, search: string = "") => {
     try {
       setLoading(true);
-      const [cats, prods] = await Promise.all([fetchCategories(), fetchProducts()]);
+      
+      const params = new URLSearchParams({
+        page: page.toString(),
+        per_page: pageSize.toString(),
+      });
+      
+      if (search.trim()) {
+        params.append('search', search.trim());
+      }
+
+      const response = await fetch(`${API_URL}/admin/products?${params.toString()}`, {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          // Thêm authorization header nếu cần
+          // 'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch products');
+      }
+
+      const data = await response.json();
+      
+      // Backend trả về cấu trúc pagination của Laravel
+      setProducts(Array.isArray(data.data) ? data.data : []);
+      setTotal(data.total || 0);
+      setCurrentPage(data.current_page || 1);
+    } catch (e) {
+      console.error(e);
+      message.error("Không thể tải dữ liệu sản phẩm!");
+      setProducts([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const cats = await fetchCategories();
       setCategories(cats);
-      setProducts(Array.isArray(prods) ? prods : []);
 
       const map: Record<number, string> = {};
       cats.forEach((c: Category) => {
@@ -76,78 +129,68 @@ const ProductList: React.FC = () => {
       setCatMap(map);
     } catch (e) {
       console.error(e);
-      message.error("Không thể tải dữ liệu sản phẩm/ danh mục!");
-    } finally {
-      setLoading(false);
+      message.error("Không thể tải danh mục!");
     }
   };
 
+  // Load categories một lần khi mount
   useEffect(() => {
-    loadAll();
+    loadCategories();
   }, []);
 
-  const dataView = useMemo<Product[]>(() => {
-    const q = searchText.trim().toLowerCase();
-
-    const filtered = q
-      ? products.filter((p) => {
-          const byName = p.name.toLowerCase().includes(q);
-          const byProductSku = (p.sku ?? "").toLowerCase().includes(q);
-          const byVariantSku =
-            Array.isArray(p.variants) &&
-            p.variants.some((v: any) => (v?.sku ?? "").toLowerCase().includes(q));
-          return byName || byProductSku || byVariantSku;
-        })
-      : products;
-
-    return sortNewest
-      ? [...filtered].sort(
-          (a, b) => dayjs(b.updated_at).valueOf() - dayjs(a.updated_at).valueOf()
-        )
-      : filtered;
-  }, [products, searchText, sortNewest]);
+  // Load products khi page hoặc search thay đổi
+  useEffect(() => {
+    loadProducts(currentPage, searchText);
+  }, [currentPage, searchText]);
 
   const onDelete = async (id: number) => {
     try {
       await deleteProduct(id);
       message.success("🗑️ Đã xóa mềm sản phẩm!");
-      loadAll();
+      // Reload lại trang hiện tại
+      loadProducts(currentPage, searchText);
     } catch (e) {
       console.error(e);
       message.error("Không thể xóa sản phẩm!");
     }
   };
 
-  /** Lấy URL ảnh đại diện cho cột “Ảnh”.
-   * Ưu tiên product.image; nếu không có thì lấy ảnh từ biến thể đầu tiên (image hoặc images[0]).
-   */
+  // ✅ Xử lý search - reset về trang 1
+  const handleSearch = (value: string) => {
+    setSearchText(value);
+    setCurrentPage(1); // Reset về trang 1 khi search
+  };
+
+  /** Lấy URL ảnh đại diện cho cột "Ảnh" */
   const coverUrl = (p: Product): string | undefined => {
-    const pImg = (p as any).image as string | undefined; // model mới: image (string|null)
+    const pImg = (p as any).image as string | undefined;
     if (pImg) return toAssetUrl(pImg);
 
-    // fallback: lấy từ biến thể
     const firstFromVariants =
       p.variants?.flatMap((v: any) => {
         const singles: (string | undefined)[] = [v?.image];
-        const albums = (Array.isArray(v?.images) ? v.images : parseImages(v?.images)) as string[];
-        return [...singles, ...(albums ?? [])];
+        const albums = safeParseImages(v?.images);
+        return [...singles, ...albums];
       }) ?? [];
     const first = firstFromVariants.find((x) => !!x) as string | undefined;
     return toAssetUrl(first);
   };
 
-  /** Album trong phần expand: gộp product.image + variant.image + variant.images[], unique + chuẩn URL */
-  const albumUrls = (p: Product): string[] =>
-    unique([
-      toAssetUrl((p as any).image) as string | undefined,
+  /** Album URLs */
+  const albumUrls = (p: Product): string[] => {
+    const allUrls: (string | undefined)[] = [
+      toAssetUrl((p as any).image),
       ...(p.variants ?? []).flatMap((v: any) => {
         const single = v?.image ? [toAssetUrl(v.image)] : [];
-        const many = (Array.isArray(v?.images) ? v.images : parseImages(v?.images))
+        const many = safeParseImages(v?.images)
           .map(toAssetUrl)
-          .filter(Boolean) as string[];
-        return [...(single as (string | undefined)[]), ...many];
+          .filter(Boolean);
+        return [...single, ...many];
       }),
-    ].filter(Boolean) as string[]).slice(0, 12);
+    ];
+
+    return unique(allUrls.filter((x): x is string => !!x)).slice(0, 12);
+  };
 
   const columns: ColumnsType<Product> = [
     {
@@ -181,7 +224,7 @@ const ProductList: React.FC = () => {
     },
     {
       title: "Ảnh",
-      dataIndex: "image", // 👈 product.image
+      dataIndex: "image",
       width: 100,
       render: (_: unknown, record: Product) => {
         const url = coverUrl(record);
@@ -246,7 +289,6 @@ const ProductList: React.FC = () => {
           >
             Chi tiết
           </Button>
-          {/* <Button type="link" onClick={() => navigate(`/admin/products/${record.id}/edit`)}>Sửa</Button> */}
         </Space>
       ),
     },
@@ -254,7 +296,7 @@ const ProductList: React.FC = () => {
 
   return (
     <div style={{ padding: 24, background: "#f5f7fa", minHeight: "100vh" }}>
-      {/* Header: Search + sort icon + Add */}
+      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -269,25 +311,10 @@ const ProductList: React.FC = () => {
           <Input
             placeholder="Tìm theo mã (SKU) / tên…"
             value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            onPressEnter={(e) =>
-              setSearchText((e.target as HTMLInputElement).value)
-            }
+            onChange={(e) => handleSearch(e.target.value)}
             allowClear
             style={{ width: 360 }}
           />
-          <Tooltip
-            title={sortNewest ? "Đang sắp xếp: Mới nhất" : "Bật sắp xếp theo Mới nhất"}
-          >
-            <Button
-              size="small"
-              shape="circle"
-              type={sortNewest ? "primary" : "default"}
-              icon={<SortDescendingOutlined />}
-              aria-label="Sắp xếp theo mới nhất"
-              onClick={() => setSortNewest((v) => !v)}
-            />
-          </Tooltip>
         </Space>
 
         <Button
@@ -302,13 +329,12 @@ const ProductList: React.FC = () => {
       <Table<Product>
         rowKey="id"
         columns={columns}
-        dataSource={dataView}
+        dataSource={products}
         loading={loading}
         expandable={{
-          // DẤU CỘNG mở chi tiết sản phẩm (brand, origin, mô tả, album ảnh…)
           expandedRowRender: (record: Product) => (
             <div style={{ padding: 12 }}>
-              {/* Album ảnh: product.image + variant.image + variant.images[] */}
+              {/* Album ảnh */}
               <Space wrap style={{ marginBottom: 12 }}>
                 {albumUrls(record).map((url: string, idx: number) => (
                   <Image
@@ -367,14 +393,15 @@ const ProductList: React.FC = () => {
               </div>
             </div>
           ),
-          // vẫn cho expand kể cả không có biến thể — cần xem brand/description
           rowExpandable: () => true,
         }}
         pagination={{
-          pageSize,
           current: currentPage,
-          onChange: (p) => setCurrentPage(p),
+          pageSize: pageSize,
+          total: total,
+          onChange: (page) => setCurrentPage(page),
           showTotal: (t) => `Tổng ${t} sản phẩm`,
+          showSizeChanger: false,
         }}
       />
     </div>

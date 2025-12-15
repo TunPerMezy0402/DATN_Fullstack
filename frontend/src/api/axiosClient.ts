@@ -1,34 +1,67 @@
-import axios from "axios";
+import axios, { AxiosInstance, AxiosError } from 'axios';
 
-const axiosClient = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || "http://localhost:8000/api",
-  timeout: 10000,
+const BACKEND_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api';
+
+// ======================= AXIOS INSTANCE =======================
+
+const axiosClient: AxiosInstance = axios.create({
+  baseURL: BACKEND_URL,
   headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
+    'Content-Type': 'application/json',
   },
 });
 
-// Gắn token vào mọi request
-axiosClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token");
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+// ======================= REQUEST INTERCEPTOR =======================
 
-// Xử lý lỗi (401 → logout)
-axiosClient.interceptors.response.use(
-  (response) => response.data,
+axiosClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("user_data");
-      if (!window.location.pathname.includes("/login")) {
-        window.location.href = "/login";
+    return Promise.reject(error);
+  }
+);
+
+// ======================= RESPONSE INTERCEPTOR =======================
+
+axiosClient.interceptors.response.use(
+  (response) => {
+    return response.data || response;
+  },
+  async (error: AxiosError) => {
+    const originalRequest = error.config as any;
+
+    // Nếu lỗi 401 và chưa retry
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        // Thử refresh token
+        const response = await axios.post(`${BACKEND_URL}/refresh`, {}, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('auth_token')}`,
+          },
+        });
+
+        const newToken = response.data?.token;
+        if (newToken) {
+          localStorage.setItem('auth_token', newToken);
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return axiosClient(originalRequest);
+        }
+      } catch (refreshError) {
+        // Refresh thất bại, clear auth và redirect
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_user');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
       }
     }
+
     return Promise.reject(error);
   }
 );

@@ -5,6 +5,8 @@ import PrivateRoute from './components/PrivateRoute';
 import AdminRoutes from './routes/AdminRoutes';
 import ClientRoutes from './routes/ClientRoutes';
 import Login from './layouts/account/Login';
+import ForgotPassword from './layouts/account/ForgotPassword';
+import ResetPassword  from './layouts/account/ResetPassword';
 import Register from './layouts/account/Register';
 import Unauthorized from './pages/Unauthorized';
 import authService from './services/authService';
@@ -46,15 +48,32 @@ const App: React.FC = () => {
             </PublicRoute>
           } 
         />
+        <Route 
+          path="/forgot-password" 
+          element={
+            <PublicRoute>
+              <ForgotPassword />
+            </PublicRoute>
+          } 
+        />
+
+        <Route 
+          path="/reset-password" 
+          element={
+            <PublicRoute>
+              <ResetPassword  />
+            </PublicRoute>
+          } 
+        />
+
+        
         
         <Route path="/unauthorized" element={<Unauthorized />} />
 
-        {/* Admin Routes - BẮT BUỘC đăng nhập và role admin */}
         <Route element={<PrivateRoute requiredRole="admin" />}>
           <Route path="/admin/*" element={<AdminRoutes />} />
         </Route>
 
-        {/* Client Routes - PUBLIC, không cần đăng nhập */}
         <Route path="/*" element={<ClientRoutes />} />
       </Routes>
     </Router>

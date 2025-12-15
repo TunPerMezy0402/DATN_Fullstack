@@ -1,202 +1,1210 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState, useMemo } from "react";
+import { API_URL, IMAGE_BASE_URL, FREE_SHIPPING_THRESHOLD, STANDARD_SHIPPING_FEE, VNPAY_MIN, VNPAY_MAX } from "../../../../api/config/api";
 import {
-    Steps,
-    Form,
-    Input,
-    Button,
-    Select,
-    Radio,
-    Typography,
-    Divider,
-    message,
-    Card,
-    Space,
+  Steps,
+  Form,
+  Input,
+  Button,
+  Radio,
+  Typography,
+  Divider,
+  message,
+  Card,
+  Space,
+  Spin,
+  Image,
+  Row,
+  Col,
+  Modal,
+  List,
+  Tag,
+  Badge,
+  Alert,
+  Select,
 } from "antd";
+import {
+  GiftOutlined,
+  EnvironmentOutlined,
+  ShoppingOutlined,
+  CreditCardOutlined,
+  CheckCircleOutlined,
+  DeleteOutlined,
+  WarningOutlined,
+  PlusOutlined,
+} from "@ant-design/icons";
+import { provinces, districts, wards } from "vietnam-provinces";
 
-const { Title, Text } = Typography;
-const { Step } = Steps;
-const { Option } = Select;
+const { Title, Text, Paragraph } = Typography;
 
+
+// ==================== TYPES ====================
+interface CartItem {
+  id?: number;
+  quantity: number;
+  variant: {
+    id?: number;
+    image?: string;
+    price?: number;
+    discount_price?: number;
+    stock_quantity?: number;
+    sku?: string;
+    product?: { id?: number; name?: string };
+    color?: { value?: string };
+    size?: { value?: string };
+  };
+}
+
+interface Address {
+  id: number;
+  recipient_name: string;
+  phone: string;
+  village?: string;
+  commune?: string;
+  district?: string;
+  city?: string;
+  notes?: string;
+  is_default?: boolean;
+}
+
+interface Coupon {
+  id: number;
+  code: string;
+  discount_type: "percent" | "fixed";
+  discount_value: number;
+  min_purchase: number;
+  max_discount: number;
+  end_date?: string;
+  is_active: boolean | number;
+  used?: boolean;
+}
+
+// ==================== UTILS ====================
+const getToken = () => localStorage.getItem("access_token") || localStorage.getItem("token");
+
+const formatMoney = (val: any) => {
+  const num = Number(val);
+  return isNaN(num) ? "0" : num.toLocaleString("vi-VN");
+};
+
+const getPrice = (variant: CartItem["variant"]) =>
+  Number(variant.discount_price ?? variant.price ?? 0);
+
+const isCouponValid = (coupon: Coupon, subtotal: number) => {
+  if (!coupon.is_active || coupon.used) return false;
+  if (coupon.end_date && new Date(coupon.end_date) < new Date()) return false;
+  if (subtotal < coupon.min_purchase) return false;
+  return true;
+};
+
+const calcDiscount = (coupon: Coupon, subtotal: number) => {
+  if (coupon.discount_type === "percent") {
+    return Math.min(
+      Math.round((coupon.discount_value / 100) * subtotal),
+      coupon.max_discount
+    );
+  }
+  return Math.min(coupon.discount_value, coupon.max_discount);
+};
+
+const validateVNPay = (amount: number) => {
+  if (amount < VNPAY_MIN) return `Số tiền tối thiểu ${formatMoney(VNPAY_MIN)}₫`;
+  if (amount > VNPAY_MAX) return `Số tiền tối đa ${formatMoney(VNPAY_MAX)}₫`;
+  return null;
+};
+
+const generateSKU = () =>
+  Array.from({ length: 9 }, () =>
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[Math.floor(Math.random() * 36)]
+  ).join("");
+
+// ==================== API HELPERS ====================
+const api = {
+  async get(endpoint: string) {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+
+  async post(endpoint: string, data: any) {
+    const res = await fetch(`${API_URL}${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}`,
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.message || `HTTP ${res.status}`);
+    }
+    return res.json();
+  },
+};
+
+// ==================== MAIN COMPONENT ====================
 const CheckoutPage: React.FC = () => {
-    const [currentStep, setCurrentStep] = useState(0);
-    const [form] = Form.useForm();
-    const [selectedItems, setSelectedItems] = useState<any[]>([]);
-    const [total, setTotal] = useState<number>(0);
+  // State
+  const [step, setStep] = useState(0);
+  const [form] = Form.useForm();
+  const [payForm] = Form.useForm();
+  const [addressForm] = Form.useForm();
 
-    // 🧾 Lấy dữ liệu từ localStorage (được lưu ở trang giỏ hàng)
-    useEffect(() => {
-        const items = JSON.parse(localStorage.getItem("selectedCartItems") || "[]");
-        const totalPrice = parseFloat(localStorage.getItem("cartTotal") || "0");
-        setSelectedItems(items);
-        setTotal(totalPrice);
-        console.log("✅ Dữ liệu giỏ hàng:", items);
-        console.log("💰 Tổng tiền:", totalPrice.toLocaleString(), "₫");
-    }, []);
+  const [items, setItems] = useState<CartItem[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [selectedAddr, setSelectedAddr] = useState<Address | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [redirecting, setRedirecting] = useState(false);
 
-    // ✅ Chuyển bước
-    const next = () => setCurrentStep((prev) => prev + 1);
-    const prev = () => setCurrentStep((prev) => prev - 1);
+  const [coupon, setCoupon] = useState<Coupon | null>(null);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponModal, setCouponModal] = useState(false);
+  const [addressModal, setAddressModal] = useState(false);
 
-    // 🧾 Gửi đơn hàng (demo)
-    const handleSubmit = (values: any) => {
-        console.log("📦 Thông tin đơn hàng:", values);
-        console.log("🛒 Sản phẩm đặt mua:", selectedItems);
-        message.success("Đặt hàng thành công!");
+  const [payment, setPayment] = useState<string>("cod");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+
+  const [districtList, setDistrictList] = useState<any[]>([]);
+  const [wardList, setWardList] = useState<any[]>([]);
+
+  // ==================== COMPUTED VALUES ====================
+  // 1. Tạm tính (tổng tiền hàng)
+  const subtotal = useMemo(
+    () => items.reduce((sum, item) => sum + getPrice(item.variant) * item.quantity, 0),
+    [items]
+  );
+
+  // 2. Phí ship (dựa vào subtotal >= 500k → freeship)
+  const shipping = useMemo(() => {
+    return subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING_FEE;
+  }, [subtotal]);
+
+  // 3. Giảm giá từ coupon (áp dụng trên subtotal)
+  const discount = useMemo(() => {
+    if (!coupon || !isCouponValid(coupon, subtotal)) return 0;
+    return calcDiscount(coupon, subtotal);
+  }, [coupon, subtotal]);
+
+  // 4. Tổng thanh toán cuối cùng (subtotal - discount + shipping)
+  const total = Math.max(0, subtotal - discount + shipping);
+
+  const vnpayError = validateVNPay(total);
+
+  // Load data
+  useEffect(() => {
+    const loadItems = () => {
+      try {
+        const data = JSON.parse(localStorage.getItem("selectedCartItems") || "[]");
+        setItems(data);
+      } catch (err) {
+        message.error("Không thể tải giỏ hàng");
+      }
     };
 
-    return (
-        <div className="max-w-5xl mx-auto bg-white p-6 rounded shadow">
-            <Title level={3} style={{ textAlign: "center" }}>
-                Thanh toán
-            </Title>
+    const fetchProfile = async () => {
+      try {
+        const json = await api.get("/profile");
+        const data = json.user || json;
+        setUser(data);
+        setAddresses(json.addresses || []);
 
-            {/* 🪜 Bước tiến trình */}
-            <Steps current={currentStep} style={{ marginBottom: 40 }}>
-                <Step title="Thông tin" />
-                <Step title="Thanh toán" />
-            </Steps>
+        const defaultAddr = (json.addresses || []).find((a: Address) => a.is_default);
+        if (defaultAddr) setSelectedAddr(defaultAddr);
+      } catch (err) {
+        message.error("Không thể tải thông tin");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-            {/* --- Bước 1: Thông tin --- */}
-            {currentStep === 0 && (
-                <Form
-                    layout="vertical"
-                    form={form}
-                    onFinish={next}
-                    initialValues={{
-                        delivery: "home",
-                    }}
-                >
-                    <Card title="THÔNG TIN KHÁCH HÀNG" style={{ marginBottom: 20 }}>
-                        <Form.Item
-                            label="Họ và tên"
-                            name="name"
-                            rules={[{ required: true, message: "Vui lòng nhập họ tên" }]}
-                        >
-                            <Input placeholder="Nhập họ tên" />
-                        </Form.Item>
+    const fetchCoupons = async () => {
+      try {
+        const json = await api.get("/admin/coupons");
+        const all = json?.data || json || [];
+        setCoupons(all.filter((c: Coupon) => c.is_active));
+      } catch (err) {
+        console.error("Error loading coupons:", err);
+      }
+    };
 
-                        <Form.Item
-                            label="Số điện thoại"
-                            name="phone"
-                            rules={[{ required: true, message: "Vui lòng nhập số điện thoại" }]}
-                        >
-                            <Input placeholder="Nhập số điện thoại" />
-                        </Form.Item>
+    loadItems();
+    fetchProfile();
+    fetchCoupons();
+  }, []);
 
-                        <Form.Item
-                            label="Email"
-                            name="email"
-                            rules={[{ type: "email", message: "Email không hợp lệ" }]}
-                        >
-                            <Input placeholder="Nhập email" />
-                        </Form.Item>
-                    </Card>
+  // Auto-switch from VNPay if invalid
+  useEffect(() => {
+    if (payment === "vnpay" && vnpayError) {
+      message.warning(vnpayError);
+      setPayment("cod");
+      payForm.setFieldsValue({ payment: "cod" });
+    }
+  }, [payment, vnpayError, payForm]);
 
-                    <Card title="THÔNG TIN NHẬN HÀNG">
-                        <Form.Item name="delivery" label="Hình thức nhận hàng">
-                            <Radio.Group>
-                                <Radio value="store">Nhận tại cửa hàng</Radio>
-                                <Radio value="home">Giao hàng tận nơi</Radio>
-                            </Radio.Group>
-                        </Form.Item>
+  // ==================== ADDRESS HANDLERS ====================
+  const handleProvinceChange = (provinceCode: string) => {
+    const filtered = districts.filter((d) => d.province_code === provinceCode);
+    setDistrictList(filtered);
+    setWardList([]);
+    addressForm.setFieldsValue({ district: null, commune: null });
+  };
 
-                        <Form.Item
-                            label="Địa chỉ nhận hàng"
-                            name="address"
-                            rules={[{ required: true, message: "Vui lòng nhập địa chỉ" }]}
-                        >
-                            <Input.TextArea rows={2} placeholder="Ví dụ: Thôn Hạc Sơn, Xã Cẩm Bình, Huyện Cẩm Thủy, Thanh Hóa" />
-                        </Form.Item>
+  const handleDistrictChange = (districtCode: string) => {
+    const filtered = wards.filter((w) => w.district_code === districtCode);
+    setWardList(filtered);
+    addressForm.setFieldsValue({ commune: null });
+  };
 
-                        <Form.Item label="Ghi chú" name="note">
-                            <Input.TextArea rows={2} placeholder="Ghi chú thêm (nếu có)" />
-                        </Form.Item>
-                    </Card>
+  const handleSaveAddress = async (values: any) => {
+    try {
+      setSavingAddress(true);
+      const token = getToken();
+      const res = await fetch(`${API_URL}/profile/address`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(values),
+      });
 
-                    <div style={{ textAlign: "right", marginTop: 20 }}>
-                        <Button type="primary" htmlType="submit">
-                            Tiếp tục
-                        </Button>
-                    </div>
-                </Form>
-            )}
+      if (!res.ok) throw new Error("Không thể thêm địa chỉ");
 
-            {/* --- Bước 2: Thanh toán --- */}
-            {currentStep === 1 && (
-                <>
-                    <Card title="TÓM TẮT ĐƠN HÀNG" style={{ marginBottom: 20 }}>
-                        {selectedItems.length > 0 ? (
-                            selectedItems.map((item) => (
-                                <div key={item.id} style={{ marginBottom: 12 }}>
-                                    <Space align="start">
-                                        <img
-                                            src={`http://127.0.0.1:8000/${item.variant.image}`}
-                                            alt={item.variant.product.name}
-                                            width={70}
-                                            height={70}
-                                            style={{ borderRadius: 8, objectFit: "cover" }}
-                                        />
-                                        <div>
-                                            <Text strong>{item.variant.product.name}</Text>
-                                            <br />
-                                            <Text type="secondary">
-                                                Màu: {item.variant.color.type} | Size: {item.variant.size.type}
-                                            </Text>
-                                            <br />
-                                            <Text>
-                                                Số lượng: <strong>{item.quantity}</strong>
-                                            </Text>
-                                        </div>
-                                    </Space>
-                                    <Divider />
-                                </div>
-                            ))
-                        ) : (
-                            <Text type="secondary">Không có sản phẩm nào được chọn.</Text>
-                        )}
+      const json = await res.json();
+      const newAddr = json.address || json;
 
-                        <div style={{ textAlign: "right" }}>
-                            <Text strong style={{ fontSize: 16 }}>
-                                Tổng cộng:{" "}
-                                <Text type="danger" style={{ fontSize: 18 }}>
-                                    {total.toLocaleString()}₫
-                                </Text>
-                            </Text>
-                        </div>
-                    </Card>
+      setAddresses((prev) => [...prev, newAddr]);
+      setSelectedAddr(newAddr);
 
-                    <Card title="THÔNG TIN THANH TOÁN">
-                        <Form onFinish={handleSubmit} layout="vertical">
-                            <Form.Item
-                                label="Phương thức thanh toán"
-                                name="payment"
-                                rules={[{ required: true, message: "Vui lòng chọn phương thức thanh toán" }]}
-                            >
-                                <Select placeholder="Chọn phương thức">
-                                    <Option value="cod">Thanh toán khi nhận hàng (COD)</Option>
-                                    <Option value="bank">Chuyển khoản ngân hàng</Option>
-                                    <Option value="momo">Ví MoMo</Option>
-                                </Select>
-                            </Form.Item>
+      message.success("Thêm địa chỉ thành công!");
+      setAddressModal(false);
+      addressForm.resetFields();
+      setDistrictList([]);
+      setWardList([]);
+    } catch (err: any) {
+      message.error(err.message || "Không thể lưu địa chỉ");
+    } finally {
+      setSavingAddress(false);
+    }
+  };
 
-                            <div
-                                style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    marginTop: 20,
-                                }}
-                            >
-                                <Button onClick={prev}>Quay lại</Button>
-                                <Button type="primary" htmlType="submit">
-                                    Đặt hàng
-                                </Button>
-                            </div>
-                        </Form>
-                    </Card>
-                </>
-            )}
+  const openAddAddressModal = () => {
+    addressForm.resetFields();
+    setDistrictList([]);
+    setWardList([]);
+    setAddressModal(true);
+  };
+
+  // ==================== COUPON HANDLERS ====================
+  const selectCoupon = (cp: Coupon) => {
+    if (!isCouponValid(cp, subtotal)) {
+      if (subtotal < cp.min_purchase) {
+        message.error(`Đơn tối thiểu ${formatMoney(cp.min_purchase)}₫`);
+      } else {
+        message.error("Mã không khả dụng");
+      }
+      return;
+    }
+    setCoupon(cp);
+    setCouponModal(false);
+    message.success("Áp dụng mã thành công!");
+  };
+
+  // File: CheckoutPage.tsx - Hàm submitOrder
+
+  const submitOrder = async (values: any) => {
+    if (!selectedAddr) {
+      message.warning("Chọn địa chỉ giao hàng");
+      setStep(0);
+      return;
+    }
+
+    const method = values.payment || payment;
+    if (!method) {
+      message.warning("Chọn phương thức thanh toán");
+      return;
+    }
+
+    if (method === "vnpay" && vnpayError) {
+      message.error(vnpayError);
+      return;
+    }
+
+    if (coupon && !isCouponValid(coupon, subtotal)) {
+      message.error("Mã giảm giá không hợp lệ");
+      setCoupon(null);
+      return;
+    }
+
+    const payload = {
+      user_id: user?.id,
+      total_amount: subtotal,
+      discount_amount: discount,
+      final_amount: total,
+      status: "pending",
+      payment_status: method === "vnpay" ? "pending" : "unpaid",
+      note: values.note || "",
+      sku: generateSKU(),
+      shipping_name: selectedAddr.recipient_name,
+      shipping_phone: selectedAddr.phone,
+      city: selectedAddr.city,
+      district: selectedAddr.district,
+      commune: selectedAddr.commune,
+      village: selectedAddr.village || "",
+      notes: selectedAddr.notes || "",
+      payment_method: method,
+      shipping_fee: shipping,
+      coupon_code: coupon?.code || null,
+      coupon_id: coupon?.id || null,
+      items: items.map((item) => ({
+        variant_id: item.variant.id,
+        sku: item.variant.sku,
+        product_id: item.variant.product?.id,
+        product_image: item.variant.image,
+        product_name: item.variant.product?.name,
+        size: item.variant.size?.value,
+        color: item.variant.color?.value,
+        quantity: item.quantity,
+        price: getPrice(item.variant),
+      })),
+    };
+
+    try {
+      setSubmitting(true);
+
+      // ✅ FIX: Hiển thị loading message sớm cho VNPay
+      if (method === "vnpay") {
+        message.loading({
+          content: "Đang xử lý đơn hàng...",
+          key: "order",
+          duration: 0
+        });
+      }
+
+      const createOrderPromise = api.post("/orders", payload);
+      const orderTimeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Tạo đơn hàng timeout")), 10000)
+      );
+
+      const orderJson = await Promise.race([createOrderPromise, orderTimeoutPromise]);
+      const orderId = orderJson?.data?.id || orderJson?.id;
+
+      if (!orderId) throw new Error("Không tạo được đơn hàng");
+
+      if (method === "vnpay") {
+        try {
+          // ✅ Update message
+          message.loading({
+            content: "Đang kết nối VNPay...",
+            key: "order",
+            duration: 0
+          });
+
+          setRedirecting(true);
+
+          const vnpayJson = await api.post("/vnpay_payment", {
+            order_id: orderId,
+            bank_code: "",
+          });
+
+          const url = vnpayJson?.payment_url;
+          if (!url) throw new Error("Không nhận được URL thanh toán");
+
+          localStorage.setItem("pending_order_id", String(orderId));
+          window.location.href = url;
+          return;
+
+        } catch (err: any) {
+          setRedirecting(false);
+          message.destroy("order");
+
+          if (err.message?.includes("timeout") || err.message?.includes("network")) {
+            Modal.confirm({
+              title: "VNPay đang bận",
+              content: (
+                <div>
+                  <p>Không thể kết nối VNPay lúc này. Bạn có muốn:</p>
+                  <ul>
+                    <li>Thử lại kết nối VNPay</li>
+                    <li>Chuyển sang thanh toán COD</li>
+                  </ul>
+                </div>
+              ),
+              okText: "Thử lại VNPay",
+              cancelText: "Chuyển sang COD",
+              onOk: () => {
+                submitOrder(values);
+              },
+              onCancel: () => {
+                setPayment("cod");
+                payForm.setFieldsValue({ payment: "cod" });
+                message.info("Đã chuyển sang thanh toán COD");
+              },
+            });
+          } else {
+            message.error(err.message || "Lỗi kết nối VNPay");
+          }
+
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // COD flow
+      localStorage.removeItem("selectedCartItems");
+      message.success("Đặt hàng thành công!");
+
+      setTimeout(() => {
+        window.location.href = "/payment/success?order_id=" + orderId;
+      }, 1000);
+
+    } catch (err: any) {
+      message.destroy("order"); // ✅ Destroy message nếu có lỗi
+
+      if (err.message?.includes("timeout")) {
+        message.error("Hệ thống đang quá tải, vui lòng thử lại sau");
+      } else {
+        message.error(err.message || "Đặt hàng thất bại");
+      }
+
+      setSubmitting(false);
+    }
+  };
+
+  // ==================== RENDER HELPERS ====================
+  const getAddressName = (code: string | undefined, type: 'city' | 'district' | 'commune') => {
+    if (!code) return '';
+
+    if (type === 'city') {
+      return provinces.find(p => p.code === code)?.name || code;
+    } else if (type === 'district') {
+      return districts.find(d => d.code === code)?.name || code;
+    } else {
+      return wards.find(w => w.code === code)?.name || code;
+    }
+  };
+
+  const formatFullAddress = (addr: Address) => {
+    const cityName = getAddressName(addr.city, 'city');
+    const districtName = getAddressName(addr.district, 'district');
+    const communeName = getAddressName(addr.commune, 'commune');
+
+    return [addr.village, communeName, districtName, cityName]
+      .filter(Boolean)
+      .join(", ");
+  };
+
+  const renderProduct = (item: CartItem) => (
+    <div
+      key={item.id}
+      style={{
+        display: "flex",
+        gap: 16,
+        padding: "16px 0",
+        borderBottom: "1px solid #f0f0f0",
+      }}
+    >
+      <Image
+        src={item.variant.image ? `${IMAGE_BASE_URL}${item.variant.image}` : ""}
+        width={80}
+        height={80}
+        preview={false}
+        style={{ borderRadius: 8, objectFit: "cover" }}
+      />
+      <div style={{ flex: 1 }}>
+        <Text strong style={{ display: "block", marginBottom: 4 }}>
+          {item.variant.product?.name}
+        </Text>
+        <Space size={4}>
+          <Tag color="blue">Màu: {item.variant.color?.value || "-"}</Tag>
+          <Tag color="cyan">Size: {item.variant.size?.value || "-"}</Tag>
+        </Space>
+        <div style={{ marginTop: 8 }}>
+          <Text type="secondary">SL: </Text>
+          <Text strong>{item.quantity}</Text>
         </div>
+      </div>
+      <div style={{ textAlign: "right" }}>
+        <Text type="danger">{formatMoney(getPrice(item.variant))}₫</Text>
+        <br />
+        <Text strong style={{ color: "#ff4d4f" }}>
+          {formatMoney(getPrice(item.variant) * item.quantity)}₫
+        </Text>
+      </div>
+    </div>
+  );
+
+  const renderAddress = (addr: Address) => {
+    const isSelected = selectedAddr?.id === addr.id;
+    const fullAddress = formatFullAddress(addr);
+
+    return (
+      <Card
+        key={addr.id}
+        size="small"
+        hoverable
+        style={{
+          border: isSelected ? "2px solid #1890ff" : "1px solid #e8e8e8",
+          background: isSelected ? "#f0f8ff" : "white",
+        }}
+      >
+        <Radio value={addr.id}>
+          <div style={{ marginLeft: 8 }}>
+            <Space>
+              <Text strong>{addr.recipient_name}</Text>
+              <Divider type="vertical" />
+              <Text>{addr.phone}</Text>
+              {addr.is_default && <Tag color="green">Mặc định</Tag>}
+            </Space>
+            <div style={{ marginTop: 4 }}>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                {fullAddress}
+              </Text>
+            </div>
+            {addr.notes && (
+              <div style={{ marginTop: 4 }}>
+                <Text type="secondary" style={{ fontSize: 12, fontStyle: "italic" }}>
+                  Ghi chú: {addr.notes}
+                </Text>
+              </div>
+            )}
+          </div>
+        </Radio>
+      </Card>
     );
+  };
+
+  const renderCoupon = (cp: Coupon) => {
+    const valid = isCouponValid(cp, subtotal);
+    const selected = coupon?.id === cp.id;
+    const reason = !valid
+      ? !cp.is_active
+        ? "Đã vô hiệu"
+        : cp.end_date && new Date(cp.end_date) < new Date()
+          ? "Hết hạn"
+          : cp.used
+            ? "Đã dùng"
+            : `Đơn tối thiểu ${formatMoney(cp.min_purchase)}₫`
+      : "";
+
+    return (
+      <List.Item
+        key={cp.id}
+        style={{
+          padding: 16,
+          border: selected ? "2px solid #1890ff" : "1px solid #f0f0f0",
+          borderRadius: 8,
+          marginBottom: 12,
+          background: selected ? "#f0f8ff" : "white",
+          opacity: valid ? 1 : 0.6,
+          cursor: valid ? "pointer" : "not-allowed",
+        }}
+        onClick={() => valid && selectCoupon(cp)}
+      >
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <Space style={{ width: "100%", justifyContent: "space-between" }}>
+            <Space>
+              <GiftOutlined style={{ fontSize: 20, color: valid ? "#1890ff" : "#999" }} />
+              <div>
+                <Text strong> Giảm {cp.discount_type === "percent" ? `${cp.discount_value}%` : `${formatMoney(cp.discount_value)}₫`}</Text>
+                <br />
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  Đơn hàng tối thiểu {formatMoney(cp.min_purchase)}₫ - Giảm tối đa {formatMoney(cp.max_discount)}₫
+                </Text>
+              </div>
+            </Space>
+            {selected && <CheckCircleOutlined style={{ fontSize: 20, color: "#52c41a" }} />}
+          </Space>
+          {!valid && (
+            <Alert message={reason} type="error" showIcon style={{ fontSize: 12 }} />
+          )}
+        </Space>
+      </List.Item>
+    );
+  };
+
+  // ==================== LOADING ====================
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "60vh" }}>
+        <Spin size="large" tip="Đang tải..." />
+      </div>
+    );
+  }
+
+  // ==================== MAIN RENDER ====================
+  return (
+    <div style={{ background: "#f5f5f5", minHeight: "100vh", padding: "24px 0" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "0 16px" }}>
+        {/* Header */}
+        <Card style={{ marginBottom: 24, textAlign: "center" }}>
+          <Title level={2} style={{ margin: 0, color: "#1890ff" }}>
+            <ShoppingOutlined /> Thanh toán đơn hàng
+          </Title>
+        </Card>
+
+        {/* Steps */}
+        <Card style={{ marginBottom: 24 }}>
+          <Steps
+            current={step}
+            items={[
+              { title: "Thông tin đơn hàng", icon: <ShoppingOutlined /> },
+              { title: "Xác nhận & Thanh toán", icon: <CreditCardOutlined /> },
+            ]}
+          />
+        </Card>
+
+        {/* ==================== STEP 1 ==================== */}
+        {step === 0 && (
+          <Form form={form} onFinish={() => setStep(1)}>
+            <Row gutter={16}>
+              <Col xs={24} lg={16}>
+                {/* Sản phẩm */}
+                <Card
+                  title={
+                    <Space>
+                      <ShoppingOutlined /> Sản phẩm <Badge count={items.length} />
+                    </Space>
+                  }
+                  style={{ marginBottom: 16 }}
+                >
+                  {items.map(renderProduct)}
+                </Card>
+
+                {/* Địa chỉ */}
+                <Card
+                  title={<Space><EnvironmentOutlined /> Địa chỉ nhận hàng</Space>}
+                  extra={
+                    addresses.length < 3 && (
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={openAddAddressModal}
+                      >
+                        Thêm địa chỉ
+                      </Button>
+                    )
+                  }
+                >
+                  {addresses.length > 0 ? (
+                    <Radio.Group
+                      value={selectedAddr?.id}
+                      onChange={(e) => setSelectedAddr(addresses.find((a) => a.id === e.target.value) || null)}
+                      style={{ width: "100%" }}
+                    >
+                      <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                        {addresses.map(renderAddress)}
+                      </Space>
+                    </Radio.Group>
+                  ) : (
+                    <div style={{ textAlign: "center", padding: 32 }}>
+                      <EnvironmentOutlined style={{ fontSize: 48, color: "#d9d9d9", marginBottom: 16 }} />
+                      <Paragraph type="secondary" style={{ marginBottom: 16 }}>
+                        Bạn chưa có địa chỉ giao hàng nào
+                      </Paragraph>
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        onClick={openAddAddressModal}
+                        size="large"
+                      >
+                        Thêm địa chỉ giao hàng
+                      </Button>
+                    </div>
+                  )}
+                </Card>
+              </Col>
+
+              {/* Tóm tắt đơn hàng - Step 1 */}
+              <Col xs={24} lg={8}>
+                <Card title="Tóm tắt đơn hàng" style={{ position: "sticky", top: 24 }}>
+                  <Space direction="vertical" style={{ width: "100%" }}>
+                    {/* Mã giảm giá */}
+                    <Card size="small" style={{ background: "#fafafa" }}>
+                      <Space direction="vertical" style={{ width: "100%" }}>
+                        <Space>
+                          <GiftOutlined style={{ color: "#1890ff" }} />
+                          <Text strong>Mã giảm giá</Text>
+                        </Space>
+                        {coupon ? (
+                          <div style={{ background: "#f6ffed", padding: 12, borderRadius: 6 }}>
+                            <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                              <Space>
+                                <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                                <div>
+                                  <Text strong style={{ color: "#52c41a" }}>
+                                    {coupon.code}
+                                  </Text>
+                                  <br />
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    Giảm {coupon.discount_type === "percent"
+                                      ? `${coupon.discount_value}%`
+                                      : `${formatMoney(coupon.discount_value)}₫`}
+                                  </Text>
+                                </div>
+                              </Space>
+                              <Button
+                                type="text"
+                                danger
+                                size="small"
+                                icon={<DeleteOutlined />}
+                                onClick={() => {
+                                  setCoupon(null);
+                                  message.info("Đã bỏ mã");
+                                }}
+                              />
+                            </Space>
+                          </div>
+                        ) : (
+                          <Button
+                            type="dashed"
+                            block
+                            icon={<GiftOutlined />}
+                            onClick={() => setCouponModal(true)}
+                          >
+                            Chọn mã
+                          </Button>
+                        )}
+                      </Space>
+                    </Card>
+
+                    <Divider style={{ margin: "8px 0" }} />
+
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <Text>Tiền hàng:</Text>
+                      <Text strong>{formatMoney(subtotal)}₫</Text>
+                    </div>
+
+                    {coupon && discount > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <Text>Giảm giá:</Text>
+                        <Text strong style={{ color: "#52c41a" }}>
+                          -{formatMoney(discount)}₫
+                        </Text>
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <Text>Phí ship:</Text>
+                      <Text strong style={{ color: shipping === 0 ? "#52c41a" : undefined }}>
+                        {shipping === 0 ? "Miễn phí" : `${formatMoney(shipping)}₫`}
+                      </Text>
+                    </div>
+
+                    {shipping === 0 && (
+                      <Alert
+                        message="Miễn phí vận chuyển cho đơn ≥ 500.000₫"
+                        type="success"
+                        showIcon
+                        style={{ fontSize: 12 }}
+                      />
+                    )}
+
+                    <Divider style={{ margin: "8px 0" }} />
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: 12,
+                        background: "#f0f8ff",
+                        borderRadius: 8,
+                      }}
+                    >
+                      <Text strong style={{ fontSize: 16 }}>Tổng thanh toán:</Text>
+                      <Text strong style={{ fontSize: 20, color: "#ff4d4f" }}>
+                        {formatMoney(total)}₫
+                      </Text>
+                    </div>
+
+                    <Button
+                      type="primary"
+                      size="large"
+                      block
+                      disabled={!selectedAddr}
+                      onClick={() => form.submit()}
+                      style={{ height: 48 }}
+                    >
+                      Tiếp tục
+                    </Button>
+                  </Space>
+                </Card>
+              </Col>
+            </Row>
+          </Form>
+        )}
+
+        {/* ==================== STEP 2 ==================== */}
+        {step === 1 && (
+          <Row gutter={16}>
+            <Col xs={24} lg={16}>
+              <Form form={payForm} onFinish={submitOrder}>
+                {/* Thông tin giao hàng */}
+                <Card
+                  title={<Space><EnvironmentOutlined /> Thông tin giao hàng</Space>}
+                  extra={<Button type="link" onClick={() => setStep(0)}>Thay đổi</Button>}
+                  style={{ marginBottom: 16 }}
+                >
+                  <Space direction="vertical">
+                    <Text strong>{selectedAddr?.recipient_name}</Text>
+                    <Text>{selectedAddr?.phone}</Text>
+                    <Text type="secondary">{formatFullAddress(selectedAddr!)}</Text>
+                    {selectedAddr?.notes && (
+                      <Text type="secondary" style={{ fontStyle: "italic" }}>
+                        Ghi chú: {selectedAddr.notes}
+                      </Text>
+                    )}
+                  </Space>
+                </Card>
+
+                {vnpayError && (
+                  <Alert
+                    message="Thông báo VNPay"
+                    description={vnpayError}
+                    type="warning"
+                    showIcon
+                    icon={<WarningOutlined />}
+                    style={{ marginBottom: 16 }}
+                  />
+                )}
+
+                {/* Phương thức thanh toán */}
+                <Card title={<Space><CreditCardOutlined /> Phương thức thanh toán</Space>} style={{ marginBottom: 16 }}>
+                  <Form.Item name="payment" rules={[{ required: true, message: "Chọn phương thức" }]}>
+                    <Radio.Group onChange={(e) => setPayment(e.target.value)} style={{ width: "100%" }}>
+                      <Space direction="vertical" style={{ width: "100%" }} size={12}>
+                        <Card
+                          size="small"
+                          hoverable
+                          style={{
+                            border: payment === "cod" ? "2px solid #1890ff" : "1px solid #e8e8e8",
+                            background: payment === "cod" ? "#f0f8ff" : "white",
+                          }}
+                        >
+                          <Radio value="cod">
+                            <Space>
+                              <CheckCircleOutlined style={{ fontSize: 20, color: "#52c41a" }} />
+                              <div>
+                                <Text strong>COD</Text>
+                                <br />
+                                <Text type="secondary" style={{ fontSize: 13 }}>
+                                  Thanh toán khi nhận hàng
+                                </Text>
+                              </div>
+                            </Space>
+                          </Radio>
+                        </Card>
+
+                        <Card
+                          size="small"
+                          hoverable={!vnpayError}
+                          style={{
+                            border: payment === "vnpay" ? "2px solid #1890ff" : "1px solid #e8e8e8",
+                            background: payment === "vnpay" ? "#f0f8ff" : "white",
+                            opacity: vnpayError ? 0.5 : 1,
+                            cursor: vnpayError ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          <Radio value="vnpay" disabled={!!vnpayError}>
+                            <Space direction="vertical" style={{ width: "100%" }}>
+                              <Space>
+                                <CreditCardOutlined style={{ fontSize: 20, color: "#1890ff" }} />
+                                <div>
+                                  <Space>
+                                    <Text strong>VNPay</Text>
+                                    {vnpayError && <Tag color="red">Không khả dụng</Tag>}
+                                  </Space>
+                                  <br />
+                                  <Text type="secondary" style={{ fontSize: 13 }}>
+                                    Thẻ ATM, tín dụng, ví điện tử
+                                  </Text>
+                                </div>
+                              </Space>
+                            </Space>
+                          </Radio>
+                        </Card>
+                      </Space>
+                    </Radio.Group>
+                  </Form.Item>
+                </Card>
+
+                {/* Ghi chú */}
+                <Card title="Ghi chú">
+                  <Form.Item name="note">
+                    <Input.TextArea rows={4} placeholder="Ghi chú (tùy chọn)" maxLength={500} showCount />
+                  </Form.Item>
+                </Card>
+              </Form>
+            </Col>
+
+            {/* Chi tiết thanh toán - Step 2 */}
+            <Col xs={24} lg={8}>
+              <Card title="Chi tiết thanh toán" style={{ position: "sticky", top: 24 }}>
+                <Space direction="vertical" style={{ width: "100%" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <Text>Tiền hàng:</Text>
+                    <Text strong>{formatMoney(subtotal)}₫</Text>
+                  </div>
+
+                  {coupon && discount > 0 && (
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <Text>Giảm giá:</Text>
+                      <Text strong style={{ color: "#52c41a" }}>
+                        -{formatMoney(discount)}₫
+                      </Text>
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <Text>Phí ship:</Text>
+                    <Text strong style={{ color: shipping === 0 ? "#52c41a" : undefined }}>
+                      {shipping === 0 ? "Miễn phí" : `${formatMoney(shipping)}₫`}
+                    </Text>
+                  </div>
+
+                  <Divider style={{ margin: "8px 0" }} />
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      padding: 12,
+                      background: "#f0f8ff",
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Text strong style={{ fontSize: 16 }}>Tổng thanh toán:</Text>
+                    <Text strong style={{ fontSize: 20, color: "#ff4d4f" }}>
+                      {formatMoney(total)}₫
+                    </Text>
+                  </div>
+
+                  {payment === "vnpay" && vnpayError && (
+                    <Alert message={vnpayError} type="error" showIcon style={{ fontSize: 12 }} />
+                  )}
+
+                  <Space direction="vertical" style={{ width: "100%", marginTop: 16 }} size={8}>
+                    <Button
+                      type="primary"
+                      size="large"
+                      block
+                      loading={submitting}
+                      onClick={() => payForm.submit()}
+                      disabled={payment === "vnpay" && !!vnpayError}
+                      style={{ height: 48 }}
+                    >
+                      {payment === "vnpay" ? "Thanh toán VNPay" : "Đặt hàng"}
+                    </Button>
+                    <Button size="large" block onClick={() => setStep(0)} disabled={submitting}>
+                      Quay lại
+                    </Button>
+                  </Space>
+                </Space>
+              </Card>
+            </Col>
+          </Row>
+        )}
+
+        {/* ==================== MODAL THÊM ĐỊA CHỈ ==================== */}
+        <Modal
+          title={
+            <Space>
+              <EnvironmentOutlined style={{ color: "#1890ff" }} />
+              <span>Thêm địa chỉ giao hàng</span>
+            </Space>
+          }
+          open={addressModal}
+          onCancel={() => {
+            setAddressModal(false);
+            addressForm.resetFields();
+            setDistrictList([]);
+            setWardList([]);
+          }}
+          footer={null}
+          width={600}
+        >
+          <Form
+            form={addressForm}
+            layout="vertical"
+            onFinish={handleSaveAddress}
+          >
+            <Form.Item
+              label="Họ tên người nhận"
+              name="recipient_name"
+              rules={[{ required: true, message: "Vui lòng nhập tên người nhận" }]}
+            >
+              <Input placeholder="Nguyễn Văn A" />
+            </Form.Item>
+
+            <Form.Item
+              label="Số điện thoại"
+              name="phone"
+              rules={[
+                { required: true, message: "Vui lòng nhập số điện thoại" },
+                { pattern: /^\d{10}$/, message: "Số điện thoại phải gồm 10 chữ số" }
+              ]}
+            >
+              <Input placeholder="0912345678" maxLength={10} />
+            </Form.Item>
+
+            <Form.Item
+              label="Tỉnh/Thành phố"
+              name="city"
+              rules={[{ required: true, message: "Vui lòng chọn tỉnh/thành phố" }]}
+            >
+              <Select
+                placeholder="Chọn tỉnh/thành phố"
+                onChange={handleProvinceChange}
+                showSearch
+                optionFilterProp="label"
+                options={provinces.map((p) => ({
+                  label: p.name,
+                  value: p.code
+                }))}
+              />
+            </Form.Item>
+
+            <Form.Item
+              label="Quận/Huyện"
+              name="district"
+              rules={[{ required: true, message: "Vui lòng chọn quận/huyện" }]}
+            >
+              <Select
+                placeholder="Chọn quận/huyện"
+                onChange={handleDistrictChange}
+                showSearch
+                optionFilterProp="label"
+                options={districtList.map((d) => ({
+                  label: d.name,
+                  value: d.code,
+                }))}
+                disabled={!districtList.length}
+              />
+            </Form.Item>
+
+            <Form.Item
+              label="Phường/Xã"
+              name="commune"
+              rules={[{ required: true, message: "Vui lòng chọn phường/xã" }]}
+            >
+              <Select
+                placeholder="Chọn phường/xã"
+                showSearch
+                optionFilterProp="label"
+                options={wardList.map((w) => ({
+                  label: w.name,
+                  value: w.code
+                }))}
+                disabled={!wardList.length}
+              />
+            </Form.Item>
+
+            <Form.Item
+              label="Địa chỉ cụ thể"
+              name="village"
+              rules={[{ required: true, message: "Vui lòng nhập địa chỉ cụ thể" }]}
+            >
+              <Input.TextArea
+                rows={2}
+                placeholder="Số nhà, tên đường, khu vực..."
+                maxLength={200}
+                showCount
+              />
+            </Form.Item>
+
+            <Form.Item label="Ghi chú" name="notes">
+              <Input.TextArea
+                rows={2}
+                placeholder="Ghi chú cho shipper (tùy chọn)"
+                maxLength={200}
+                showCount
+              />
+            </Form.Item>
+
+            <Form.Item>
+              <Space style={{ width: "100%" }} size={8}>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={savingAddress}
+                  icon={<CheckCircleOutlined />}
+                  block
+                >
+                  Thêm địa chỉ
+                </Button>
+                <Button
+                  onClick={() => {
+                    setAddressModal(false);
+                    addressForm.resetFields();
+                    setDistrictList([]);
+                    setWardList([]);
+                  }}
+                  disabled={savingAddress}
+                  block
+                >
+                  Hủy
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        {/* ==================== MODAL MÃ GIẢM GIÁ ==================== */}
+        <Modal
+          title={
+            <Space>
+              <GiftOutlined style={{ color: "#1890ff" }} />
+              <span>Chọn mã giảm giá</span>
+            </Space>
+          }
+          open={couponModal}
+          onCancel={() => setCouponModal(false)}
+          footer={null}
+          width={600}
+        >
+          {coupons.length > 0 ? (
+            <List dataSource={coupons} renderItem={renderCoupon} />
+          ) : (
+            <div style={{ textAlign: "center", padding: "40px 0" }}>
+              <GiftOutlined style={{ fontSize: 48, color: "#d9d9d9" }} />
+              <Paragraph type="secondary" style={{ marginTop: 16 }}>
+                Không có mã giảm giá khả dụng
+              </Paragraph>
+            </div>
+          )}
+        </Modal>
+      </div>
+      {redirecting && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(255, 255, 255, 0.95)",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+          }}
+        >
+          <Spin size="large" />
+          <Title level={4} style={{ marginTop: 24, color: "#1890ff" }}>
+            Đang chuyển sang VNPay...
+          </Title>
+          <Paragraph type="secondary">
+            Vui lòng không tắt trình duyệt
+          </Paragraph>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default CheckoutPage;

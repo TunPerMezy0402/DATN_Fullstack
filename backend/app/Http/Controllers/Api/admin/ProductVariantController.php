@@ -70,6 +70,8 @@ class ProductVariantController extends Controller
             'is_available'    => 'nullable|boolean',
         ]);
 
+        $data['quantity_sold'] = $data['quantity_sold'] ?? 0;
+
         $this->assertAttributeType($data['size_id'] ?? null, 'size');
         $this->assertAttributeType($data['color_id'] ?? null, 'color');
 

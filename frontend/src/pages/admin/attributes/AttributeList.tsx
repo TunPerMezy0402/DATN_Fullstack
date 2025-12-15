@@ -10,6 +10,7 @@ import {
   Input,
   Descriptions,
   Tooltip,
+  Select,
 } from "antd";
 import axios from "axios";
 import dayjs from "dayjs";
@@ -43,11 +44,14 @@ const AttributeList: React.FC = () => {
   const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
   const headers = { Authorization: `Bearer ${token}` };
 
-  // 🔹 Hàm hiển thị lỗi chi tiết
+  // 🔹 Hiển thị lỗi chi tiết
   const showError = (err: any, defaultMsg: string) => {
     if (axios.isAxiosError(err)) {
       const apiMsg =
-        err.response?.data?.message || JSON.stringify(err.response?.data) || err.message;
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        JSON.stringify(err.response?.data) ||
+        err.message;
       console.error("❌ Lỗi Axios:", err.response?.data || err.message);
       message.error(`${defaultMsg}: ${apiMsg}`);
     } else {
@@ -62,9 +66,11 @@ const AttributeList: React.FC = () => {
       setLoading(true);
       const res = await axios.get(`${API_URL}/admin/attributes`, { headers });
       const data =
-        Array.isArray(res.data) ? res.data :
-        Array.isArray(res.data.data) ? res.data.data :
-        res.data.data?.data || [];
+        Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data.data)
+          ? res.data.data
+          : res.data.data?.data || [];
       setAttributes(data);
     } catch (err) {
       showError(err, "Không thể tải thuộc tính");
@@ -94,7 +100,10 @@ const AttributeList: React.FC = () => {
   const openModal = (attr?: Attribute) => {
     if (attr) {
       setEditingAttr(attr);
-      form.setFieldsValue({ type: attr.type, value: attr.value });
+      form.setFieldsValue({
+        type: attr.type.charAt(0).toUpperCase() + attr.type.slice(1),
+        value: attr.value,
+      });
     } else {
       setEditingAttr(null);
       form.resetFields();
@@ -102,20 +111,23 @@ const AttributeList: React.FC = () => {
     setModalVisible(true);
   };
 
-  // 🔹 Chuẩn hóa chữ cái đầu viết hoa, còn lại viết thường
+  // 🔹 Chuẩn hóa chữ cái đầu viết hoa
   const normalizeValue = (value: string) => {
     if (!value) return "";
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
   };
 
-  // ✅ Lưu (Thêm / Sửa) với hiển thị lỗi chi tiết và chuẩn hóa value
+  // ✅ Lưu (Thêm / Sửa)
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
+      values.type = values.type.toLowerCase();
       values.value = normalizeValue(values.value);
 
       if (editingAttr) {
-        await axios.put(`${API_URL}/admin/attributes/${editingAttr.id}`, values, { headers });
+        await axios.put(`${API_URL}/admin/attributes/${editingAttr.id}`, values, {
+          headers,
+        });
         message.success("✅ Cập nhật thuộc tính thành công!");
       } else {
         await axios.post(`${API_URL}/admin/attributes`, values, { headers });
@@ -128,7 +140,7 @@ const AttributeList: React.FC = () => {
     }
   };
 
-  // ✅ Xóa mềm với hiển thị lỗi chi tiết
+  // ✅ Xóa mềm
   const handleSoftDelete = async (id: number) => {
     try {
       await axios.delete(`${API_URL}/admin/attributes/${id}`, { headers });
@@ -251,18 +263,21 @@ const AttributeList: React.FC = () => {
       >
         <Form form={form} layout="vertical">
           <Form.Item
-            label="Tên thuộc tính (type)"
+            label="Tên thuộc tính"
             name="type"
-            rules={[{ required: true, message: "Nhập tên thuộc tính!" }]}
+            rules={[{ required: true, message: "Chọn loại thuộc tính!" }]}
           >
-            <Input placeholder="Ví dụ: color, size..." />
+            <Select placeholder="Chọn loại thuộc tính">
+              <Select.Option value="Size">Size</Select.Option>
+              <Select.Option value="Color">Color</Select.Option>
+            </Select>
           </Form.Item>
           <Form.Item
             label="Giá trị"
             name="value"
             rules={[{ required: true, message: "Nhập giá trị!" }]}
           >
-            <Input placeholder="Ví dụ: Red, Xl..." />
+            <Input placeholder="Ví dụ: Red, XL..." />
           </Form.Item>
         </Form>
       </Modal>
@@ -294,5 +309,6 @@ const AttributeList: React.FC = () => {
     </div>
   );
 };
+
 
 export default AttributeList;

@@ -39,15 +39,19 @@ function Home() {
 
       {/* Nút lên đầu trang */}
       {showScrollTop && (
-       <button
-  onClick={scrollToTop}
-  className="fixed bottom-6 right-6 bg-green-500 text-white p-3 rounded-full shadow-lg hover:bg-green-600 transition text-sm font-bold"
-  title="Lên đầu trang"
->
-  ↑
-</button>
-
+        <button
+          onClick={scrollToTop}
+          className="
+      fixed bottom-6 left-1/2 transform -translate-x-1/2
+      bg-green-500 text-white p-3 rounded-full shadow-lg
+      hover:bg-green-600 transition text-sm font-bold
+    "
+          title="Lên đầu trang"
+        >
+          ↑
+        </button>
       )}
+
     </div>
   );
 }

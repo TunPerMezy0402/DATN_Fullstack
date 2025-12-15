@@ -1,478 +1,701 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Badge,
+  Button,
   Card,
   Divider,
   Empty,
   Flex,
   Grid,
   InputNumber,
+  Pagination,
   Radio,
   Select,
   Space,
   Spin,
   Tag,
   Typography,
+  Collapse,
 } from "antd";
-import { useNavigate } from "react-router-dom";
-import {
-  fetchProducts,
-  parseImages,
-  type Product,
-} from "../../../../api/productApi";
+import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 
 const { useBreakpoint } = Grid;
 const { Title, Text } = Typography;
+const { Panel } = Collapse;
 
 /* ------------ Base URL + Axios ------------ */
 const API_URL =
   (import.meta as any).env?.VITE_API_URL ||
   (import.meta as any).env?.REACT_APP_API_URL ||
   (process as any).env?.REACT_APP_API_URL ||
-  "http://127.0.0.1:8000/api/products";
-const ASSET_BASE = String(API_URL).replace(/\/api\/?$/, "");
+  "http://127.0.0.1:8000/api";
 
 const raw = axios.create({ baseURL: API_URL, timeout: 20000 });
 raw.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
-  if (token)
+  if (token) {
     (config.headers as any) = {
       ...(config.headers || {}),
       Authorization: `Bearer ${token}`,
     };
+  }
   return config;
 });
 
-const toAssetUrl = (u?: string | null): string | undefined => {
-  if (!u) return undefined;
-  if (/^https?:\/\//i.test(u)) return u;
-  return `${ASSET_BASE}/${String(u).replace(/^\/+/, "")}`;
-};
+/* ------------ Helpers ------------ */
+const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
 
-const uniq = <T,>(arr: T[]) => Array.from(new Set(arr));
-
-/* ------------ Helper: chuyển object -> text (size/color) ------------ */
-const attrText = (x: any): string => {
-  if (!x) return "";
-  if (typeof x === "string" || typeof x === "number") return String(x);
-  if (typeof x === "object") {
-    return x.value || x.name || x.label || x.text || String(x.id || "");
-  }
-  return String(x);
-};
-
-/* ------------ Helpers sản phẩm/biến thể ------------ */
-const coverUrl = (p: Product): string | undefined => {
-  const pImg = (p as any).image as string | undefined;
-  if (pImg) return toAssetUrl(pImg);
-  const fromVariants =
-    p.variants?.flatMap((v: any) => {
-      const singles: (string | undefined)[] = [v?.image];
-      const albums = (Array.isArray(v?.images) ? v.images : parseImages(v?.images)) as string[];
-      return [...singles, ...(albums ?? [])];
-    }) ?? [];
-  const first = fromVariants.find(Boolean) as string | undefined;
-  return toAssetUrl(first);
-};
-
-const sizesOf = (p: any): string[] => {
-  const a = Array.isArray(p?.sizes) ? p.sizes.map(attrText) : [];
-  const b = Array.isArray(p?.variants)
-    ? p.variants.map((v: any) => attrText(v?.size ?? v?.attributes?.size)).filter(Boolean)
-    : [];
-  return uniq([...a, ...b]);
-};
-
-const colorsOf = (p: any): string[] => {
-  const a = Array.isArray(p?.colors) ? p.colors.map(attrText) : [];
-  const b = Array.isArray(p?.variants)
-    ? p.variants.map((v: any) => attrText(v?.color ?? v?.attributes?.color)).filter(Boolean)
-    : [];
-  return uniq([...a, ...b]);
-};
-
-const stockSum = (p: any): number =>
-  (Array.isArray(p?.variants) ? p.variants : []).reduce(
-    (sum: number, v: any) => sum + (Number(v?.stock ?? v?.stock_quantity ?? 0) || 0),
+const stockSum = (variants: any[]): number =>
+  (variants || []).reduce(
+    (sum: number, v: any) => sum + (Number(v?.stock_quantity ?? 0) || 0),
     0
   );
 
-const anyVariantAvailable = (p: any): boolean =>
-  (Array.isArray(p?.variants) ? p.variants : []).some((v: any) => !!v?.is_available);
+/* ------------ Interfaces ------------ */
+interface Category {
+  id: number;
+  name: string;
+  image?: string;
+}
 
-/* ------------ Helpers GIÁ ------------ */
-// Parse "100000" hoặc "100,000" => 100000; null/undefined/NaN => null
-const toNum = (v: any): number | null => {
-  if (v === null || v === undefined || v === "") return null;
-  const n = Number(String(v).replace(/[^\d.-]/g, "")); // an toàn với "1.000.000" / "1,000,000"
-  return Number.isFinite(n) ? n : null;
-};
+interface Product {
+  id: number;
+  name: string;
+  sku?: string;
+  description?: string;
+  category_id?: number;
+  image?: string;
+  image_url?: string;
+  brand?: string;
+  origin?: string;
+  created_at: string;
+  variants?: any[];
+  min_variant?: any;
+  min_effective_price?: number;
+  min_original_price?: number;
+  category?: Category;
+  sizes?: string[];
+  colors?: string[];
+}
 
-// Tính giá hiển thị cho 1 product
-// - Có biến thể: lấy min(discount_price) nếu có, else min(price)
-// - Không có biến thể: dùng product.discount_price || product.price
-const priceForDisplay = (
-  p: any
-): { price: number | null; compareAt: number | null } => {
-  const variants: any[] = Array.isArray(p?.variants) ? p.variants : [];
-
-  if (variants.length > 0) {
-    const variantDiscounts = variants
-      .map((v) => toNum(v?.discount_price))
-      .filter((x): x is number => x !== null);
-    const variantPrices = variants
-      .map((v) => toNum(v?.price))
-      .filter((x): x is number => x !== null);
-
-    if (variantDiscounts.length > 0) {
-      const minDiscount = Math.min(...variantDiscounts);
-      const minBase = variantPrices.length > 0 ? Math.min(...variantPrices) : null;
-      return {
-        price: minDiscount,
-        compareAt: minBase && minBase > minDiscount ? minBase : null,
-      };
-    }
-    if (variantPrices.length > 0) {
-      const minPrice = Math.min(...variantPrices);
-      return { price: minPrice, compareAt: null };
-    }
-  }
-
-  const sale = toNum(p?.discount_price);
-  const base = toNum(p?.price);
-
-  if (sale !== null && (base === null || sale < base)) {
-    return { price: sale, compareAt: base ?? null };
-  }
-  return { price: base, compareAt: null };
-};
-
-const fmtVND = (n: number) => new Intl.NumberFormat("vi-VN").format(n);
-
-/* =================================================================== */
+/* ------------ Main Component ------------ */
 const ProductsPage: React.FC = () => {
   const screens = useBreakpoint();
   const navigate = useNavigate();
+  const { id: categoryId } = useParams<{ id?: string }>();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // data
-  const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Array<{ value: number; label: string }>>([]);
+  // Data từ API
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [allSizes, setAllSizes] = useState<string[]>([]);
+  const [allColors, setAllColors] = useState<string[]>([]);
+  const [allBrands, setAllBrands] = useState<string[]>([]);
+  const [total, setTotal] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize] = useState<number>(12);
 
-  // filters
-  const [priceRange, setPriceRange] =
-    useState<"<1" | "1-2" | "2-4" | ">4" | "custom" | null>(null);
+  // Filters
+  const [priceRange, setPriceRange] = useState<"<1" | "1-2" | "2-4" | ">4" | "custom" | null>(null);
   const [customMin, setCustomMin] = useState<number | null>(null);
   const [customMax, setCustomMax] = useState<number | null>(null);
-
   const [catId, setCatId] = useState<number | null>(null);
-  const [sizeText, setSizeText] = useState<string | null>(null);
-  const [colorText, setColorText] = useState<string | null>(null);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [brand, setBrand] = useState<string | null>(null);
   const [sellStatus, setSellStatus] = useState<"all" | "selling">("all");
 
-  /* --------- Load products + categories --------- */
-  useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        const [prods, catsRes] = await Promise.all([
-          fetchProducts(),
-          raw.get("/admin/categories", { params: { per_page: 1000 } }),
-        ]);
+  /* --------- Load filter options (brands, sizes, colors) --------- */
+  const loadOptions = async () => {
+    try {
+      const [brandsRes, sizesRes, colorsRes] = await Promise.all([
+        raw.get("/client/products/brands"),
+        raw.get("/client/products/sizes"),
+        raw.get("/client/products/colors"),
+      ]);
 
-        setAllProducts(Array.isArray(prods) ? prods : []);
-
-        const catsRaw = Array.isArray(catsRes.data)
-          ? catsRes.data
-          : catsRes.data?.data?.data || catsRes.data?.data || [];
-        setCategories(catsRaw.map((c: any) => ({ value: Number(c.id), label: c.name })));
-
-        setError(null);
-      } catch (e: any) {
-        console.error(e);
-        const status = e?.response?.status;
-        setError(
-          status === 401 || status === 403
-            ? "Bạn chưa đăng nhập hoặc không đủ quyền."
-            : "Không thể tải dữ liệu."
-        );
-        setAllProducts([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
-
-  // brands + options size/color động
-  const BRAND_OPTIONS = useMemo(
-    () => uniq(allProducts.map((p: any) => p?.brand).filter(Boolean)),
-    [allProducts]
-  );
-  const SIZE_TEXT_OPTIONS = useMemo(
-    () => uniq(allProducts.flatMap((p) => sizesOf(p))).sort(),
-    [allProducts]
-  );
-  const COLOR_TEXT_OPTIONS = useMemo(
-    () => uniq(allProducts.flatMap((p) => colorsOf(p))).sort(),
-    [allProducts]
-  );
-
-  /* -------------------------- Lọc dữ liệu -------------------------- */
-  const filtered = useMemo(() => {
-    let result = [...allProducts];
-
-    if (catId != null) {
-      result = result.filter((p: any) => Number(p.category_id) === Number(catId));
+      setAllBrands(brandsRes.data.brands || []);
+      setAllSizes(sizesRes.data.sizes || []);
+      setAllColors(colorsRes.data.colors || []);
+    } catch (e) {
+      console.error("Failed to load options:", e);
     }
-    if (brand) result = result.filter((p: any) => (p.brand ? p.brand === brand : false));
-    if (sizeText) result = result.filter((p) => sizesOf(p).includes(sizeText));
-    if (colorText) result = result.filter((p) => colorsOf(p).includes(colorText));
-    if (sellStatus === "selling") {
-      result = result.filter((p) => anyVariantAvailable(p));
-    }
+  };
 
-    if (priceRange && priceRange !== "custom") {
-      result = result.filter((p: any) => {
-        const { price } = priceForDisplay(p);
-        const val = price ?? 0;
+  /* --------- Load products từ API với filters --------- */
+  const loadProducts = async (page: number = 1) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const params: any = {
+        per_page: pageSize,
+        page,
+      };
+
+      if (catId) params.category_id = catId;
+      if (brand) params.brand = brand;
+      if (selectedSizes.length > 0) params.sizes = selectedSizes.join(",");
+      if (selectedColors.length > 0) params.colors = selectedColors.join(",");
+      if (sellStatus === "selling") params.status = "selling";
+
+      if (priceRange && priceRange !== "custom") {
         switch (priceRange) {
           case "<1":
-            return val < 1_000_000;
+            params.price_max = 999999;
+            break;
           case "1-2":
-            return val >= 1_000_000 && val <= 2_000_000;
+            params.price_min = 1000000;
+            params.price_max = 2000000;
+            break;
           case "2-4":
-            return val > 2_000_000 && val <= 4_000_000;
+            params.price_min = 2000001;
+            params.price_max = 4000000;
+            break;
           case ">4":
-            return val > 4_000_000;
+            params.price_min = 4000001;
+            break;
         }
-      });
-    }
-    if (priceRange === "custom") {
-      result = result.filter((p: any) => {
-        const { price } = priceForDisplay(p);
-        const val = price ?? 0;
-        const minOK = customMin == null ? true : val >= customMin;
-        const maxOK = customMax == null ? true : val <= customMax;
-        return minOK && maxOK;
-      });
-    }
+      } else if (priceRange === "custom") {
+        if (customMin !== null) params.price_min = customMin;
+        if (customMax !== null) params.price_max = customMax;
+      }
 
-    return result;
-  }, [allProducts, catId, brand, sizeText, colorText, sellStatus, priceRange, customMin, customMax]);
+      const response = await raw.get("/client/products", { params });
+      const data = response.data;
 
-  /* -------------------------- Click helpers -------------------------- */
-  const onPickSize = (s: string) => setSizeText((cur) => (cur === s ? null : s));
-  const onPickColor = (c: string) => setColorText((cur) => (cur === c ? null : c));
-  const onPickBrand = (b: string) => setBrand((cur) => (cur === b ? null : b));
-  const onCardClick = (p: Product) => navigate(`/products/${p.id}`);
+      if (data.products) {
+        setProducts(Array.isArray(data.products.data) ? data.products.data : []);
+        setTotal(data.products.total || 0);
+        setCurrentPage(data.products.current_page || 1);
+      }
+
+      if (data.categories) {
+        setCategories(Array.isArray(data.categories) ? data.categories : []);
+      }
+    } catch (e: any) {
+      console.error("Load products error:", e);
+      const status = e?.response?.status;
+      setError(
+        status === 401 || status === 403
+          ? "Bạn chưa đăng nhập hoặc không đủ quyền."
+          : "Không thể tải dữ liệu sản phẩm."
+      );
+      setProducts([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadOptions();
+  }, []);
+
+  useEffect(() => {
+    if (categoryId) {
+      setCatId(Number(categoryId));
+    } else {
+      setCatId(null);
+    }
+  }, [categoryId]);
+
+  useEffect(() => {
+    loadProducts(1);
+  }, [catId, brand, selectedSizes, selectedColors, sellStatus, priceRange, customMin, customMax]);
+
+  const resetFilters = () => {
+    setSelectedSizes([]);
+    setSelectedColors([]);
+    setBrand(null);
+    setCatId(null);
+    setPriceRange(null);
+    setCustomMin(null);
+    setCustomMax(null);
+    setSellStatus("all");
+    navigate("/products", { replace: true });
+  };
+
+  const hasActiveFilters =
+    selectedSizes.length > 0 ||
+    selectedColors.length > 0 ||
+    brand ||
+    catId ||
+    priceRange ||
+    sellStatus !== "all";
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    loadProducts(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   /* -------------------------- UI -------------------------- */
   return (
-    <div style={{ padding: screens.xs ? 12 : 24 }}>
+    <div style={{ padding: screens.xs ? 12 : 24, background: "#f5f5f5", minHeight: "100vh" }}>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: screens.md ? "300px minmax(0, 900px)" : "minmax(0, 900px)",
+          gridTemplateColumns: screens.md
+            ? "280px minmax(0, 1fr)"
+            : "minmax(0, 1fr)",
           gap: 24,
           alignItems: "start",
           justifyContent: "center",
-          justifyItems: "center",
           margin: "0 auto",
-          maxWidth: 1200,
+          maxWidth: 1400,
         }}
       >
-        {/* Sidebar */}
-        <Card style={{ position: "sticky", top: 12, width: 300 }} styles={{ body: { padding: 16 } }}>
-          <Space direction="vertical" size={16} style={{ width: "100%" }}>
-            <Title level={5} style={{ margin: 0 }}>Bộ lọc sản phẩm</Title>
-            <Divider style={{ margin: "8px 0" }} />
-
-            {/* Giá */}
-            <Space direction="vertical" size={8} style={{ width: "100%" }}>
-              <Space align="center" size={8}>
-                <Tag bordered={false}>💲</Tag>
-                <Text strong>Giá</Text>
-              </Space>
-              <Radio.Group value={priceRange} onChange={(e) => setPriceRange(e.target.value)}>
-                <Flex vertical gap={8}>
-                  <Radio.Button value="<1">Dưới 1 triệu</Radio.Button>
-                  <Radio.Button value="1-2">1 - 2 triệu</Radio.Button>
-                  <Radio.Button value="2-4">2 - 4 triệu</Radio.Button>
-                  <Radio.Button value=">4">Trên 4 triệu</Radio.Button>
-                  <Radio.Button value="custom">Khoảng tuỳ chọn</Radio.Button>
-                </Flex>
-              </Radio.Group>
-              {priceRange === "custom" && (
-                <Space>
-                  <InputNumber
-                    placeholder="Từ"
-                    min={0}
-                    value={customMin as number | null}
-                    onChange={(v) => setCustomMin(typeof v === "number" ? v : null)}
-                    addonAfter="đ"
-                  />
-                  <InputNumber
-                    placeholder="Đến"
-                    min={0}
-                    value={customMax as number | null}
-                    onChange={(v) => setCustomMax(typeof v === "number" ? v : null)}
-                    addonAfter="đ"
-                  />
-                </Space>
-              )}
-            </Space>
-
-            {/* Danh mục */}
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text strong>Danh mục</Text>
-              <Select
-                allowClear
-                showSearch
-                placeholder="Chọn danh mục"
-                optionFilterProp="label"
-                options={categories}
-                value={catId ?? undefined}
-                onChange={(v) => setCatId(v ?? null)}
-              />
-            </Space>
-
-            {/* Thương hiệu */}
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text strong>Thương hiệu</Text>
-              <Select
-                allowClear
-                showSearch
-                placeholder="Chọn thương hiệu"
-                options={BRAND_OPTIONS.map((b) => ({ label: b, value: b }))}
-                value={brand ?? undefined}
-                onChange={(v) => setBrand(v ?? null)}
-              />
-            </Space>
-
-            {/* Size */}
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text strong>Size</Text>
-              <Select
-                allowClear
-                showSearch
-                placeholder="Chọn size"
-                options={SIZE_TEXT_OPTIONS.map((s) => ({ label: s, value: s }))}
-                value={sizeText ?? undefined}
-                onChange={(v) => setSizeText(v ?? null)}
-              />
-            </Space>
-
-            {/* Màu sắc */}
-            <Space direction="vertical" size={6} style={{ width: "100%" }}>
-              <Text strong>Màu sắc</Text>
-              <Select
-                allowClear
-                showSearch
-                placeholder="Chọn màu"
-                options={COLOR_TEXT_OPTIONS.map((c) => ({ label: c, value: c }))}
-                value={colorText ?? undefined}
-                onChange={(v) => setColorText(v ?? null)}
-              />
-            </Space>
-
-          </Space>
-        </Card>
-
-        {/* Danh sách */}
-        <div style={{ width: "100%" }}>
-          {error ? (
-            <div style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
-              <Empty description={error} />
-            </div>
-          ) : loading ? (
-            <div style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
-              <Spin size="large" />
-            </div>
-          ) : filtered.length === 0 ? (
-            <div style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
-              <Empty description="Không có sản phẩm nào." />
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: screens.md ? "repeat(3, 1fr)" : "repeat(2, 1fr)",
-                gap: 16,
-              }}
-            >
-              {filtered.map((p) => {
-                const baseImg =
-                  coverUrl(p) || "https://via.placeholder.com/600x600?text=No+Image";
-                const { price: showPrice, compareAt } = priceForDisplay(p);
-                const sList = sizesOf(p);
-                const cList = colorsOf(p);
-                const totalStock = stockSum(p);
-
-                const discountPct =
-                  compareAt && showPrice && compareAt > showPrice
-                    ? Math.round(((compareAt - showPrice) / compareAt) * 100)
-                    : null;
-
-                return (
-                  <Badge.Ribbon
-                    key={`r-${p.id}`}
-                    text={
-                      discountPct
-                        ? `-${discountPct}%`
-                        : totalStock > 0
-                          ? `Tồn: ${totalStock}`
-                          : "Hết hàng"
-                    }
-                    color={discountPct ? "red" : totalStock > 0 ? "blue" : "red"}
+        {/* =============== Sidebar Filters =============== */}
+        {screens.md && (
+          <Card
+            style={{ 
+              position: "sticky", 
+              top: 12, 
+              width: 280,
+              borderRadius: 12,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
+            }}
+            styles={{ body: { padding: 20 } }}
+          >
+            <Space direction="vertical" size={20} style={{ width: "100%" }}>
+              <Flex justify="space-between" align="center">
+                <Title level={4} style={{ margin: 0, fontSize: 18 }}>
+                  🔍 Bộ lọc
+                </Title>
+                {hasActiveFilters && (
+                  <Button 
+                    type="text" 
+                    size="small" 
+                    onClick={resetFilters}
+                    style={{ color: "#1890ff", fontSize: 13 }}
                   >
-                    <Card
-                      hoverable
+                    Xóa tất cả
+                  </Button>
+                )}
+              </Flex>
+              <Divider style={{ margin: 0 }} />
+
+              <Collapse 
+                defaultActiveKey={['1', '2', '3', '4', '5', '6']} 
+                ghost
+                expandIconPosition="end"
+              >
+                {/* Giá */}
+                <Panel 
+                  header={<Text strong style={{ fontSize: 15 }}>💰 Khoảng giá</Text>} 
+                  key="1"
+                >
+                  <Radio.Group
+                    value={priceRange}
+                    onChange={(e) => setPriceRange(e.target.value)}
+                    style={{ width: "100%" }}
+                  >
+                    <Flex vertical gap={8}>
+                      <Radio value="<1">Dưới 1 triệu</Radio>
+                      <Radio value="1-2">1 - 2 triệu</Radio>
+                      <Radio value="2-4">2 - 4 triệu</Radio>
+                      <Radio value=">4">Trên 4 triệu</Radio>
+                      <Radio value="custom">Tùy chỉnh</Radio>
+                    </Flex>
+                  </Radio.Group>
+                  {priceRange === "custom" && (
+                    <Space direction="vertical" style={{ width: "100%", marginTop: 12 }} size={8}>
+                      <InputNumber
+                        placeholder="Từ (VNĐ)"
+                        min={0}
+                        value={customMin}
+                        onChange={(v) => setCustomMin(v)}
+                        style={{ width: "100%" }}
+                        formatter={(value) =>
+                          `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+                        }
+                        parser={(value) => Number(value!.replace(/\$\s?|(,*)/g, ""))}
+                      />
+                      <InputNumber
+                        placeholder="Đến (VNĐ)"
+                        min={0}
+                        value={customMax}
+                        onChange={(v) => setCustomMax(v)}
+                        style={{ width: "100%" }}
+                        formatter={(value) =>
+                          `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+                        }
+                        parser={(value) => Number(value!.replace(/\$\s?|(,*)/g, ""))}
+                      />
+                    </Space>
+                  )}
+                </Panel>
+
+                {/* Danh mục */}
+                <Panel 
+                  header={<Text strong style={{ fontSize: 15 }}>📂 Danh mục</Text>} 
+                  key="2"
+                >
+                  <Select
+                    allowClear
+                    showSearch
+                    placeholder="Chọn danh mục"
+                    optionFilterProp="label"
+                    options={categories.map((c) => ({ label: c.name, value: c.id }))}
+                    value={catId ?? undefined}
+                    onChange={(v) => {
+                      setCatId(v ?? null);
+                      if (v) {
+                        navigate(`/products/category/${v}`, { replace: true });
+                      } else {
+                        navigate("/products", { replace: true });
+                      }
+                    }}
+                    style={{ width: "100%" }}
+                  />
+                </Panel>
+
+                {/* Size */}
+                <Panel 
+                  header={
+                    <Flex align="center" gap={8}>
+                      <Text strong style={{ fontSize: 15 }}>📏 Kích thước</Text>
+                      {selectedSizes.length > 0 && (
+                        <Tag color="blue" style={{ margin: 0 }}>{selectedSizes.length}</Tag>
+                      )}
+                    </Flex>
+                  } 
+                  key="3"
+                >
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    placeholder="Chọn size"
+                    options={allSizes.map((s) => ({ label: s, value: s }))}
+                    value={selectedSizes}
+                    onChange={(v) => setSelectedSizes(v)}
+                    style={{ width: "100%" }}
+                    maxTagCount="responsive"
+                  />
+                </Panel>
+
+                {/* Màu sắc */}
+                <Panel 
+                  header={
+                    <Flex align="center" gap={8}>
+                      <Text strong style={{ fontSize: 15 }}>🎨 Màu sắc</Text>
+                      {selectedColors.length > 0 && (
+                        <Tag color="blue" style={{ margin: 0 }}>{selectedColors.length}</Tag>
+                      )}
+                    </Flex>
+                  } 
+                  key="4"
+                >
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    placeholder="Chọn màu"
+                    options={allColors.map((c) => ({ label: c, value: c }))}
+                    value={selectedColors}
+                    onChange={(v) => setSelectedColors(v)}
+                    style={{ width: "100%" }}
+                    maxTagCount="responsive"
+                  />
+                </Panel>
+
+                {/* Thương hiệu */}
+                <Panel 
+                  header={<Text strong style={{ fontSize: 15 }}>🏷️ Thương hiệu</Text>} 
+                  key="6"
+                >
+                  <Select
+                    allowClear
+                    showSearch
+                    placeholder="Chọn thương hiệu"
+                    options={allBrands.map((b) => ({ label: b, value: b }))}
+                    value={brand ?? undefined}
+                    onChange={(v) => setBrand(v ?? null)}
+                    style={{ width: "100%" }}
+                  />
+                </Panel>
+
+                {/* Trạng thái */}
+                <Panel 
+                  header={<Text strong style={{ fontSize: 15 }}>📦 Trạng thái</Text>} 
+                  key="5"
+                >
+                  <Radio.Group
+                    value={sellStatus}
+                    onChange={(e) => setSellStatus(e.target.value)}
+                    style={{ width: "100%" }}
+                  >
+                    <Flex vertical gap={8}>
+                      <Radio value="all">Tất cả sản phẩm</Radio>
+                      <Radio value="selling">Đang bán</Radio>
+                    </Flex>
+                  </Radio.Group>
+                </Panel>
+              </Collapse>
+            </Space>
+          </Card>
+        )}
+
+        {/* =============== Product List =============== */}
+        <div style={{ width: "100%" }}>
+          {/* Header */}
+          <Card 
+            style={{ 
+              marginBottom: 20, 
+              borderRadius: 12,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
+            }}
+            styles={{ body: { padding: "16px 20px" } }}
+          >
+          </Card>
+
+          {/* Content */}
+          {error ? (
+            <Card style={{ borderRadius: 12 }}>
+              <div style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
+                <Empty description={error} />
+              </div>
+            </Card>
+          ) : loading ? (
+            <Card style={{ borderRadius: 12 }}>
+              <div style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
+                <Spin size="large" />
+              </div>
+            </Card>
+          ) : products.length === 0 ? (
+            <Card style={{ borderRadius: 12 }}>
+              <div style={{ display: "grid", placeItems: "center", minHeight: 240 }}>
+                <Empty description="Không tìm thấy sản phẩm phù hợp." />
+              </div>
+            </Card>
+          ) : (
+            <>
+              {/* Product Grid */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: screens.lg
+                    ? "repeat(4, 1fr)"
+                    : screens.md
+                    ? "repeat(3, 1fr)"
+                    : "repeat(2, 1fr)",
+                  gap: 16,
+                }}
+              >
+                {products.map((p) => {
+                  const baseImg =
+                    p.image_url || "https://via.placeholder.com/600x600?text=No+Image";
+                  const showPrice = p.min_effective_price;
+                  const compareAt = p.min_original_price;
+                  const totalStock = stockSum(p.variants || []);
+                  
+                  // Kiểm tra sản phẩm có biến thể không
+                  const hasVariants = p.variants && p.variants.length > 0;
+                  const isOutOfStock = !hasVariants;
+
+                  const discountPct =
+                    compareAt && showPrice && compareAt > showPrice
+                      ? Math.round(((compareAt - showPrice) / compareAt) * 100)
+                      : null;
+
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        position: "relative",
+                        borderRadius: 16,
+                        overflow: "hidden",
+                        background: "#fff",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                        transition: "all 0.3s ease",
+                        cursor: "pointer",
+                        opacity: isOutOfStock ? 0.7 : 1,
+                      }}
                       onClick={() => navigate(`/products/${p.id}`)}
-                      styles={{ body: { padding: 12 } }}
-                      style={{ cursor: "pointer" }}
-                      cover={
+                      onMouseEnter={(e) => {
+                        if (!isOutOfStock) {
+                          e.currentTarget.style.transform = "translateY(-8px)";
+                          e.currentTarget.style.boxShadow = "0 12px 28px rgba(0,0,0,0.15)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
+                      }}
+                    >
+                      {/* Out of Stock Badge */}
+                      {isOutOfStock && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 12,
+                            left: 12,
+                            background: "#8c8c8c",
+                            color: "#fff",
+                            padding: "4px 12px",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            zIndex: 2,
+                            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                          }}
+                        >
+                          Hết hàng
+                        </div>
+                      )}
+
+                      {/* Discount Badge */}
+                      {!isOutOfStock && discountPct && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 12,
+                            right: 12,
+                            background: "#ff4d4f",
+                            color: "#fff",
+                            padding: "4px 10px",
+                            borderRadius: 8,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            zIndex: 2,
+                            boxShadow: "0 2px 8px rgba(255,77,79,0.3)",
+                          }}
+                        >
+                          -{discountPct}%
+                        </div>
+                      )}
+
+                      {/* Product Image */}
+                      <div
+                        style={{
+                          width: "100%",
+                          height: 260,
+                          overflow: "hidden",
+                          background: "#fafafa",
+                          position: "relative",
+                        }}
+                      >
                         <img
                           src={baseImg}
                           alt={p.name}
-                          style={{ width: "100%", height: 240, objectFit: "cover" }}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            transition: "transform 0.4s ease",
+                            filter: isOutOfStock ? "grayscale(50%)" : "none",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isOutOfStock) {
+                              e.currentTarget.style.transform = "scale(1.1)";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "scale(1)";
+                          }}
                         />
-                      }
-                    >
-                      <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                        <Text strong>{p.name}</Text>
-                        {(p as any).brand && (
-                          <Tag
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              navigate(`/products/${p.id}`);
-                            }}
-                            style={{ cursor: "pointer" }}
-                          >
-                            {(p as any).brand}
-                          </Tag>
-                        )}
+                      </div>
 
-                        <Space size={8} align="baseline">
-                          <Title level={5} style={{ margin: 0 }}>
-                            {showPrice !== null ? `${fmtVND(showPrice)} đ` : "—"}
-                          </Title>
-                          {compareAt !== null && (
-                            <Text delete type="secondary">
-                              {fmtVND(compareAt)} đ
-                            </Text>
+                      {/* Product Info */}
+                      <div style={{ padding: 16 }}>
+                        <Text
+                          strong
+                          className="product-name"
+                          style={{
+                            display: "-webkit-box",
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: "vertical",
+                            fontSize: 15,
+                            lineHeight: 1.5,
+                            marginBottom: 12,
+                            height: 45,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            transition: "color 0.3s ease",
+                          }}
+                        >
+                          {p.name}
+                        </Text>
+                        <style>{`
+                          .product-name:hover { color: #1890ff !important; }
+                        `}</style>
+
+                        <Space direction="vertical" size={6} style={{ width: "100%", marginBottom: 12 }}>
+                          {p.category?.name && (
+                            <Flex justify="space-between">
+                              <Text type="secondary" style={{ fontSize: 13 }}>Danh mục:</Text>
+                              <Text style={{ fontSize: 13, fontWeight: 500 }}>{p.category.name}</Text>
+                            </Flex>
+                          )}
+                          {p.brand && (
+                            <Flex justify="space-between">
+                              <Text type="secondary" style={{ fontSize: 13 }}>Thương hiệu:</Text>
+                              <Text style={{ fontSize: 13, fontWeight: 500 }}>{p.brand}</Text>
+                            </Flex>
+                          )}
+                          {p.origin && (
+                            <Flex justify="space-between">
+                              <Text type="secondary" style={{ fontSize: 13 }}>Xuất xứ:</Text>
+                              <Text style={{ fontSize: 13, fontWeight: 500 }}>{p.origin}</Text>
+                            </Flex>
                           )}
                         </Space>
-                      </Space>
-                    </Card>
-                  </Badge.Ribbon>
-                );
-              })}
-            </div>
+
+                        <Divider style={{ margin: "12px 0" }} />
+
+                        {isOutOfStock ? (
+                          <div style={{ textAlign: "center", padding: "8px 0" }}>
+                            <Text type="secondary" style={{ fontSize: 15, fontWeight: 600 }}>
+                              Đã hết hàng
+                            </Text>
+                          </div>
+                        ) : (
+                          <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                            {compareAt && showPrice && compareAt > showPrice && (
+                              <Flex justify="space-between">
+                                <Text delete type="secondary" style={{ fontSize: 13 }}>
+                                  {fmtVND(compareAt)} đ
+                                </Text>
+                                <Text type="danger" style={{ fontSize: 13, fontWeight: 600 }}>
+                                  -{fmtVND(compareAt - showPrice)} đ
+                                </Text>
+                              </Flex>
+                            )}
+                            <Title level={4} style={{ margin: 0, color: "#ff4d4f", fontSize: 20, fontWeight: 700 }}>
+                              {showPrice ? `${fmtVND(showPrice)} đ` : "Liên hệ"}
+                            </Title>
+                          </Space>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Pagination */}
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "center", 
+                marginTop: 32,
+                padding: "20px 0"
+              }}>
+                <Pagination
+                  current={currentPage}
+                  pageSize={pageSize}
+                  total={total}
+                  onChange={handlePageChange}
+                  showTotal={(t, range) =>
+                    `${range[0]}-${range[1]} của ${t} sản phẩm`
+                  }
+                  showSizeChanger={false}
+                />
+              </div>
+            </>
           )}
         </div>
       </div>

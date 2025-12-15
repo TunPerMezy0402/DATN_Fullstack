@@ -83,7 +83,7 @@ const Unauthorized: React.FC = () => {
             Đăng xuất
           </button>
         </div>
-
+          
         {/* Additional Info */}
         <p style={styles.hint}>
           Nếu bạn nghĩ đây là lỗi, vui lòng liên hệ quản trị viên.

@@ -115,3 +115,4 @@ const Footer = () => {
 };
 
 export default Footer;
+// ../../../services/bannerImageApi

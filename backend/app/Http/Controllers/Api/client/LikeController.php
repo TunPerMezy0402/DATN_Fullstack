@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Api\Client;
 
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
 use App\Models\Product;
 
 class LikeController extends Controller
@@ -46,7 +46,7 @@ class LikeController extends Controller
     {
         $user = $request->user();
         $likedProducts = $user->likedProducts()
-            ->with('category')
+            ->with('category','variants:id,product_id,price,discount_price')
             ->orderBy('user_likes.liked_at', 'desc')
             ->paginate(10);
 

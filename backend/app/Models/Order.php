@@ -3,20 +3,46 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes; // <-- thêm
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Order extends Model
 {
-    use SoftDeletes; // <-- thêm
+    use SoftDeletes;
 
     protected $table = 'orders';
 
+    public function getTable()
+    {
+        return 'orders';
+    }
+
     protected $fillable = [
-        'user_id', 'sku', 'total_amount', 'discount_amount', 'final_amount',
-        'coupon_id', 'coupon_code', 'status', 'payment_status', 'note'
+        'user_id',
+        'sku',
+        'total_amount',
+        'discount_amount',
+        'final_amount',
+        'payment_status',
+        'payment_method',
+        'note',
+        'city',
+        'district',
+        'commune',
+        'village',
+        'coupon_code',
+        'coupon_id',
+        'paid_at',
     ];
 
-    protected $dates = ['deleted_at']; // optional, Laravel tự cast deleted_at thành Carbon
+    protected $casts = [
+        'paid_at' => 'datetime',
+        'deleted_at' => 'datetime',
+        'total_amount' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'final_amount' => 'decimal:2',
+    ];
+
+    // ==================== RELATIONSHIPS ====================
 
     public function user()
     {
@@ -38,9 +64,25 @@ class Order extends Model
         return $this->hasOne(Shipping::class, 'order_id');
     }
 
-    public function paymentTransactions()
+    public function transactions()
     {
         return $this->hasMany(PaymentTransaction::class, 'order_id');
+    }
+
+    public function latestTransaction()
+    {
+        return $this->hasOne(PaymentTransaction::class, 'order_id')->latestOfMany();
+    }
+
+    public function successfulTransactions()
+    {
+        return $this->hasMany(PaymentTransaction::class, 'order_id')
+            ->where('status', 'success');
+    }
+
+    public function paymentTransaction()
+    {
+        return $this->latestTransaction();
     }
 
     public function returnRequests()
@@ -51,5 +93,24 @@ class Order extends Model
     public function cancelLogs()
     {
         return $this->hasMany(OrderCancelLog::class, 'order_id');
+    }
+
+    public function productReviews()
+    {
+        // Lấy tất cả review của user cho sản phẩm trong đơn hàng này
+        return $this->hasManyThrough(
+            ProductReview::class, // model review
+            OrderItem::class,     // qua order item
+            'order_id',           // khóa ngoại OrderItem -> Order
+            'product_id',         // khóa ngoại ProductReview -> Product
+            'id',                 // khóa chính Order
+            'product_id'          // khóa chính OrderItem
+        )->where('user_id', $this->user_id);
+    }
+
+    // ✅ HELPER METHOD CHỈ CHECK payment_status
+    public function isPaymentProcessed(): bool
+    {
+        return $this->payment_status === 'paid';
     }
 }

@@ -27,6 +27,8 @@ const Header: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [cartCount, setCartCount] = useState<number>(0);
   const [avatarBust, setAvatarBust] = useState<number>(0);
+  const [likedCount, setLikedCount] = useState<number>(0);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const navigate = useNavigate();
 
   const slogans = [
@@ -44,26 +46,102 @@ const Header: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // Kiểm tra trạng thái đăng nhập
   useEffect(() => {
-    if (authService.isAuthenticated()) {
-      const u: any = authService.getCurrentUser();
-      if (u) {
-        const raw = (u.image || u.avatar) as string | undefined;
-        if (raw && !/^https?:\/\//i.test(raw)) {
-          const normalized = `${BACKEND_ORIGIN}/${raw.replace(/^\//, "")}`;
-          const next = { ...u, image: normalized, avatar: normalized };
-          setUser(next);
-          authService.updateUser({ avatar: normalized } as any);
+    const checkAuth = () => {
+      const isAuth = authService.isAuthenticated();
+      setIsAuthenticated(isAuth);
+      
+      if (isAuth) {
+        const u: any = authService.getCurrentUser();
+        if (u) {
+          const raw = (u.image || u.avatar) as string | undefined;
+          if (raw && !/^https?:\/\//i.test(raw)) {
+            const normalized = `${BACKEND_ORIGIN}/${raw.replace(/^\//, "")}`;
+            const next = { ...u, image: normalized, avatar: normalized };
+            setUser(next);
+            authService.updateUser({ avatar: normalized } as any);
+          } else {
+            setUser(u);
+          }
         } else {
-          setUser(u);
+          setUser(null);
         }
       } else {
         setUser(null);
       }
-    } else setUser(null);
+    };
+    
+    checkAuth();
   }, []);
 
-  // Bổ sung: hàm tải profile mới nhất
+  // Lấy số lượng sản phẩm yêu thích
+  useEffect(() => {
+    const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+    if (!token) { 
+      setLikedCount(0); 
+      return; 
+    }
+
+    fetch(`${BACKEND_ORIGIN}/api/user/liked-products`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    })
+      .then(r => r.json())
+      .then(data => {
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+        setLikedCount(list.length || 0);
+      })
+      .catch(() => setLikedCount(0));
+  }, [isAuthenticated]);
+
+  // Lấy số lượng sản phẩm trong giỏ hàng (Real-time)
+  const fetchCartCount = useCallback(async () => {
+    const token = localStorage.getItem("access_token") || localStorage.getItem("token");
+    if (!token) {
+      setCartCount(0);
+      return;
+    }
+
+    try {
+      const res = await axios.get(`${API_URL}/cart`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      // Đếm số lượng sản phẩm KHÁC NHAU (không tính trùng)
+      const uniqueItems = res.data?.items?.length || 0;
+      setCartCount(uniqueItems);
+    } catch {
+      setCartCount(0);
+    }
+  }, []);
+
+  // Cập nhật giỏ hàng real-time khi đăng nhập
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchCartCount();
+      
+      // Polling mỗi 3 giây để cập nhật real-time
+      const interval = setInterval(() => {
+        fetchCartCount();
+      }, 3000);
+      
+      return () => clearInterval(interval);
+    } else {
+      setCartCount(0);
+    }
+  }, [isAuthenticated, fetchCartCount]);
+
+  // Lắng nghe sự kiện cập nhật giỏ hàng từ các component khác
+  useEffect(() => {
+    const handleCartUpdate = () => {
+      fetchCartCount();
+    };
+    
+    window.addEventListener("cart-updated", handleCartUpdate);
+    return () => window.removeEventListener("cart-updated", handleCartUpdate);
+  }, [fetchCartCount]);
+
+  // Tải profile mới nhất
   const loadProfile = useCallback(async () => {
     try {
       if (!authService.isAuthenticated()) return;
@@ -93,12 +171,11 @@ const Header: React.FC = () => {
     } catch { }
   }, []);
 
-  // Luôn tải avatar mới nhất từ server khi mount để tránh dữ liệu cũ
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
 
-  // Lắng nghe sự kiện cập nhật profile để refresh avatar
+  // Lắng nghe sự kiện cập nhật profile
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<any>;
@@ -129,6 +206,10 @@ const Header: React.FC = () => {
       await authService.logout();
     } finally {
       setShowLogoutConfirm(false);
+      setIsAuthenticated(false);
+      setUser(null);
+      setCartCount(0);
+      setLikedCount(0);
       window.location.href = "/login";
     }
   };
@@ -136,8 +217,7 @@ const Header: React.FC = () => {
   const navLinks = [
     { path: "/", label: "Trang chủ" },
     { path: "/products", label: "Sản phẩm" },
-    { path: "/blog", label: "Tin tức" },
-    { path: "/compare", label: "So sánh" },
+    { path: "/news", label: "Tin tức" },
     { path: "/lien_he", label: "Liên hệ" },
   ];
 
@@ -148,10 +228,10 @@ const Header: React.FC = () => {
         <div className="max-w-7xl mx-auto flex justify-between items-center h-8 px-4">
           <div className="flex gap-4 items-center">
             <span className="flex items-center gap-1">
-              <i className="fas fa-phone-alt text-xs"></i> +0878888907
+              <i className="fas fa-phone-alt text-xs"></i> +0395656428
             </span>
             <span className="flex items-center gap-1">
-              <i className="fab fa-whatsapp text-xs"></i> +0878888888
+              <i className="fab fa-whatsapp text-xs"></i> +0974354656
             </span>
           </div>
 
@@ -193,21 +273,39 @@ const Header: React.FC = () => {
 
         {/* User + Cart */}
         <div className="flex items-center gap-4 flex-shrink-0">
-          {/* Giỏ hàng */}
-          <div
-            onClick={() => navigate("/cart")}
-            className="relative cursor-pointer hover:text-green-600 transition-colors"
-          >
-            <i className="fas fa-shopping-cart text-xl"></i>
-            {cartCount > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-semibold px-[5px] py-[1px] rounded-full">
-                {cartCount}
-              </span>
-            )}
-          </div>
+          {/* ❤ Yêu thích - Chỉ hiện khi đã đăng nhập */}
+          {isAuthenticated && (
+            <div
+              onClick={() => navigate("/favorites")}
+              className="relative cursor-pointer hover:text-red-600 transition-colors"
+              title="Sản phẩm yêu thích"
+            >
+              <i className="fas fa-heart text-xl text-red-500"></i>
+              {likedCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-semibold px-[5px] py-[1px] rounded-full">
+                  {likedCount}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Giỏ hàng - Chỉ hiện khi đã đăng nhập */}
+          {isAuthenticated && (
+            <div
+              onClick={() => navigate("/cart")}
+              className="relative cursor-pointer hover:text-green-600 transition-colors"
+            >
+              <i className="fas fa-shopping-cart text-xl"></i>
+              {cartCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-semibold px-[5px] py-[1px] rounded-full">
+                  {cartCount}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* User */}
-          {user && localStorage.getItem("access_token") ? (
+          {user && isAuthenticated ? (
             <div className="relative">
               <div
                 className="flex items-center gap-2 cursor-pointer"
@@ -224,7 +322,6 @@ const Header: React.FC = () => {
                     alt="Avatar"
                     className="w-10 h-10 rounded-full object-cover border border-gray-200"
                   />
-
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
                     <i className="far fa-user text-white text-lg"></i>
@@ -248,12 +345,32 @@ const Header: React.FC = () => {
                     className="absolute bg-white shadow-lg rounded-lg w-48 mt-2 right-0 z-20 border border-gray-100"
                   >
                     <div className="py-2">
-                      <Link to="/profile" onClick={() => setShowUserMenu(false)} className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600">
+                      {user.role === "admin" && (
+                        <Link
+                          to="/admin/dashboard"
+                          onClick={() => setShowUserMenu(false)}
+                          className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600"
+                        >
+                          <i className="fas fa-tools mr-2"></i> Quản trị Admin
+                        </Link>
+                      )}
+
+                      <Link
+                        to="/profile"
+                        onClick={() => setShowUserMenu(false)}
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600"
+                      >
                         <i className="far fa-user mr-2"></i> Thông tin cá nhân
                       </Link>
-                      <Link to="/orders" onClick={() => setShowUserMenu(false)} className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600">
+
+                      <Link
+                        to="/orders"
+                        onClick={() => setShowUserMenu(false)}
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600"
+                      >
                         <i className="fas fa-shopping-bag mr-2"></i> Đơn hàng của tôi
                       </Link>
+
                       <button
                         onClick={() => setShowLogoutConfirm(true)}
                         className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"

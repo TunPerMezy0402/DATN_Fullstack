@@ -1,42 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Table,
-  Button,
-  Space,
-  message,
-  Modal,
-  Form,
-  Input,
-  InputNumber,
-  Select,
-  DatePicker,
-  Tag,
-  Card,
-  Row,
-  Col,
-  Statistic,
-  Badge,
-  Drawer,
-  Divider,
-  Typography,
-  Popconfirm,
-  Empty,
-  Switch,
+  Table, Button, Space, message, Modal, Form, Input, InputNumber,
+  Select, DatePicker, Tag, Card, Row, Col, Statistic, Badge,
+  Drawer, Divider, Typography, Popconfirm, Empty, Switch,
 } from "antd";
 import {
-  PlusOutlined,
-  SearchOutlined,
-  FilterOutlined,
-  PercentageOutlined,
-  DollarOutlined,
-  CalendarOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  EyeOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  TagsOutlined,
-  GiftOutlined,
+  PlusOutlined, SearchOutlined, FilterOutlined, PercentageOutlined,
+  DollarOutlined, CalendarOutlined, EditOutlined, DeleteOutlined,
+  EyeOutlined, CheckCircleOutlined, CloseCircleOutlined,
+  TagsOutlined, GiftOutlined,
 } from "@ant-design/icons";
 import axios from "axios";
 import dayjs from "dayjs";
@@ -55,13 +27,15 @@ interface Coupon {
   start_date?: string;
   end_date?: string;
   is_active: boolean;
+  usage_limit?: number;
+  used_count?: number;
   created_at: string;
   updated_at: string;
 }
 
 const CouponList: React.FC = () => {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
@@ -75,25 +49,40 @@ const CouponList: React.FC = () => {
   const [filterType, setFilterType] = useState<string>("all");
 
   const [form] = Form.useForm();
+  const discountType = Form.useWatch('discount_type', form);
 
+  // API Configuration
   const token = localStorage.getItem("access_token");
   const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
   const headers = { Authorization: `Bearer ${token}` };
 
+  const generateCouponCode = (): string => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let code = "";
+    for (let i = 0; i < 9; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+
   const fetchCoupons = async () => {
     try {
       setLoading(true);
-      const res = await axios.get(`${API_URL}/admin/coupons`, { headers });
-      const data =
-        Array.isArray(res.data)
-          ? res.data
-          : Array.isArray(res.data.data)
-          ? res.data.data
-          : res.data.data?.data || [];
+      const response = await axios.get(`${API_URL}/admin/coupons`, { headers });
+
+      let data = [];
+      if (Array.isArray(response.data)) {
+        data = response.data;
+      } else if (response.data.data) {
+        data = Array.isArray(response.data.data)
+          ? response.data.data
+          : response.data.data.data || [];
+      }
+
       setCoupons(data);
-    } catch (err) {
-      console.error("❌ Lỗi tải coupon:", err);
-      message.error("Không thể tải danh sách coupon!");
+    } catch (error: any) {
+      console.error("Error fetching coupons:", error);
+      message.error(error.response?.data?.message || "Không thể tải danh sách coupon!");
     } finally {
       setLoading(false);
     }
@@ -103,67 +92,79 @@ const CouponList: React.FC = () => {
     fetchCoupons();
   }, []);
 
-  const stats = useMemo(() => {
-    return {
-      total: coupons.length,
-      active: coupons.filter((c) => c.is_active).length,
-      inactive: coupons.filter((c) => !c.is_active).length,
-    };
+  const statistics = useMemo(() => {
+    const total = coupons.length;
+    const active = coupons.filter(c => c.is_active).length;
+    const inactive = total - active;
+
+    return { total, active, inactive };
   }, [coupons]);
 
-  const dataView = useMemo(() => {
-    const q = searchText.trim().toLowerCase();
-    let list = coupons.filter((c) => {
-      const matchSearch = c.code.toLowerCase().includes(q);
-      const matchStatus =
-        filterStatus === "all" ||
-        (filterStatus === "active" && c.is_active) ||
-        (filterStatus === "inactive" && !c.is_active);
-      const matchType =
-        filterType === "all" || c.discount_type === filterType;
-      return matchSearch && matchStatus && matchType;
-    });
-    return list.sort(
-      (a, b) => dayjs(b.updated_at).valueOf() - dayjs(a.updated_at).valueOf()
-    );
+  const filteredCoupons = useMemo(() => {
+    const searchQuery = searchText.trim().toLowerCase();
+
+    return coupons
+      .filter(coupon => {
+        const matchesSearch = !searchQuery ||
+          coupon.code.toLowerCase().includes(searchQuery);
+
+        const matchesStatus =
+          filterStatus === "all" ||
+          (filterStatus === "active" && coupon.is_active) ||
+          (filterStatus === "inactive" && !coupon.is_active);
+
+        const matchesType =
+          filterType === "all" ||
+          coupon.discount_type === filterType;
+
+        return matchesSearch && matchesStatus && matchesType;
+      })
+      .sort((a, b) =>
+        dayjs(b.updated_at).valueOf() - dayjs(a.updated_at).valueOf()
+      );
   }, [coupons, searchText, filterStatus, filterType]);
 
-  const openModal = (coupon?: Coupon) => {
+  const handleOpenModal = (coupon?: Coupon) => {
     if (coupon) {
       setEditingCoupon(coupon);
       form.setFieldsValue({
-        ...coupon,
-        dateRange:
-          coupon.start_date && coupon.end_date
-            ? [dayjs(coupon.start_date), dayjs(coupon.end_date)]
-            : [],
+        code: coupon.code,
+        discount_type: coupon.discount_type,
+        discount_value: coupon.discount_value,
+        min_purchase: coupon.min_purchase || undefined,
+        max_discount: coupon.discount_type === 'percent' ? (coupon.max_discount || undefined) : undefined,
+        usage_limit: coupon.usage_limit || undefined,
+        used_count: coupon.used_count || 0,
+        is_active: coupon.is_active,
+        dateRange: coupon.start_date && coupon.end_date
+          ? [dayjs(coupon.start_date), dayjs(coupon.end_date)]
+          : undefined,
       });
     } else {
       setEditingCoupon(null);
       form.resetFields();
-      // Generate random coupon code: 9 characters (uppercase letters + numbers)
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-      let randomCode = '';
-      for (let i = 0; i < 9; i++) {
-        randomCode += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      form.setFieldsValue({ 
+      form.setFieldsValue({
+        code: generateCouponCode(),
         is_active: true,
-        code: randomCode 
+        discount_type: "percent",
       });
     }
     setModalVisible(true);
   };
 
-  const handleSave = async () => {
+  const handleSaveCoupon = async () => {
     try {
       const values = await form.validateFields();
+
       const payload = {
-        code: values.code,
+        code: values.code.toUpperCase(),
         discount_type: values.discount_type,
-        discount_value: values.discount_value,
-        min_purchase: values.min_purchase || null,
-        max_discount: values.max_discount || null,
+        discount_value: parseFloat(values.discount_value),
+        min_purchase: values.min_purchase ? parseFloat(values.min_purchase) : null,
+        max_discount: values.discount_type === 'percent'
+          ? (values.max_discount ? parseFloat(values.max_discount) : null)
+          : parseFloat(values.discount_value),
+        usage_limit: values.usage_limit || null,
         start_date: values.dateRange?.[0]
           ? dayjs(values.dateRange[0]).format("YYYY-MM-DD HH:mm:ss")
           : null,
@@ -182,29 +183,39 @@ const CouponList: React.FC = () => {
         message.success("Cập nhật coupon thành công!");
       } else {
         await axios.post(`${API_URL}/admin/coupons`, payload, { headers });
-        message.success("Thêm coupon thành công!");
+        message.success("Tạo coupon mới thành công!");
       }
 
       setModalVisible(false);
+      form.resetFields();
       fetchCoupons();
-    } catch (err) {
-      console.error(err);
-      message.error("Không thể lưu coupon!");
+    } catch (error: any) {
+      console.error("Error saving coupon:", error);
+
+      if (error.response?.data?.message) {
+        message.error(error.response.data.message);
+      } else if (error.response?.data?.errors) {
+        const errors = error.response.data.errors;
+        const errorMessages = Object.values(errors).flat().join(", ");
+        message.error(errorMessages);
+      } else {
+        message.error("Không thể lưu coupon!");
+      }
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDeleteCoupon = async (id: number) => {
     try {
       await axios.delete(`${API_URL}/admin/coupons/${id}`, { headers });
-      message.success("Đã xóa coupon!");
+      message.success("Xóa coupon thành công!");
       fetchCoupons();
-    } catch (err) {
-      console.error(err);
-      message.error("Không thể xóa coupon!");
+    } catch (error: any) {
+      console.error("Error deleting coupon:", error);
+      message.error(error.response?.data?.message || "Không thể xóa coupon!");
     }
   };
 
-  const openDrawer = (coupon: Coupon) => {
+  const handleOpenDrawer = (coupon: Coupon) => {
     setSelectedCoupon(coupon);
     setDrawerVisible(true);
   };
@@ -215,10 +226,11 @@ const CouponList: React.FC = () => {
       dataIndex: "code",
       key: "code",
       width: 140,
+      fixed: "left" as const,
       render: (code: string) => (
         <Space size={4}>
-          <TagsOutlined style={{ color: "#1890ff", fontSize: 12 }} />
-          <Text strong copyable style={{ fontSize: 13 }}>
+          <TagsOutlined style={{ color: "#1890ff" }} />
+          <Text strong copyable={{ text: code }}>
             {code}
           </Text>
         </Space>
@@ -232,12 +244,12 @@ const CouponList: React.FC = () => {
       align: "center" as const,
       render: (type: string) =>
         type === "percent" ? (
-          <Tag icon={<PercentageOutlined style={{ fontSize: 11 }} />} color="purple" style={{ fontSize: 12, padding: "2px 8px" }}>
+          <Tag icon={<PercentageOutlined />} color="purple">
             Phần trăm
           </Tag>
         ) : (
-          <Tag icon={<DollarOutlined style={{ fontSize: 11 }} />} color="green" style={{ fontSize: 12, padding: "2px 8px" }}>
-            VNĐ
+          <Tag icon={<DollarOutlined />} color="green">
+            Cố định
           </Tag>
         ),
     },
@@ -245,34 +257,64 @@ const CouponList: React.FC = () => {
       title: "Giá trị",
       dataIndex: "discount_value",
       key: "discount_value",
-      width: 100,
+      width: 120,
       align: "right" as const,
-      render: (v: number, r: Coupon) => (
-        <Text strong style={{ color: "#f5222d", fontSize: 14 }}>
-          {r.discount_type === "percent"
-            ? `${v}%`
-            : `${Math.round(v).toLocaleString('vi-VN')}₫`}
+      render: (value: number, record: Coupon) => (
+        <Text strong style={{ color: "#f5222d", fontSize: 15 }}>
+          {record.discount_type === "percent"
+            ? `${value}%`
+            : `${Math.round(value).toLocaleString("vi-VN")}₫`}
+        </Text>
+      ),
+    },
+    {
+      title: "Giới hạn",
+      key: "limits",
+      width: 140,
+      render: (record: Coupon) => (
+        <Space direction="vertical" size={2}>
+          {record.min_purchase && (
+            <Text style={{ fontSize: 12 }}>
+              Tối thiểu: {Math.round(record.min_purchase).toLocaleString("vi-VN")}₫
+            </Text>
+          )}
+          {record.discount_type === 'percent' && record.max_discount && (
+            <Text style={{ fontSize: 12 }}>
+              Giảm tối đa: {Math.round(record.max_discount).toLocaleString("vi-VN")}₫
+            </Text>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: "Lượt dùng",
+      key: "usage",
+      width: 100,
+      align: "center" as const,
+      render: (record: Coupon) => (
+        <Text>
+          {record.used_count || 0}
+          {record.usage_limit ? ` / ${record.usage_limit}` : " / ∞"}
         </Text>
       ),
     },
     {
       title: "Thời gian",
       key: "date_range",
-      width: 160,
-      render: (r: Coupon) =>
-        r.start_date && r.end_date ? (
+      width: 180,
+      render: (record: Coupon) =>
+        record.start_date && record.end_date ? (
           <Space direction="vertical" size={0}>
             <Text style={{ fontSize: 12 }}>
-              <CalendarOutlined style={{ marginRight: 4, color: "#1890ff", fontSize: 11 }} />
-              {dayjs(r.start_date).format("DD/MM/YYYY")}
+              <CalendarOutlined style={{ marginRight: 4, color: "#1890ff" }} />
+              {dayjs(record.start_date).format("DD/MM/YYYY HH:mm")}
             </Text>
-            <Text type="secondary" style={{ fontSize: 11, paddingLeft: 15 }}>
-              → {dayjs(r.end_date).format("DD/MM/YYYY")}
+            <Text type="secondary" style={{ fontSize: 11, paddingLeft: 18 }}>
+              → {dayjs(record.end_date).format("DD/MM/YYYY HH:mm")}
             </Text>
           </Space>
         ) : (
           <Text type="secondary" style={{ fontSize: 12 }}>
-            <CalendarOutlined style={{ marginRight: 4, fontSize: 11 }} />
             Không giới hạn
           </Text>
         ),
@@ -281,25 +323,14 @@ const CouponList: React.FC = () => {
       title: "Trạng thái",
       dataIndex: "is_active",
       key: "is_active",
-      width: 110,
+      width: 120,
       align: "center" as const,
-      render: (active: boolean) =>
-        active ? (
-          <Badge status="success" text={<span style={{ fontSize: 12 }}>Hoạt động</span>} />
+      render: (isActive: boolean) =>
+        isActive ? (
+          <Badge status="success" text="Hoạt động" />
         ) : (
-          <Badge status="error" text={<span style={{ fontSize: 12 }}>Ngưng</span>} />
+          <Badge status="error" text="Ngưng" />
         ),
-    },
-    {
-      title: "Cập nhật",
-      dataIndex: "updated_at",
-      key: "updated_at",
-      width: 130,
-      render: (text: string) => (
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {dayjs(text).format("HH:mm DD/MM/YY")}
-        </Text>
-      ),
     },
     {
       title: "Thao tác",
@@ -310,20 +341,18 @@ const CouponList: React.FC = () => {
       render: (_: any, record: Coupon) => (
         <Space size={4}>
           <Button
-            type="text"
+            type="link"
             size="small"
-            icon={<EyeOutlined style={{ fontSize: 12 }} />}
-            onClick={() => openDrawer(record)}
-            style={{ color: "#1890ff", fontSize: 12, padding: "0 8px" }}
+            icon={<EyeOutlined />}
+            onClick={() => handleOpenDrawer(record)}
           >
             Chi tiết
           </Button>
           <Button
-            type="text"
+            type="link"
             size="small"
-            icon={<EditOutlined style={{ fontSize: 12 }} />}
-            onClick={() => openModal(record)}
-            style={{ color: "#52c41a", fontSize: 12, padding: "0 8px" }}
+            icon={<EditOutlined />}
+            onClick={() => handleOpenModal(record)}
           >
             Sửa
           </Button>
@@ -332,17 +361,10 @@ const CouponList: React.FC = () => {
             description={`Bạn có chắc muốn xóa coupon "${record.code}"?`}
             okText="Xóa"
             cancelText="Hủy"
-            okButtonProps={{ danger: true, size: "small" }}
-            cancelButtonProps={{ size: "small" }}
-            onConfirm={() => handleDelete(record.id)}
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDeleteCoupon(record.id)}
           >
-            <Button
-              type="text"
-              size="small"
-              danger
-              icon={<DeleteOutlined style={{ fontSize: 12 }} />}
-              style={{ fontSize: 12, padding: "0 8px" }}
-            >
+            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
               Xóa
             </Button>
           </Popconfirm>
@@ -352,28 +374,21 @@ const CouponList: React.FC = () => {
   ];
 
   return (
-    <div style={{ padding: "24px", background: "#f0f2f5", minHeight: "100vh" }}>
-      {/* Header */}
+    <div style={{ padding: 24, background: "#f0f2f5", minHeight: "100vh" }}>
       <div style={{ marginBottom: 24 }}>
-        <Title
-          level={2}
-          style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}
-        >
+        <Title level={2} style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
           <GiftOutlined style={{ color: "#1890ff" }} />
           Quản lý Coupon
         </Title>
-        <Text type="secondary">
-          Tạo và quản lý mã giảm giá cho khách hàng
-        </Text>
+        <Text type="secondary">Tạo và quản lý mã giảm giá cho khách hàng</Text>
       </div>
 
-      {/* Statistics Cards */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={8}>
           <Card>
             <Statistic
               title="Tổng số Coupon"
-              value={stats.total}
+              value={statistics.total}
               prefix={<TagsOutlined />}
               valueStyle={{ color: "#1890ff" }}
             />
@@ -383,7 +398,7 @@ const CouponList: React.FC = () => {
           <Card>
             <Statistic
               title="Đang hoạt động"
-              value={stats.active}
+              value={statistics.active}
               prefix={<CheckCircleOutlined />}
               valueStyle={{ color: "#52c41a" }}
             />
@@ -393,7 +408,7 @@ const CouponList: React.FC = () => {
           <Card>
             <Statistic
               title="Ngừng hoạt động"
-              value={stats.inactive}
+              value={statistics.inactive}
               prefix={<CloseCircleOutlined />}
               valueStyle={{ color: "#ff4d4f" }}
             />
@@ -401,7 +416,6 @@ const CouponList: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Filters & Actions */}
       <Card style={{ marginBottom: 16 }}>
         <Row gutter={[16, 16]} align="middle">
           <Col xs={24} md={8}>
@@ -420,7 +434,6 @@ const CouponList: React.FC = () => {
               onChange={setFilterStatus}
               style={{ width: "100%" }}
               size="large"
-              placeholder="Trạng thái"
               suffixIcon={<FilterOutlined />}
             >
               <Option value="all">Tất cả</Option>
@@ -434,10 +447,9 @@ const CouponList: React.FC = () => {
               onChange={setFilterType}
               style={{ width: "100%" }}
               size="large"
-              placeholder="Loại giảm"
               suffixIcon={<FilterOutlined />}
             >
-              <Option value="all">Tất cả</Option>
+              <Option value="all">Tất cả loại</Option>
               <Option value="percent">Phần trăm</Option>
               <Option value="fixed">Cố định</Option>
             </Select>
@@ -447,8 +459,7 @@ const CouponList: React.FC = () => {
               type="primary"
               size="large"
               icon={<PlusOutlined />}
-              onClick={() => openModal()}
-              style={{ fontWeight: 500 }}
+              onClick={() => handleOpenModal()}
             >
               Tạo Coupon mới
             </Button>
@@ -456,18 +467,18 @@ const CouponList: React.FC = () => {
         </Row>
       </Card>
 
-      {/* Table */}
       <Card>
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={dataView}
+          dataSource={filteredCoupons}
           loading={loading}
           pagination={{
-            pageSize,
             current: currentPage,
+            pageSize: pageSize,
+            total: filteredCoupons.length,
             onChange: setCurrentPage,
-            showTotal: (t) => `Tổng số ${t} coupon`,
+            showTotal: (total) => `Tổng số ${total} coupon`,
             showSizeChanger: false,
           }}
           locale={{
@@ -478,48 +489,43 @@ const CouponList: React.FC = () => {
               />
             ),
           }}
-          scroll={{ x: 1000 }}
-          size="small"
+          scroll={{ x: 1200 }}
         />
       </Card>
 
-      {/* Modal Create/Edit */}
       <Modal
         title={
           <Space>
             <GiftOutlined style={{ color: "#1890ff" }} />
-            <span>
-              {editingCoupon ? "Chỉnh sửa Coupon" : "Tạo Coupon mới"}
-            </span>
+            {editingCoupon ? "Chỉnh sửa Coupon" : "Tạo Coupon mới"}
           </Space>
         }
         open={modalVisible}
-        onCancel={() => setModalVisible(false)}
-        onOk={handleSave}
+        onCancel={() => {
+          setModalVisible(false);
+          form.resetFields();
+        }}
+        onOk={handleSaveCoupon}
         okText="Lưu"
         cancelText="Hủy"
-        width={600}
-        okButtonProps={{ size: "middle" }}
-        cancelButtonProps={{ size: "middle" }}
-        styles={{
-          body: { padding: "16px 24px" }
-        }}
+        width={700}
       >
-        <Divider style={{ margin: "12px 0" }} />
-        <Form form={form} layout="vertical" size="middle">
+        <Divider style={{ margin: "16px 0" }} />
+        <Form form={form} layout="vertical">
           <Form.Item
             label="Mã Coupon"
             name="code"
             rules={[
               { required: true, message: "Vui lòng nhập mã coupon!" },
               { min: 3, message: "Mã coupon phải có ít nhất 3 ký tự!" },
+              { pattern: /^[A-Z0-9]+$/, message: "Chỉ chữ in hoa và số!" },
             ]}
           >
             <Input
               placeholder="VD: SALE2025"
               prefix={<TagsOutlined />}
-              style={{ textTransform: "uppercase" }}
-              disabled
+              disabled={!!editingCoupon}
+              maxLength={20}
             />
           </Form.Item>
 
@@ -530,7 +536,14 @@ const CouponList: React.FC = () => {
                 name="discount_type"
                 rules={[{ required: true, message: "Chọn loại giảm giá!" }]}
               >
-                <Select placeholder="Chọn loại">
+                <Select
+                  placeholder="Chọn loại"
+                  onChange={(value) => {
+                    if (value === 'fixed') {
+                      form.setFieldsValue({ max_discount: undefined });
+                    }
+                  }}
+                >
                   <Option value="percent">
                     <Space>
                       <PercentageOutlined />
@@ -556,27 +569,15 @@ const CouponList: React.FC = () => {
                   ({ getFieldValue }) => ({
                     validator(_, value) {
                       const discountType = getFieldValue("discount_type");
-                      if (!value) return Promise.resolve();
-
-                      if (discountType === "percent") {
-                        if (value > 100) {
-                          return Promise.reject(
-                            new Error("Giá trị % không được quá 100!")
-                          );
-                        }
-                        if (value <= 0) {
-                          return Promise.reject(
-                            new Error("Giá trị phải lớn hơn 0!")
-                          );
-                        }
-                      } else if (discountType === "fixed") {
-                        if (value < 1000) {
-                          return Promise.reject(
-                            new Error("Giá trị phải từ 1.000đ trở lên!")
-                          );
-                        }
+                      if (!value || value <= 0) {
+                        return Promise.reject(new Error("Giá trị phải lớn hơn 0!"));
                       }
-
+                      if (discountType === "percent" && value > 100) {
+                        return Promise.reject(new Error("Giá trị % không được quá 100!"));
+                      }
+                      if (discountType === "fixed" && value < 1000) {
+                        return Promise.reject(new Error("Giá trị phải từ 1.000đ trở lên!"));
+                      }
                       return Promise.resolve();
                     },
                   }),
@@ -585,35 +586,23 @@ const CouponList: React.FC = () => {
                 <InputNumber
                   style={{ width: "100%" }}
                   min={0}
-                  formatter={(value) => {
-                    const discountType = form.getFieldValue("discount_type");
-                    if (discountType === "fixed" && value) {
-                      return `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-                    }
-                    return `${value}`;
-                  }}
-                  parser={(value) => (value?.replace(/\./g, "") || "0") as any}
+                  placeholder="Nhập giá trị"
+                  formatter={(value) =>
+                    `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+                  }
+                  parser={(value) => value?.replace(/\./g, "") as any}
                 />
               </Form.Item>
             </Col>
           </Row>
 
           <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item label="Đơn hàng tối thiểu" name="min_purchase">
-                <InputNumber
-                  style={{ width: "100%" }}
-                  min={0}
-                  placeholder="0"
-                  formatter={(value) =>
-                    `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ".")
-                  }
-                  parser={(value) => (value?.replace(/\./g, "") || "0") as any}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item label="Giảm tối đa" name="max_discount">
+            <Col span={discountType === 'percent' ? 12 : 24}>
+              <Form.Item
+                label="Đơn hàng tối thiểu (VNĐ)"
+                name="min_purchase"
+                tooltip="Giá trị đơn hàng tối thiểu để áp dụng coupon"
+              >
                 <InputNumber
                   style={{ width: "100%" }}
                   min={0}
@@ -621,7 +610,55 @@ const CouponList: React.FC = () => {
                   formatter={(value) =>
                     `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ".")
                   }
-                  parser={(value) => (value?.replace(/\./g, "") || "0") as any}
+                  parser={(value) => value?.replace(/\./g, "") as any}
+                />
+              </Form.Item>
+            </Col>
+            {discountType === 'percent' && (
+              <Col span={12}>
+                <Form.Item
+                  label="Giảm tối đa (VNĐ)"
+                  name="max_discount"
+                  tooltip="Số tiền giảm tối đa (áp dụng cho loại phần trăm)"
+                >
+                  <InputNumber
+                    style={{ width: "100%" }}
+                    min={0}
+                    placeholder="Không giới hạn"
+                    formatter={(value) =>
+                      `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+                    }
+                    parser={(value) => value?.replace(/\./g, "") as any}
+                  />
+                </Form.Item>
+              </Col>
+            )}
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="Giới hạn lượt sử dụng"
+                name="usage_limit"
+                tooltip="Số lần tối đa mã này có thể được sử dụng"
+              >
+                <InputNumber
+                  style={{ width: "100%" }}
+                  min={1}
+                  placeholder="Không giới hạn"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="Đã sử dụng"
+                name="used_count"
+                tooltip="Số lượt đã được sử dụng (tự động)"
+              >
+                <InputNumber
+                  style={{ width: "100%" }}
+                  disabled
+                  placeholder="0"
                 />
               </Form.Item>
             </Col>
@@ -644,22 +681,17 @@ const CouponList: React.FC = () => {
             label="Trạng thái"
             name="is_active"
             valuePropName="checked"
-            initialValue={true}
           >
-            <Switch
-              checkedChildren="Hoạt động"
-              unCheckedChildren="Ngưng"
-            />
+            <Switch checkedChildren="Hoạt động" unCheckedChildren="Ngưng" />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Drawer Detail */}
       <Drawer
         title={
           <Space>
-            <GiftOutlined style={{ color: "#1890ff", fontSize: 20 }} />
-            <span style={{ fontSize: 18 }}>Chi tiết Coupon</span>
+            <GiftOutlined style={{ color: "#1890ff" }} />
+            Chi tiết Coupon
           </Space>
         }
         placement="right"
@@ -670,33 +702,20 @@ const CouponList: React.FC = () => {
         {selectedCoupon && (
           <div>
             <Card style={{ marginBottom: 16, background: "#f6f9ff" }}>
-              <Space
-                direction="vertical"
-                size={8}
-                style={{ width: "100%" }}
-              >
+              <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <div style={{ textAlign: "center" }}>
                   <Text type="secondary">Mã Coupon</Text>
-                  <Title
-                    level={3}
-                    copyable
-                    style={{ margin: "8px 0", color: "#1890ff" }}
-                  >
+                  <Title level={3} copyable style={{ margin: "8px 0", color: "#1890ff" }}>
                     {selectedCoupon.code}
                   </Title>
                 </div>
                 <Divider style={{ margin: "12px 0" }} />
                 <div style={{ textAlign: "center" }}>
-                  <Text>
-                    <strong>Giá trị giảm</strong>
-                  </Text>
-                  <Title
-                    level={2}
-                    style={{ margin: "8px 0", color: "#f5222d" }}
-                  >
+                  <Text><strong>Giá trị giảm</strong></Text>
+                  <Title level={2} style={{ margin: "8px 0", color: "#f5222d" }}>
                     {selectedCoupon.discount_type === "percent"
                       ? `${selectedCoupon.discount_value}%`
-                      : `${Math.round(selectedCoupon.discount_value).toLocaleString('vi-VN')}₫`}
+                      : `${Math.round(selectedCoupon.discount_value).toLocaleString("vi-VN")}₫`}
                   </Title>
                 </div>
               </Space>
@@ -704,34 +723,55 @@ const CouponList: React.FC = () => {
 
             <Space direction="vertical" size={16} style={{ width: "100%" }}>
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  Loại giảm giá
-                </Text>
+                <Text type="secondary">Loại giảm giá</Text>
                 <div style={{ marginTop: 8 }}>
                   {selectedCoupon.discount_type === "percent" ? (
-                    <Tag
-                      icon={<PercentageOutlined />}
-                      color="purple"
-                      style={{ fontSize: 14, padding: "4px 12px" }}
-                    >
+                    <Tag icon={<PercentageOutlined />} color="purple" style={{ padding: "4px 12px" }}>
                       Giảm theo phần trăm
                     </Tag>
                   ) : (
-                    <Tag
-                      icon={<DollarOutlined />}
-                      color="green"
-                      style={{ fontSize: 14, padding: "4px 12px" }}
-                    >
+                    <Tag icon={<DollarOutlined />} color="green" style={{ padding: "4px 12px" }}>
                       Giảm theo VNĐ
                     </Tag>
                   )}
                 </div>
               </div>
 
-              <Divider style={{ margin: 0 }} />
+              {(selectedCoupon.min_purchase || selectedCoupon.max_discount) && (
+                <>
+                  <Divider style={{ margin: 0 }} />
+                  <div>
+                    <Text type="secondary">Giới hạn</Text>
+                    <Space direction="vertical" size={4} style={{ marginTop: 8 }}>
+                      {selectedCoupon.min_purchase && (
+                        <Text>
+                          Đơn tối thiểu: <strong>{Math.round(selectedCoupon.min_purchase).toLocaleString("vi-VN")}₫</strong>
+                        </Text>
+                      )}
+                      {selectedCoupon.max_discount && (
+                        <Text>
+                          Giảm tối đa: <strong>{Math.round(selectedCoupon.max_discount).toLocaleString("vi-VN")}₫</strong>
+                        </Text>
+                      )}
+                    </Space>
+                  </div>
+                </>
+              )}
 
+              <Divider style={{ margin: 0 }} />
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text type="secondary">Lượt sử dụng</Text>
+                <div style={{ marginTop: 8 }}>
+                  <Text>
+                    Đã dùng: <strong>{selectedCoupon.used_count || 0}</strong>
+                    {selectedCoupon.usage_limit && ` / ${selectedCoupon.usage_limit}`}
+                  </Text>
+                </div>
+              </div>
+
+              <Divider style={{ margin: 0 }} />
+              <div>
+                <Text type="secondary">
                   <CalendarOutlined /> Thời gian áp dụng
                 </Text>
                 <div style={{ marginTop: 8 }}>
@@ -739,15 +779,11 @@ const CouponList: React.FC = () => {
                     <Space direction="vertical" size={4}>
                       <Text>
                         <strong>Bắt đầu:</strong>{" "}
-                        {dayjs(selectedCoupon.start_date).format(
-                          "HH:mm - DD/MM/YYYY"
-                        )}
+                        {dayjs(selectedCoupon.start_date).format("HH:mm - DD/MM/YYYY")}
                       </Text>
                       <Text>
                         <strong>Kết thúc:</strong>{" "}
-                        {dayjs(selectedCoupon.end_date).format(
-                          "HH:mm - DD/MM/YYYY"
-                        )}
+                        {dayjs(selectedCoupon.end_date).format("HH:mm - DD/MM/YYYY")}
                       </Text>
                     </Space>
                   ) : (
@@ -757,49 +793,26 @@ const CouponList: React.FC = () => {
               </div>
 
               <Divider style={{ margin: 0 }} />
-
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  Trạng thái
-                </Text>
+                <Text type="secondary">Trạng thái</Text>
                 <div style={{ marginTop: 8 }}>
                   {selectedCoupon.is_active ? (
-                    <Badge
-                      status="success"
-                      text="Đang hoạt động"
-                      style={{ fontSize: 14 }}
-                    />
+                    <Badge status="success" text="Đang hoạt động" />
                   ) : (
-                    <Badge
-                      status="error"
-                      text="Ngừng hoạt động"
-                      style={{ fontSize: 14 }}
-                    />
+                    <Badge status="error" text="Ngừng hoạt động" />
                   )}
                 </div>
               </div>
 
               <Divider style={{ margin: 0 }} />
-
               <div>
-                <Space
-                  direction="vertical"
-                  size={4}
-                  style={{ width: "100%" }}
-                >
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    Ngày tạo:{" "}
-                    {dayjs(selectedCoupon.created_at).format(
-                      "HH:mm - DD/MM/YYYY"
-                    )}
-                  </Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    Cập nhật:{" "}
-                    {dayjs(selectedCoupon.updated_at).format(
-                      "HH:mm - DD/MM/YYYY"
-                    )}
-                  </Text>
-                </Space>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Ngày tạo: {dayjs(selectedCoupon.created_at).format("HH:mm - DD/MM/YYYY")}
+                </Text>
+                <br />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Cập nhật: {dayjs(selectedCoupon.updated_at).format("HH:mm - DD/MM/YYYY")}
+                </Text>
               </div>
             </Space>
 
@@ -811,19 +824,19 @@ const CouponList: React.FC = () => {
                 icon={<EditOutlined />}
                 onClick={() => {
                   setDrawerVisible(false);
-                  openModal(selectedCoupon);
+                  handleOpenModal(selectedCoupon);
                 }}
               >
                 Chỉnh sửa
               </Button>
               <Popconfirm
                 title="Xác nhận xóa"
-                description="Bạn có chắc muốn xóa coupon này?"
+                description={`Bạn có chắc muốn xóa coupon "${selectedCoupon.code}"?`}
                 okText="Xóa"
                 cancelText="Hủy"
                 okButtonProps={{ danger: true }}
                 onConfirm={() => {
-                  handleDelete(selectedCoupon.id);
+                  handleDeleteCoupon(selectedCoupon.id);
                   setDrawerVisible(false);
                 }}
               >
