@@ -9,6 +9,7 @@ import {
   Spin,
   Tag,
   Alert,
+  message,
 } from "antd";
 import {
   CheckCircleOutlined,
@@ -68,117 +69,181 @@ const PaymentSuccessPage: React.FC = () => {
   const [orderStatus, setOrderStatus] = useState<OrderStatus | null>(null);
   const [vnpayData, setVnpayData] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const responseCode = searchParams.get("vnp_ResponseCode");
-    const txnRef = searchParams.get("vnp_TxnRef") || "";
-    const amount = searchParams.get("vnp_Amount");
-    const orderInfo = searchParams.get("vnp_OrderInfo");
-    const transactionNo = searchParams.get("vnp_TransactionNo");
-    const bankCode = searchParams.get("vnp_BankCode");
+  // File: Success.tsx - Trong useEffect
 
-    // Lưu dữ liệu VNPay
-    setVnpayData({
-      responseCode: responseCode || "",
-      txnRef,
-      amount: amount || "",
-      orderInfo: orderInfo || "",
-      transactionNo: transactionNo || "",
-      bankCode: bankCode || "",
-    });
+  // File: Success.tsx - useEffect
 
-    // Tách orderId đúng
-    const orderId =
-      txnRef.split("_")[0] ||
-      searchParams.get("order_id") ||
-      localStorage.getItem("pending_order_id");
+// File: Success.tsx
 
-    if (orderId) {
-      checkOrderStatus(orderId);
-      localStorage.removeItem("pending_order_id");
-      localStorage.removeItem("selectedCartItems");
-    } else {
-      setLoading(false);
-    }
-  }, []);
+useEffect(() => {
+  const searchParams = new URLSearchParams(window.location.search);
+  
+  // ✅ 1. Check error từ backend
+  const error = searchParams.get("error");
+  if (error) {
+    setLoading(false);
+    const errorMessages: Record<string, string> = {
+      invalid_signature: "Xác thực thanh toán không hợp lệ",
+      order_not_found: "Không tìm thấy đơn hàng",
+      system_error: "Lỗi hệ thống, vui lòng liên hệ hỗ trợ",
+    };
+    message.error(errorMessages[error] || "Có lỗi xảy ra");
+    return;
+  }
 
-  const checkOrderStatus = async (orderId: string) => {
+  // ✅ 2. Parse VNPay data từ URL
+  const responseCode = searchParams.get("vnp_ResponseCode");
+  const txnRef = searchParams.get("vnp_TxnRef") || "";
+  const amount = searchParams.get("vnp_Amount");
+  const orderInfo = searchParams.get("vnp_OrderInfo");
+  const transactionNo = searchParams.get("vnp_TransactionNo");
+  const bankCode = searchParams.get("vnp_BankCode");
+
+  // ✅ 3. LƯU VÀO STATE
+  setVnpayData({
+    responseCode: responseCode || "",
+    txnRef,
+    amount: amount || "",
+    orderInfo: orderInfo || "",
+    transactionNo: transactionNo || "",
+    bankCode: bankCode || "",
+  });
+
+  // ✅ 4. Tách orderId
+  const orderId =
+    txnRef.split("_")[0] ||
+    searchParams.get("order_id") ||
+    localStorage.getItem("pending_order_id");
+
+  if (orderId) {
+    checkOrderStatus(orderId);
+    localStorage.removeItem("pending_order_id");
+    localStorage.removeItem("selectedCartItems");
+  } else {
+    setLoading(false);
+  }
+}, []);
+
+// ✅ IMPROVED: Giảm retry time và cải thiện logic
+const checkOrderStatus = async (orderId: string, maxRetries = 3) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
       const res = await fetch(`${API_URL}/orders/${orderId}/payment-status`, {
         headers: { Authorization: `Bearer ${getToken()}` },
+        signal: controller.signal,
       });
 
-      if (!res.ok) {
-        console.warn("API trả về lỗi:", res.status);
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          setOrderStatus(json.data);
+          setLoading(false);
+          return; // ✅ Success, thoát ngay
+        }
+      }
+
+      // ❌ Response không ok hoặc data không hợp lệ
+      if (attempt === maxRetries) {
+        console.warn("Max retries reached, no valid data");
         setOrderStatus(null);
+        setLoading(false);
         return;
       }
 
-      const json = await res.json();
+      // ⏳ Retry với delay ngắn hơn (500ms thay vì 2s)
+      console.log(`Retry ${attempt}/${maxRetries}...`);
+      await new Promise(r => setTimeout(r, 500)); // ✅ Chỉ 500ms
 
-      if (json.success && json.data) {
-        setOrderStatus(json.data);
-      } else {
-        console.warn("Dữ liệu không hợp lệ:", json);
+    } catch (err: any) {
+      console.error(`Attempt ${attempt} failed:`, err.message);
+
+      if (attempt === maxRetries) {
+        message.error("Không thể kiểm tra trạng thái đơn hàng");
+        setOrderStatus(null);
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      console.error("Error checking order status:", err);
-    } finally {
-      setLoading(false);
+
+      // ⏳ Retry nhanh hơn
+      await new Promise(r => setTimeout(r, 500));
     }
-  };
-
-  if (loading) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "60vh",
-          background: "#f5f5f5",
-        }}
-      >
-        <Spin spinning tip="Đang kiểm tra trạng thái thanh toán..." size="large">
-          <div style={{ height: 100 }} />
-        </Spin>
-      </div>
-    );
   }
+};
 
-  // ✅ LOGIC MỚI: Ưu tiên kiểm tra từ database trước
+  // File: Success.tsx - Thay loading screen
+
+if (loading) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        minHeight: "60vh",
+        background: "#f5f5f5",
+      }}
+    >
+      <Space direction="vertical" align="center" size="large">
+        <Spin size="large" />
+        <div>
+          <Text strong style={{ fontSize: 16 }}>
+            Đang kiểm tra trạng thái thanh toán...
+          </Text>
+          <br />
+          <Text type="secondary" style={{ fontSize: 14 }}>
+            Vui lòng chờ trong giây lát
+          </Text>
+        </div>
+        {/* ✅ Thêm progress dots để user biết hệ thống đang hoạt động */}
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          Thời gian chờ: {Math.floor(Date.now() / 1000) % 10}s
+        </Text>
+      </Space>
+    </div>
+  );
+}
+
+  // File: PaymentSuccessPage.tsx
+
   const isCOD = orderStatus?.payment_method === "cod";
-  const isVNPayPayment = !!vnpayData.responseCode;
-  const isVNPaySuccess = vnpayData.responseCode === "00";
-  const isVNPayCancelled = vnpayData.responseCode === "24";
-  
-  // Kiểm tra từ database
+  const vnpayResponseCode = vnpayData.responseCode;
+
+  // Xác định trạng thái từ DB
   const isPaidFromDB = orderStatus?.payment_status === "paid";
-  const isPendingFromDB = orderStatus?.payment_status === "pending";
   const isFailedFromDB = orderStatus?.payment_status === "failed";
-  
-  // Logic cuối cùng
+  const isPendingFromDB = orderStatus?.payment_status === "pending" || orderStatus?.payment_status === "unpaid";
+
+  // Logic tổng hợp
   let isSuccess = false;
   let isFailed = false;
   let isCancelled = false;
 
   if (!orderStatus) {
-    // Không có thông tin đơn hàng
-    isFailed = true;
+    isFailed = true; // Không tìm thấy order
+  } else if (isPaidFromDB) {
+    isSuccess = true; // ✅ Đã thanh toán (tin DB là chính)
   } else if (isCOD) {
-    // COD: Chỉ cần order tồn tại và không failed là thành công
-    isSuccess = !isFailedFromDB;
+    isSuccess = !isFailedFromDB; // COD: success nếu không failed
     isFailed = isFailedFromDB;
-  } else if (isVNPayPayment) {
-    // VNPay: Kiểm tra cả response code và DB
-    isSuccess = isPaidFromDB || isVNPaySuccess;
-    isCancelled = isVNPayCancelled;
-    isFailed = isFailedFromDB || (!isVNPaySuccess && !isVNPayCancelled);
+  } else if (vnpayResponseCode === "00") {
+    isSuccess = true; // VNPay trả về success
+  } else if (vnpayResponseCode === "24") {
+    isCancelled = true; // User hủy
+  } else if (vnpayResponseCode) {
+    isFailed = true; // Các mã lỗi VNPay khác
   } else {
-    // Trường hợp khác: dựa vào DB
-    isSuccess = isPaidFromDB || isPendingFromDB;
+    // Không có response code, dựa vào DB
+    isSuccess = isPendingFromDB;
     isFailed = isFailedFromDB;
   }
+
+  // ✅ Thêm biến này để dùng trong render
+  const isVNPaySuccess = vnpayResponseCode === "00";
 
   const getStatusIcon = () => {
     if (isSuccess) return <CheckCircleOutlined />;
@@ -296,7 +361,7 @@ const PaymentSuccessPage: React.FC = () => {
           </Card>
         )}
 
-        {vnpayData.transactionNo && !isCOD && (
+        {/* {vnpayData.transactionNo && !isCOD && (
           <Card title="Chi tiết giao dịch VNPay" style={{ marginTop: 16 }} size="small">
             <Descriptions column={1} size="small">
               <Descriptions.Item label="Mã giao dịch">
@@ -315,7 +380,7 @@ const PaymentSuccessPage: React.FC = () => {
               </Descriptions.Item>
             </Descriptions>
           </Card>
-        )}
+        )} */}
 
         {!isSuccess && !isCOD && vnpayData.responseCode && (
           <Alert

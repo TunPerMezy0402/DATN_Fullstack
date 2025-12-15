@@ -461,35 +461,65 @@ const ProductDetail: React.FC = () => {
     return true;
   };
 
-  // Action Handlers
-  const handleAddToCart = async () => {
-    if (!validateSelection()) return;
-    if (!validateQuantity(quantity)) return;
+const handleAddToCart = async () => {
+  // Kiểm tra đăng nhập trước
+  if (!checkAuthentication(navigate)) return;
+  
+  if (!validateSelection()) return;
+  if (!validateQuantity(quantity)) return;
 
-    try {
-      const response = await axios.post(
-        `${API_URL}/cart/add`,
-        {
-          variant_id: activeVariant?.id,
-          quantity: quantity,
+  try {
+    const response = await axios.post(
+      `${API_URL}/cart/add`,
+      {
+        variant_id: activeVariant?.id,
+        quantity: quantity,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${getAuthToken()}`,
+          "Content-Type": "application/json",
         },
-        {
-          headers: {
-            Authorization: `Bearer ${getAuthToken()}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      message.success(response.data.message || "Đã thêm vào giỏ hàng!");
-    } catch (error) {
-      if (axios.isAxiosError(error)) {
-        message.error(error.response?.data?.message || "Không thể thêm vào giỏ hàng");
-      } else {
-        message.error("Lỗi không xác định");
       }
+    );
+
+    message.success(response.data.message || "Đã thêm vào giỏ hàng!");
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      if (error.response?.status === 401) {
+        // Token hết hạn hoặc không hợp lệ
+        message.error("Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại");
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("token");
+        navigate("/login");
+      } else {
+        message.error(error.response?.data?.message || "Không thể thêm vào giỏ hàng");
+      }
+    } else {
+      message.error("Lỗi không xác định");
     }
-  };
+  }
+};
+
+const checkAuthentication = (navigate: any): boolean => {
+  const token = getAuthToken();
+
+  if (!token) {
+    message.warning("Vui lòng đăng nhập hoặc đăng ký để tiếp tục", 3);
+
+    localStorage.setItem("redirectAfterLogin", window.location.pathname);
+
+    // Chờ 3 giây rồi mới chuyển trang
+    setTimeout(() => {
+      navigate("/login"); // hoặc "/auth/login"
+    }, 3000);
+
+    return false;
+  }
+
+  return true;
+};
+
 
   const handleBuyNow = () => {
     if (!validateSelection()) return;

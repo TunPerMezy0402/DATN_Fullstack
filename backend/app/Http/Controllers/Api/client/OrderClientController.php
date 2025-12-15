@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use App\Models\{
     Order,
@@ -26,14 +27,6 @@ use App\Models\{
 use App\Mail\OrderConfirmation;
 class OrderClientController extends Controller
 {
-    // ============================================================
-    //                     HELPER METHODS
-    // ============================================================
-
-    /**
-     * 💰 Tính phí ship dựa trên tổng tiền đơn hàng
-     * Logic: >= 500k → freeship, < 500k → 30k
-     */
     private function calculateShippingFee(float $amount): float
     {
         return $amount >= 500000 ? 0 : 30000;
@@ -73,47 +66,6 @@ class OrderClientController extends Controller
         return $variantsToDeduct;
     }
 
-    /**
-     * 📊 Tính toán chi tiết hoàn tiền
-     */
-    private function calculateRefundDetails(Order $order, array $returnedItems): array
-    {
-        $originalAmount = floatval($order->total_amount);
-        $originalDiscount = floatval($order->discount_amount ?? 0);
-        $oldShippingFee = floatval($order->shipping->shipping_fee ?? 0);
-
-        // Tổng tiền hàng hoàn
-        $totalReturnAmount = array_sum(array_column($returnedItems, 'total'));
-
-        $returnRatio = $originalAmount > 0 ? ($totalReturnAmount / $originalAmount) : 0;
-
-        // Giảm giá được hoàn lại (theo tỷ lệ)
-        $refundedDiscount = round($originalDiscount * $returnRatio, 2);
-
-        // Số tiền còn lại (dùng cho báo cáo, không dùng để tính ship)
-        $remainingAmount = $originalAmount - $totalReturnAmount;
-
-        // ❌ KHÔNG TÍNH LẠI SHIP — THEO CÁCH 1
-        $newShippingFee = $oldShippingFee;
-        $shippingDiff = 0;
-        $shippingExplanation = "Theo chính sách: không hoàn hoặc thay đổi phí ship khi khách trả hàng";
-
-        // ✅ CÔNG THỨC TÍNH TIỀN HOÀN (KHÔNG ĐỤNG VÀO SHIP)
-        $estimatedRefund = $totalReturnAmount - $refundedDiscount;
-
-        $estimatedRefund = max(0, round($estimatedRefund, 2));
-
-        return [
-            'total_return_amount' => $totalReturnAmount,
-            'refunded_discount' => $refundedDiscount,
-            'remaining_amount' => $remainingAmount,
-            'old_shipping_fee' => $oldShippingFee,
-            'new_shipping_fee' => $newShippingFee, // không đổi
-            'shipping_diff' => $shippingDiff,       // luôn = 0
-            'shipping_explanation' => $shippingExplanation,
-            'estimated_refund' => $estimatedRefund,
-        ];
-    }
 
 
     // ============================================================
@@ -311,64 +263,126 @@ class OrderClientController extends Controller
             return response()->json(['message' => 'Vui lòng đăng nhập'], 401);
         }
 
+        // ============================================================
+        // 1. VALIDATE INPUT
+        // ============================================================
         $validated = $request->validate([
             'payment_method' => 'required|in:cod,vnpay',
-            'note' => 'nullable|string',
+            'note' => 'nullable|string|max:1000',
+
+            // Items
             'items' => 'required|array|min:1',
-            'items.*.product_id' => 'required|integer',
-            'items.*.variant_id' => 'nullable|integer',
+            'items.*.product_id' => 'required|integer|exists:products,id',
+            'items.*.variant_id' => 'nullable|integer|exists:product_variants,id',
             'items.*.product_name' => 'required|string',
             'items.*.product_image' => 'nullable|string',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.price' => 'required|numeric|min:0',
             'items.*.size' => 'nullable|string',
             'items.*.color' => 'nullable|string',
+            'items.*.sku' => 'nullable|string',
+
+            // Pricing
             'total_amount' => 'required|numeric|min:0',
             'discount_amount' => 'nullable|numeric|min:0',
             'final_amount' => 'required|numeric|min:0',
-            'coupon_id' => 'nullable|integer',
-            'shipping_name' => 'required|string',
-            'shipping_phone' => 'required|string',
+            'shipping_fee' => 'nullable|numeric|min:0',
+            'coupon_id' => 'nullable|integer|exists:coupons,id',
+            'coupon_code' => 'nullable|string',
+
+            // Shipping info
+            'shipping_name' => 'required|string|max:255',
+            'shipping_phone' => 'required|string|regex:/^\d{10}$/',
             'city' => 'required|string',
             'district' => 'required|string',
             'commune' => 'required|string',
             'village' => 'nullable|string',
-            'notes' => 'nullable|string',
+            'notes' => 'nullable|string|max:500',
         ]);
 
         DB::beginTransaction();
         try {
-            // 1. Validate coupon
+            // 2. VALIDATE & LOCK COUPON
             $coupon = null;
+            $appliedDiscount = $validated['discount_amount'] ?? 0;
+
             if (!empty($validated['coupon_id'])) {
                 $coupon = Coupon::lockForUpdate()->find($validated['coupon_id']);
 
-                if (!$coupon || !$coupon->is_active) {
-                    return response()->json(['success' => false, 'message' => 'Mã giảm giá không hợp lệ'], 400);
+                if (!$coupon) {
+                    throw new \Exception('Mã giảm giá không tồn tại');
+                }
+
+                if (!$coupon->is_active) {
+                    throw new \Exception('Mã giảm giá đã bị vô hiệu hóa');
                 }
 
                 if ($coupon->end_date && now()->gt($coupon->end_date)) {
-                    return response()->json(['success' => false, 'message' => 'Mã giảm giá đã hết hạn'], 400);
+                    throw new \Exception('Mã giảm giá đã hết hạn');
                 }
 
                 if (isset($coupon->usage_limit) && $coupon->used_count >= $coupon->usage_limit) {
-                    return response()->json(['success' => false, 'message' => 'Mã giảm giá đã hết lượt sử dụng'], 400);
+                    throw new \Exception('Mã giảm giá đã hết lượt sử dụng');
                 }
 
                 if ($validated['total_amount'] < $coupon->min_purchase) {
-                    return response()->json(['success' => false, 'message' => "Đơn hàng tối thiểu " . number_format($coupon->min_purchase, 0) . "₫"], 400);
+                    throw new \Exception("Đơn hàng tối thiểu " . number_format($coupon->min_purchase, 0, ',', '.') . "₫ để áp dụng mã này");
+                }
+
+                // Verify discount amount is correct
+                $calculatedDiscount = 0;
+                if ($coupon->discount_type === 'percent') {
+                    $calculatedDiscount = min(
+                        ($coupon->discount_value / 100) * $validated['total_amount'],
+                        $coupon->max_discount
+                    );
+                } else {
+                    $calculatedDiscount = min($coupon->discount_value, $coupon->max_discount);
+                }
+
+                if (abs($appliedDiscount - $calculatedDiscount) > 1) {
+                    Log::warning('Discount mismatch', [
+                        'applied' => $appliedDiscount,
+                        'calculated' => $calculatedDiscount,
+                        'coupon_id' => $coupon->id,
+                    ]);
                 }
             }
 
-            // 2. Validate & lock stock
-            $variantsToDeduct = $this->validateAndLockStock($validated['items']);
+            $variantsToDeduct = [];
 
-            // 3. Tạo order
+            foreach ($validated['items'] as $item) {
+                if (!empty($item['variant_id'])) {
+                    $variant = ProductVariant::lockForUpdate()->find($item['variant_id']);
+
+                    if (!$variant) {
+                        throw new \Exception("Sản phẩm '{$item['product_name']}' không tồn tại");
+                    }
+
+                    // Check availability
+                    if (isset($variant->is_available) && $variant->is_available != 1) {
+                        throw new \Exception("Sản phẩm '{$item['product_name']}' hiện không khả dụng");
+                    }
+
+                    // Check stock
+                    if ($variant->stock_quantity < $item['quantity']) {
+                        throw new \Exception("Sản phẩm '{$item['product_name']}' chỉ còn {$variant->stock_quantity} sản phẩm trong kho");
+                    }
+
+                    $variantsToDeduct[] = [
+                        'variant' => $variant,
+                        'quantity' => $item['quantity'],
+                        'product_name' => $item['product_name'],
+                    ];
+                }
+            }
+
+            // 4. TẠO ORDER
             $order = Order::create([
                 'user_id' => $user->id,
                 'sku' => strtoupper(substr(uniqid('ODR'), -9)),
                 'total_amount' => $validated['total_amount'],
-                'discount_amount' => $validated['discount_amount'] ?? 0,
+                'discount_amount' => $appliedDiscount,
                 'final_amount' => $validated['final_amount'],
                 'coupon_id' => $validated['coupon_id'] ?? null,
                 'payment_status' => 'unpaid',
@@ -376,7 +390,17 @@ class OrderClientController extends Controller
                 'note' => $validated['note'] ?? null,
             ]);
 
-            // 4. Tạo order items
+            Log::info('📦 Order created', [
+                'order_id' => $order->id,
+                'sku' => $order->sku,
+                'user_id' => $user->id,
+                'payment_method' => $validated['payment_method'],
+                'final_amount' => $validated['final_amount'],
+            ]);
+
+            // ============================================================
+            // 5. TẠO ORDER ITEMS
+            // ============================================================
             foreach ($validated['items'] as $item) {
                 OrderItem::create([
                     'order_id' => $order->id,
@@ -388,33 +412,65 @@ class OrderClientController extends Controller
                     'price' => $item['price'],
                     'size' => $item['size'] ?? null,
                     'color' => $item['color'] ?? null,
+                    'sku' => $item['sku'] ?? null,
                 ]);
             }
 
-            // 5. Trừ stock
-            foreach ($variantsToDeduct as $data) {
-                $oldStock = $data['variant']->stock_quantity;
-                $data['variant']->decrement('stock_quantity', $data['quantity']);
-                $data['variant']->increment('quantity_sold', $data['quantity']);
+            Log::info('📝 Order items created', [
+                'order_id' => $order->id,
+                'items_count' => count($validated['items']),
+            ]);
 
-                Log::info("Stock deducted", [
-                    'variant_id' => $data['variant']->id,
-                    'old_stock' => $oldStock,
-                    'new_stock' => $data['variant']->stock_quantity,
-                    'quantity_sold' => $data['quantity'],
+            // ============================================================
+            // 6. XỬ LÝ STOCK
+            // ============================================================
+            if ($validated['payment_method'] === 'cod') {
+                // ✅ COD: TRỪ STOCK NGAY
+                foreach ($variantsToDeduct as $data) {
+                    $oldStock = $data['variant']->stock_quantity;
+
+                    $data['variant']->decrement('stock_quantity', $data['quantity']);
+                    $data['variant']->increment('quantity_sold', $data['quantity']);
+
+                    Log::info('📉 Stock deducted (COD)', [
+                        'variant_id' => $data['variant']->id,
+                        'product_name' => $data['product_name'],
+                        'old_stock' => $oldStock,
+                        'new_stock' => $data['variant']->stock_quantity,
+                        'quantity_sold' => $data['quantity'],
+                        'order_id' => $order->id,
+                    ]);
+                }
+            } else {
+                // ✅ VNPAY: GIỮ STOCK (đã lock), CHỜ THANH TOÁN THÀNH CÔNG
+                Log::info('⏳ Stock locked (VNPay pending payment)', [
                     'order_id' => $order->id,
+                    'variants_count' => count($variantsToDeduct),
+                    'note' => 'Stock will be deducted after successful payment in IPN/Return handler',
                 ]);
             }
 
-            // 6. Tăng coupon used_count
+            // ============================================================
+            // 7. TĂNG COUPON USAGE COUNT
+            // ============================================================
             if ($coupon && isset($coupon->usage_limit)) {
+                $oldUsedCount = $coupon->used_count;
                 $coupon->increment('used_count');
+
+                Log::info('🎟️ Coupon used_count incremented', [
+                    'coupon_id' => $coupon->id,
+                    'code' => $coupon->code,
+                    'old_used_count' => $oldUsedCount,
+                    'new_used_count' => $coupon->used_count,
+                    'usage_limit' => $coupon->usage_limit,
+                ]);
             }
 
-            // 7. Tính phí ship
-            $shippingFee = $this->calculateShippingFee($validated['total_amount']);
+            // ============================================================
+            // 8. TẠO SHIPPING
+            // ============================================================
+            $shippingFee = $validated['shipping_fee'] ?? $this->calculateShippingFee($validated['total_amount']);
 
-            // 8. Tạo shipping
             $shipping = Shipping::create([
                 'order_id' => $order->id,
                 'sku' => strtoupper(Str::random(9)),
@@ -429,7 +485,7 @@ class OrderClientController extends Controller
                 'shipping_fee' => $shippingFee,
             ]);
 
-            // Lưu shipping log
+            // Create shipping log
             ShippingLog::create([
                 'shipping_id' => $shipping->id,
                 'old_status' => null,
@@ -437,46 +493,110 @@ class OrderClientController extends Controller
                 'created_at' => now(),
             ]);
 
-            // 9. Xóa cart items đã mua
-            $variantIds = collect($validated['items'])->pluck('variant_id')->filter()->unique();
+            Log::info('🚚 Shipping created', [
+                'shipping_id' => $shipping->id,
+                'order_id' => $order->id,
+                'shipping_fee' => $shippingFee,
+            ]);
+
+            // ============================================================
+            // 9. XÓA CART ITEMS ĐÃ MUA
+            // ============================================================
+            $variantIds = collect($validated['items'])
+                ->pluck('variant_id')
+                ->filter()
+                ->unique();
+
             if ($variantIds->isNotEmpty()) {
                 $cart = Cart::where('user_id', $user->id)->first();
+
                 if ($cart) {
-                    CartItem::where('cart_id', $cart->id)->whereIn('variant_id', $variantIds)->delete();
+                    $deletedCount = CartItem::where('cart_id', $cart->id)
+                        ->whereIn('variant_id', $variantIds)
+                        ->delete();
+
+                    Log::info('🛒 Cart items cleared', [
+                        'user_id' => $user->id,
+                        'deleted_count' => $deletedCount,
+                        'variant_ids' => $variantIds->toArray(),
+                    ]);
                 }
             }
 
+            // ============================================================
+            // 10. COMMIT TRANSACTION
+            // ============================================================
             DB::commit();
 
+            Log::info('✅ Order transaction committed', [
+                'order_id' => $order->id,
+                'payment_method' => $validated['payment_method'],
+            ]);
+
+            // ============================================================
+            // 11. LOAD RELATIONSHIPS
+            // ============================================================
             $order->load(['items', 'user', 'shipping', 'paymentTransaction']);
 
             // ============================================================
-            // ✅ GỬI EMAIL XÁC NHẬN ĐẶT HÀNG
+            // 12. GỬI EMAIL XÁC NHẬN (NON-BLOCKING)
             // ============================================================
             try {
                 Mail::to($user->email)->send(new OrderConfirmation($order));
-                Log::info('Order confirmation email sent', ['order_id' => $order->id, 'email' => $user->email]);
+
+                Log::info('📧 Order confirmation email sent', [
+                    'order_id' => $order->id,
+                    'email' => $user->email,
+                ]);
             } catch (\Exception $e) {
-                Log::error('Failed to send order confirmation email', [
+                // ⚠️ Email fail không rollback transaction
+                Log::error('❌ Failed to send order confirmation email', [
                     'order_id' => $order->id,
                     'email' => $user->email,
                     'error' => $e->getMessage(),
                 ]);
-                // ✅ Không rollback, chỉ log warning vì email không quan trọng bằng order
             }
 
+            // ============================================================
+            // 13. RESPONSE
+            // ============================================================
             return response()->json([
                 'success' => true,
-                'message' => 'Đặt hàng thành công',
-                'data' => $order
+                'message' => $validated['payment_method'] === 'cod'
+                    ? 'Đặt hàng thành công! Bạn sẽ thanh toán khi nhận hàng.'
+                    : 'Đặt hàng thành công! Vui lòng hoàn tất thanh toán.',
+                'data' => $order,
             ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+
+            Log::error('❌ Order validation error', [
+                'user_id' => $user->id,
+                'errors' => $e->errors(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Dữ liệu không hợp lệ',
+                'errors' => $e->errors(),
+            ], 422);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Order store error: ' . $e->getMessage());
+
+            Log::error('❌ Order creation failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
+                'error' => config('app.debug') ? $e->getMessage() : 'Đã xảy ra lỗi khi tạo đơn hàng',
             ], 500);
         }
     }
@@ -489,47 +609,41 @@ class OrderClientController extends Controller
         }
 
         try {
-            $order = Order::with('items')->where('user_id', $user->id)->find($id);
+            $order = Order::where('user_id', $user->id)->find($id);
 
             if (!$order) {
                 return response()->json(['message' => 'Không tìm thấy đơn hàng'], 404);
             }
 
             $returnRequests = ReturnRequest::where('order_id', $id)
-                ->with([
-                    'items' => function ($query) {
-                        $query->select('id', 'return_request_id', 'order_item_id', 'variant_id', 'quantity', 'reason', 'refund_amount', 'status', 'admin_response'); // ✅ THÊM admin_response
-                    }
-                ])
-                ->select(
-                    'id',
-                    'order_id',
-                    'status',
-                    'total_return_amount',
-                    'refunded_discount',
-                    'old_shipping_fee',
-                    'new_shipping_fee',
-                    'shipping_diff',
-                    'estimated_refund',
-                    'remaining_amount',
-                    'requested_at'
-                )
-                ->orderBy('requested_at', 'desc')  // ✅ ĐỔI TỪ created_at THÀNH requested_at
+                ->with(['items.orderItem', 'order.items', 'order.shipping'])
+                ->orderBy('created_at', 'desc')
                 ->get()
-                ->map(function ($returnRequest) use ($order) {
+                ->map(function ($returnRequest) {
                     return [
                         'id' => $returnRequest->id,
+                        'order_id' => $returnRequest->order_id,
                         'status' => $returnRequest->status,
-                        'requested_at' => $returnRequest->requested_at,
-                        'total_return_amount' => floatval($returnRequest->total_return_amount),
-                        'refunded_discount' => floatval($returnRequest->refunded_discount),
-                        'estimated_refund' => floatval($returnRequest->estimated_refund),
-                        'remaining_amount' => floatval($returnRequest->remaining_amount),
-                        'old_shipping_fee' => floatval($returnRequest->old_shipping_fee),
-                        'new_shipping_fee' => floatval($returnRequest->new_shipping_fee),
-                        'shipping_diff' => floatval($returnRequest->shipping_diff),
-                        'items' => $returnRequest->items->map(function ($item) use ($order) {
-                            $orderItem = $order->items->firstWhere('id', $item->order_item_id);
+                        'is_full_return' => $returnRequest->isFullReturn(),
+                        'created_at' => $returnRequest->created_at->toISOString(),
+                        'items_count' => $returnRequest->getTotalItemsCount(),
+
+                        // ✅ Chuyển sang string để khớp với TypeScript interface
+                        'total_return_amount' => (string) $returnRequest->getTotalReturnAmount(),
+                        'estimated_refund_min' => (string) floatval($returnRequest->estimated_refund_min),
+                        'estimated_refund_max' => (string) floatval($returnRequest->estimated_refund_max),
+                        'estimated_refund' => (string) floatval($returnRequest->estimated_refund),
+                        'refund_explanation' => $returnRequest->getRefundExplanation(),
+
+                        // ✅ Thông tin refund_30k
+                        'refund_30k' => $returnRequest->refund_30k,
+                        'refund_30k_label' => $returnRequest->getRefund30kLabel(),
+
+                        'admin_note' => $returnRequest->admin_note,
+
+                        // Chi tiết items
+                        'items' => $returnRequest->items->map(function ($item) {
+                            $orderItem = $item->orderItem;
 
                             return [
                                 'id' => $item->id,
@@ -543,14 +657,18 @@ class OrderClientController extends Controller
                                 'reason' => $item->reason,
                                 'refund_amount' => floatval($item->refund_amount),
                                 'status' => $item->status,
-                                'admin_response' => $item->admin_response, // ✅ THÊM DÒNG NÀY
+                                'admin_response' => $item->admin_response,
+                                'images' => $item->images ?? [],
                             ];
                         }),
+
+                        // ✅ Refund scenarios: Hiển thị có/không hoàn 30k
+                        'refund_scenarios' => $returnRequest->calculateBothScenarios(),
                     ];
                 });
 
             return response()->json([
-                'message' => 'Danh sách hoàn hàng',
+                'message' => 'Danh sách yêu cầu hoàn hàng',
                 'data' => $returnRequests
             ], 200);
 
@@ -563,9 +681,9 @@ class OrderClientController extends Controller
         }
     }
 
-    /**
-     * 📝 Lấy lịch sử hủy/hoàn hàng
-     */
+
+
+
     public function cancelLogs(Request $request, $id)
     {
         $user = $request->user();
@@ -598,10 +716,6 @@ class OrderClientController extends Controller
             ], 500);
         }
     }
-
-    /**
-     * 🔄 Hoàn hàng (Client tạo yêu cầu)
-     */
     public function return(Request $request, $id)
     {
         $user = $request->user();
@@ -615,56 +729,52 @@ class OrderClientController extends Controller
             'items.*.variant_id' => 'required|integer|exists:product_variants,id',
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.reason' => 'required|string|max:500',
+            'items.*.images' => 'nullable|array|max:5',
+            'items.*.images.*' => 'string', // Base64 images
         ]);
 
         DB::beginTransaction();
         try {
+
             $order = Order::with(['items', 'shipping'])->where('user_id', $user->id)->find($id);
 
             if (!$order || !$order->shipping) {
                 return response()->json(['message' => 'Không tìm thấy đơn hàng'], 404);
             }
 
-            if ($order->shipping->shipping_status !== 'received') {
-                return response()->json(['message' => 'Chỉ có thể hoàn hàng sau khi đã nhận hàng'], 400);
-            }
-
-            if (!$order->shipping->canReturn()) {
-                $daysSinceReceived = $order->shipping->received_at
-                    ? now()->diffInDays($order->shipping->received_at)
-                    : null;
-
-                if ($order->shipping->shipping_status !== 'received') {
-                    return response()->json([
-                        'message' => 'Chỉ có thể hoàn hàng sau khi đã nhận hàng'
-                    ], 400);
-                }
-
-                if ($daysSinceReceived && $daysSinceReceived > 7) {
-                    return response()->json([
-                        'message' => "Đã quá thời hạn hoàn hàng (7 ngày). Bạn đã nhận hàng cách đây {$daysSinceReceived} ngày"
-                    ], 400);
-                }
-
+            // ✅ SỬA: Cho phép hoàn hàng khi delivered HOẶC received
+            if (!in_array($order->shipping->shipping_status, ['delivered', 'received'])) {
                 return response()->json([
-                    'message' => 'Không thể hoàn hàng. Kiểm tra trạng thái đơn hàng.'
-                ], 400);
-            }
-            // ✅ Kiểm tra thời hạn hoàn hàng (7 ngày)
-            $daysSinceReceived = now()->diffInDays($order->shipping->received_at);
-            if ($daysSinceReceived > 7) {
-                return response()->json([
-                    'message' => "Đã quá thời hạn hoàn hàng (7 ngày). Bạn đã nhận hàng cách đây {$daysSinceReceived} ngày"
+                    'message' => 'Chỉ có thể hoàn hàng sau khi đã giao hàng'
                 ], 400);
             }
 
+            // ✅ SỬA: Chỉ kiểm tra thời hạn khi đã received
+            if ($order->shipping->shipping_status === 'received') {
+                if (method_exists($order->shipping, 'canReturn') && !$order->shipping->canReturn()) {
+                    $daysSinceReceived = $order->shipping->received_at
+                        ? now()->diffInDays($order->shipping->received_at)
+                        : null;
+
+                    if ($daysSinceReceived && $daysSinceReceived > 7) {
+                        return response()->json([
+                            'message' => "Đã quá thời hạn hoàn hàng (7 ngày). Bạn đã nhận hàng cách đây {$daysSinceReceived} ngày"
+                        ], 400);
+                    }
+
+                    return response()->json([
+                        'message' => 'Không thể hoàn hàng. Kiểm tra trạng thái đơn hàng.'
+                    ], 400);
+                }
+            }
+
+            // ============================================================
+            // 2. VALIDATE CÁC ITEM HOÀN
+            // ============================================================
             $returnedItems = [];
 
-            // ============================================================
-            // VALIDATE CÁC ITEM HOÀN
-            // ============================================================
-
             foreach ($validated['items'] as $itemData) {
+                // Tìm order item
                 $orderItem = OrderItem::where('id', $itemData['order_item_id'])
                     ->where('order_id', $order->id)
                     ->where('variant_id', $itemData['variant_id'])
@@ -676,14 +786,14 @@ class OrderClientController extends Controller
                     ], 400);
                 }
 
-                // Kiểm tra đã review chưa
+                // Kiểm tra có đánh giá chưa (nếu review thì không hoàn)
                 if (method_exists($orderItem, 'hasReview') && $orderItem->hasReview()) {
                     return response()->json([
                         'message' => "Không thể hoàn '{$orderItem->product_name}' vì đã đánh giá"
                     ], 400);
                 }
 
-                // Kiểm tra số lượng có thể hoàn
+                // Lấy số lượng có thể hoàn
                 $availableQty = method_exists($orderItem, 'availableReturnQuantity')
                     ? $orderItem->availableReturnQuantity()
                     : $orderItem->quantity;
@@ -694,7 +804,41 @@ class OrderClientController extends Controller
                     ], 400);
                 }
 
-                $returnAmount = $itemData['quantity'] * floatval($orderItem->price);
+                // Tính số tiền hoàn cho item này (dựa trên giá gốc của item)
+                $refundAmount = $itemData['quantity'] * floatval($orderItem->price);
+
+                // ============================================================
+                // 3. XỬ LÝ UPLOAD ẢNH
+                // ============================================================
+                $uploadedImages = [];
+                if (!empty($itemData['images'])) {
+                    foreach ($itemData['images'] as $base64Image) {
+                        try {
+                            if (preg_match('/^data:image\/(\w+);base64,/', $base64Image, $type)) {
+                                $imageData = substr($base64Image, strpos($base64Image, ',') + 1);
+                                $imageType = strtolower($type[1]);
+
+                                if (!in_array($imageType, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) {
+                                    throw new \Exception('Chỉ chấp nhận định dạng: jpg, png, gif, webp');
+                                }
+
+                                $decodedData = base64_decode($imageData);
+                                if ($decodedData === false) {
+                                    throw new \Exception('Không thể decode ảnh');
+                                }
+
+                                $fileName = 'return_' . time() . '_' . uniqid() . '.' . $imageType;
+                                $path = 'returns/' . $fileName;
+                                Storage::disk('public')->put($path, $decodedData);
+
+                                $uploadedImages[] = 'storage/' . $path;
+                            }
+                        } catch (\Exception $e) {
+                            Log::warning('Upload image error: ' . $e->getMessage());
+                            continue;
+                        }
+                    }
+                }
 
                 $returnedItems[] = [
                     'order_item_id' => $orderItem->id,
@@ -704,40 +848,25 @@ class OrderClientController extends Controller
                     'color' => $orderItem->color,
                     'quantity' => $itemData['quantity'],
                     'price' => floatval($orderItem->price),
-                    'total' => $returnAmount,
+                    'refund_amount' => $refundAmount,
                     'reason' => $itemData['reason'],
+                    'images' => $uploadedImages,
                 ];
             }
 
             // ============================================================
-            // TÍNH TOÁN SỐ TIỀN HOÀN
+            // 4. TẠO RETURN REQUEST (refund_30k mặc định = false)
             // ============================================================
-
-            $refundDetails = $this->calculateRefundDetails($order, $returnedItems);
-
-            // ============================================================
-            // TẠO RETURN REQUEST
-            // ============================================================
-
             $returnRequest = ReturnRequest::create([
                 'order_id' => $order->id,
                 'user_id' => $user->id,
-                'status' => ReturnRequest::STATUS_PENDING,
-                'total_return_amount' => $refundDetails['total_return_amount'],
-                'refunded_discount' => $refundDetails['refunded_discount'],
-                'old_shipping_fee' => $refundDetails['old_shipping_fee'],
-                'new_shipping_fee' => $refundDetails['new_shipping_fee'],
-                'shipping_diff' => $refundDetails['shipping_diff'],
-                'estimated_refund' => $refundDetails['estimated_refund'],
-                'remaining_amount' => $refundDetails['remaining_amount'],
-                'requested_at' => now(),
-                'note' => "Yêu cầu hoàn " . count($validated['items']) . " sản phẩm",
+                'refund_30k' => false,
+                'status' => 'pending',
             ]);
 
             // ============================================================
-            // TẠO RETURN ITEMS
+            // 5. TẠO RETURN ITEMS
             // ============================================================
-
             foreach ($returnedItems as $item) {
                 ReturnItem::create([
                     'return_request_id' => $returnRequest->id,
@@ -746,17 +875,26 @@ class OrderClientController extends Controller
                     'quantity' => $item['quantity'],
                     'status' => ReturnItem::STATUS_PENDING,
                     'reason' => $item['reason'],
-                    'refund_amount' => $item['total'],
+                    'refund_amount' => $item['refund_amount'],
+                    'images' => $item['images'],
                 ]);
             }
 
             // ============================================================
-            // CẬP NHẬT SHIPPING STATUS
+            // 6. TÍNH REFUND
             // ============================================================
+            $returnRequest->load(['items', 'order.items', 'order.shipping']);
+            $returnRequest->recalculateRefund();
+
+            // ============================================================
+            // 7. CẬP NHẬT SHIPPING STATUS
+            // ✅ SỬA: Lưu old_status đúng (delivered hoặc received)
+            // ============================================================
+            $oldStatus = $order->shipping->shipping_status;
 
             ShippingLog::create([
                 'shipping_id' => $order->shipping->id,
-                'old_status' => 'received',
+                'old_status' => $oldStatus,
                 'new_status' => 'return_processing',
                 'created_at' => now(),
             ]);
@@ -764,59 +902,72 @@ class OrderClientController extends Controller
             $order->shipping->update(['shipping_status' => 'return_processing']);
 
             // ============================================================
-            // GHI LOG
+            // 8. GHI LOG
             // ============================================================
-
-            OrderCancelLog::createReturnLog($order->id, array_merge(
-                ['returned_items' => $returnedItems],
-                $refundDetails
-            ));
+            Log::info('Return request created', [
+                'return_request_id' => $returnRequest->id,
+                'order_id' => $order->id,
+                'user_id' => $user->id,
+                'old_shipping_status' => $oldStatus,
+                'items_count' => count($returnedItems),
+                'total_return_amount' => $returnRequest->getTotalReturnAmount(),
+                'is_full_return' => $returnRequest->isFullReturn(),
+                'refund_30k' => false,
+            ]);
 
             DB::commit();
 
             // ============================================================
-            // RESPONSE
+            // 9. LOAD DỮ LIỆU & TÍNH CẢ 2 KỊCH BẢN
             // ============================================================
+            $returnRequest->refresh();
+            $scenarios = $returnRequest->calculateBothScenarios();
+            $refundDetails = $returnRequest->getRefundDetails();
+
+            // ============================================================
+            // 10. RESPONSE
+            // ============================================================
+            $isFullReturn = $returnRequest->isFullReturn();
+            $orderTotal = floatval($order->total_amount);
+            $isFreeship = $orderTotal >= 500000;
+
+            $message = $isFullReturn
+                ? 'Yêu cầu hoàn toàn bộ đơn hàng thành công! Admin sẽ xem xét và phê duyệt.'
+                : 'Yêu cầu hoàn một phần đơn hàng thành công! Admin sẽ xem xét và phê duyệt.';
 
             return response()->json([
-                'message' => 'Yêu cầu hoàn hàng thành công!',
+                'message' => $message,
                 'data' => [
                     'return_request_id' => $returnRequest->id,
+                    'order_id' => $returnRequest->order_id,
+                    'status' => $returnRequest->status,
+                    'is_full_return' => $isFullReturn,
+                    'created_at' => $returnRequest->created_at->toISOString(),
+                    'items_count' => count($returnedItems),
+
+                    'total_return_amount' => (string) $returnRequest->getTotalReturnAmount(),
+                    'estimated_refund_min' => (string) floatval($returnRequest->estimated_refund_min),
+                    'estimated_refund_max' => (string) floatval($returnRequest->estimated_refund_max),
+                    'estimated_refund' => (string) floatval($returnRequest->estimated_refund),
+                    'refund_explanation' => $returnRequest->getRefundExplanation(),
+
+                    'refund_30k' => $returnRequest->refund_30k,
+                    'refund_30k_applicable' => !$isFreeship,
+                    'refund_30k_note' => !$isFreeship
+                        ? 'Admin có thể tích checkbox hoàn 30k ship cho đơn hàng này'
+                        : 'Đơn hàng >= 500k (đã freeship), không áp dụng hoàn 30k',
+
                     'returned_items' => $returnedItems,
-                    'refund_details' => [
-                        'original_order' => [
-                            'total_amount' => floatval($order->total_amount),
-                            'discount_amount' => floatval($order->discount_amount ?? 0),
-                            'shipping_fee' => $refundDetails['old_shipping_fee'],
-                        ],
-                        'return_calculation' => [
-                            'total_return_amount' => $refundDetails['total_return_amount'],
-                            'refunded_discount' => $refundDetails['refunded_discount'],
-                            'remaining_amount' => $refundDetails['remaining_amount'],
-                        ],
-                        'shipping_changes' => [
-                            'old_shipping_fee' => $refundDetails['old_shipping_fee'],
-                            'new_shipping_fee' => $refundDetails['new_shipping_fee'],
-                            'shipping_diff' => $refundDetails['shipping_diff'],
-                            'explanation' => $refundDetails['shipping_explanation'],
-                        ],
-                        'final_refund' => [
-                            'estimated_refund' => $refundDetails['estimated_refund'],
-                            'formula' => 'Tiền hoàn = Tiền hàng hoàn - Giảm giá được hoàn - Phí ship phát sinh',
-                            'calculation' => sprintf(
-                                "%s - %s - (%s) = %s",
-                                number_format($refundDetails['total_return_amount'], 0),
-                                number_format($refundDetails['refunded_discount'], 0),
-                                number_format($refundDetails['shipping_diff'], 0),
-                                number_format($refundDetails['estimated_refund'], 0)
-                            ),
-                        ],
-                    ]
+                    'refund_scenarios' => $scenarios,
+                    'refund_details' => $refundDetails,
                 ]
             ], 200);
+
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Order return error', [
+                'order_id' => $id,
+                'user_id' => $user->id ?? null,
                 'error' => $e->getMessage(),
                 'line' => $e->getLine(),
                 'file' => $e->getFile(),
@@ -829,13 +980,6 @@ class OrderClientController extends Controller
         }
     }
 
-    // ============================================================
-//                     SHIPPING & PAYMENT
-// ============================================================
-
-    /**
-     * ✅ Xác nhận đã nhận hàng
-     */
     public function confirmReceived(Request $request, $id)
     {
         $user = $request->user();

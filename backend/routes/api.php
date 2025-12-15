@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\admin\AddressBookController;
 use App\Http\Controllers\Api\admin\CouponController;
 use App\Http\Controllers\Api\admin\OrderController;
 use App\Http\Controllers\Api\admin\AdminChatController;
+use App\Http\Controllers\Api\admin\AdminProductReviewController;
 
 
 use App\Http\Controllers\Api\Admin\BannerController;
@@ -218,71 +219,129 @@ Route::middleware('auth:sanctum')->group(function () {
 // ==================== ADMIN ROUTES ====================
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
 
-    // Lấy tất cả transactions (có filter)
     Route::get('/transactions', [PaymentController::class, 'get_all_transactions'])
         ->name('admin.transactions.index');
 
 });
 
 Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
-    // Return Request Management - Full Request
+    
     Route::get('orders/{id}/return-requests', [OrderController::class, 'returnRequests']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/approve', [OrderController::class, 'approveReturn']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/reject', [OrderController::class, 'rejectReturn']);
-
-    // ✅ THÊM: Cập nhật trạng thái return request
-    Route::put('orders/{orderId}/return-requests/{returnRequestId}/status', [OrderController::class, 'updateReturnStatus']);
-
-    // Return Request Management - Individual Items
+    Route::get('orders/{orderId}/return-requests/{returnRequestId}', [OrderController::class, 'showReturnRequest']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/items/{itemId}/approve', [OrderController::class, 'approveReturnItem']);
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/items/{itemId}/reject', [OrderController::class, 'rejectReturnItem']);
+    Route::put('orders/{orderId}/return-requests/{returnRequestId}/items/{itemId}/response', [OrderController::class, 'updateReturnItemResponse']);
+    
+    // ✅ THÊM ROUTE NÀY
+    Route::post('orders/{orderId}/return-requests/{returnRequestId}/refund-shipping', [OrderController::class, 'refundShipping']);
 });
 
 
+Route::prefix('admin/product-reviews')
+    // ->middleware(['auth:sanctum', 'admin']) // comment nếu đã có middleware
+    ->name('admin.product-reviews.')
+    ->group(function () {
+        // Thống kê
+        Route::get('/statistics', [ProductReviewController::class, 'statistics'])
+            ->name('statistics');
+        
+        // Bulk actions
+        Route::post('/bulk-approve', [ProductReviewController::class, 'bulkApprove'])
+            ->name('bulk-approve');
+        
+        Route::post('/bulk-reject', [ProductReviewController::class, 'bulkReject'])
+            ->name('bulk-reject');
+        
+        Route::post('/bulk-delete', [ProductReviewController::class, 'bulkDelete'])
+            ->name('bulk-delete');
+        
+        Route::post('/bulk-restore', [ProductReviewController::class, 'bulkRestore'])
+            ->name('bulk-restore');
+        
+        Route::post('/bulk-force-delete', [ProductReviewController::class, 'bulkForceDelete'])
+            ->name('bulk-force-delete');
+    });
 
-// Admin Chat Support
-Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin/chat')->group(function () {
-    Route::get('/', [AdminChatController::class, 'index']);
+
+
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/chat')->group(function () {
+    
+    // ========== DASHBOARD & STATS ==========
     Route::get('/dashboard', [AdminChatController::class, 'dashboard']);
     Route::get('/unread-count', [AdminChatController::class, 'unreadCount']);
+    
+    // ========== SEARCH ==========
     Route::get('/search', [AdminChatController::class, 'search']);
     
-    Route::get('/{id}', [AdminChatController::class, 'show']);
-    Route::get('/{id}/messages', [AdminChatController::class, 'getMessages']);
-    Route::post('/{id}/send', [AdminChatController::class, 'sendMessage']);
-    Route::post('/{id}/close', [AdminChatController::class, 'closeRoom']);
-    Route::post('/{id}/assign-agent', [AdminChatController::class, 'assignAgent']);
+    // ========== AGENTS MANAGEMENT ==========
+    Route::prefix('agents')->group(function () {
+        Route::get('/list', [AdminChatController::class, 'getAgents']);
+        Route::get('/{id}/stats', [AdminChatController::class, 'getAgentStats']);
+    });
     
+    // ========== ROOMS LISTING ==========
+    Route::get('/', [AdminChatController::class, 'index']); 
+    
+    // ========== ROOM OPERATIONS ==========
+    Route::prefix('rooms/{id}')->group(function () {
+        // Get room details
+        Route::get('/', [AdminChatController::class, 'show']);
+        
+        // Get messages
+        Route::get('/messages', [AdminChatController::class, 'getMessages']);
+        
+        // Send message
+        Route::post('/send', [AdminChatController::class, 'sendMessage']);
+        
+        // Close room
+        Route::post('/close', [AdminChatController::class, 'closeRoom']);
+        
+        // Assign agent
+        Route::post('/assign-agent', [AdminChatController::class, 'assignAgent']);
+    });
+    
+    // ========== MESSAGES OPERATIONS ==========
     Route::delete('/messages/{id}', [AdminChatController::class, 'deleteMessage']);
-    
-    // Agents
-    Route::get('/agents/list', [AdminChatController::class, 'getAgents']);
-    Route::get('/agents/{id}/stats', [AdminChatController::class, 'getAgentStats']);
 });
+
 
 
 Route::middleware('auth:sanctum')->group(function () {
-    // ✅ Chat routes
+
     Route::get('/client/chat', [ClientChatController::class, 'index']);
     Route::post('/client/chat/create', [ClientChatController::class, 'createRoom']);
+    Route::get('/client/chat/unread-count', [ClientChatController::class, 'unreadCount']);
+    Route::get('/client/chat/search', [ClientChatController::class, 'search']);
+
     Route::get('/client/chat/{id}', [ClientChatController::class, 'show']);
     Route::get('/client/chat/{id}/messages', [ClientChatController::class, 'getMessages']);
     Route::post('/client/chat/{id}/send', [ClientChatController::class, 'sendMessage']);
     Route::post('/client/chat/{id}/close', [ClientChatController::class, 'closeRoom']);
     Route::post('/client/chat/{id}/rate', [ClientChatController::class, 'rateAgent']);
-    Route::get('/client/chat/unread-count', [ClientChatController::class, 'unreadCount']);
-    Route::get('/client/chat/search', [ClientChatController::class, 'search']);
 
-    // ✅ Image routes
     Route::get('/messages/{messageId}/image-info', [ClientChatController::class, 'getImageInfo']);
     Route::delete('/messages/{messageId}/image', [ClientChatController::class, 'deleteImage']);
 
-    // ✅ Notification routes
     Route::get('/notifications', [ClientChatController::class, 'getNotifications']);
     Route::post('/notifications/{id}/read', [ClientChatController::class, 'markNotificationAsRead']);
     Route::post('/notifications/read-all', [ClientChatController::class, 'markAllNotificationsAsRead']);
 
-    // ✅ Agent routes
     Route::get('/agents/available', [ClientChatController::class, 'getAvailableAgents']);
     Route::get('/agents/{id}/stats', [ClientChatController::class, 'getAgentStats']);
+});
+
+
+Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function () {
+    // Product Reviews Management
+    Route::get('product-reviews', [AdminProductReviewController::class, 'index']);
+    Route::get('product-reviews/stats', [AdminProductReviewController::class, 'stats']);
+    Route::get('product-reviews/{id}', [AdminProductReviewController::class, 'show']);
+    Route::put('product-reviews/{id}', [AdminProductReviewController::class, 'update']);
+    Route::delete('product-reviews/{id}', [AdminProductReviewController::class, 'destroy']);
+    
+    // Bulk actions
+    Route::put('product-reviews/bulk-approve', [AdminProductReviewController::class, 'bulkApprove']);
+    Route::delete('product-reviews/bulk-delete', [AdminProductReviewController::class, 'bulkDelete']);
 });

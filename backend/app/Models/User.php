@@ -84,31 +84,45 @@ class User extends Authenticatable
         return $this->hasMany(ProductReview::class, 'user_id');
     }
 
-    public function supportAgent(): HasOne
-    {
-        return $this->hasOne(SupportAgent::class);
-    }
 
-    // Quan hệ: phòng chat của user
+
+    /**
+     * Các phòng chat của user
+     */
     public function chatRooms(): HasMany
     {
         return $this->hasMany(ChatRoom::class, 'user_id');
     }
 
-    // Quan hệ: tin nhắn gửi bởi user
+    /**
+     * Tin nhắn gửi bởi user
+     */
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class, 'sender_id');
     }
 
-    // Quan hệ: thông báo của user
+    /**
+     * Thông báo của user
+     */
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class);
     }
 
-    public function sendPasswordResetNotification($token)
+    /**
+     * Kiểm tra xem user có phải là support agent không
+     */
+    public function isSupportAgent(): bool
     {
-        $this->notify(new ResetPasswordApiNotification($token));
+        return $this->supportAgent()->exists();
+    }
+
+    /**
+     * Kiểm tra xem user có phải là admin không
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
     }
 }

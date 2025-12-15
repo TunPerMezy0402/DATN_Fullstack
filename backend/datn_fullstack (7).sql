@@ -770,7 +770,7 @@ CREATE TABLE `users` (
 
 INSERT INTO `users` (`id`, `name`, `password`, `role`, `email`, `image`, `phone`, `google_id`, `status`, `email_verified_at`, `remember_token`, `created_at`, `updated_at`, `bank_account_number`, `bank_name`, `bank_account_name`) VALUES
 (34, 'Văn Đình', '$2y$12$SFSJHn1V8OBJ1gXa4JRvSejRt2O5S2WiE8a5Mdmyw74GD5n37Bb7a', 'user', 'tuananhdubai429@gmail.com', NULL, '0395656428', NULL, 'active', NULL, NULL, '2025-10-14 14:25:14', '2025-11-19 10:14:17', '', '', ''),
-(42, 'Văn Đình Tuấn Anh', '$2y$12$dVK4SigKHeRtKMGtpUlPyeFSoTka6iY/Wg41u7K1E89LpR9laPnOG', 'admin', 'tuananhdubai428@gmail.com', 'storage/img/avatar/1762879010_691366227afb5.jpeg', '0395656420', '103143503571716861796', 'inactive', NULL, NULL, '2025-10-15 07:17:30', '2025-11-21 20:16:09', '0395656428', 'MbBank', 'Văn Đình Tuấn Anh'),
+(42, 'Văn Đình Tuấn Anh', '$2y$12$dVK4SigKHeRtKMGtpUlPyeFSoTka6iY/Wg41u7K1E89LpR9laPnOG', 'admin', 'tuananhdubai428@gmail.com', NULL, '0395656420', '103143503571716861796', 'inactive', NULL, NULL, '2025-10-15 07:17:30', '2025-11-21 20:16:09', '0395656428', 'MbBank', 'Văn Đình Tuấn Anh'),
 (48, 'Phương Chi', '$2y$12$Sccm9x4P71cnNw/Wdc3ileBXZhPqUdA.FWbGG1TH7Nf49B/otn.5C', 'user', 'tuananhdubai410@gmail.com', NULL, '0395656410', NULL, 'active', NULL, NULL, '2025-11-21 20:17:23', '2025-11-21 20:17:23', NULL, NULL, NULL);
 
 -- --------------------------------------------------------

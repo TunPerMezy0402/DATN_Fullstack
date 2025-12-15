@@ -6,275 +6,230 @@ use App\Http\Controllers\Controller;
 use App\Models\ChatRoom;
 use App\Models\Message;
 use App\Models\Notification;
-use App\Models\SupportAgent;
-use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class AdminChatController extends Controller
 {
     /**
-     * ========== PHẦN HỖ TRỢ KHÁCH HÀNG (GIỐNG CLIENT) ==========
+     * Dashboard statistics
      */
+    public function dashboard()
+    {
+        try {
+            $stats = [
+                'total_rooms' => ChatRoom::count(),
+                'open_rooms' => ChatRoom::where('status', 'open')->count(),
+                'closed_rooms' => ChatRoom::where('status', 'closed')->count(),
+                'total_messages' => Message::count(),
+                'unread_messages' => Message::whereHas('chatRoom', function ($query) {
+                    $query->where('status', 'open');
+                })
+                    ->where('sender_type', 'user')
+                    ->where('is_read', false)
+                    ->count(),
+            ];
+
+            return $this->successResponse($stats);
+        } catch (\Exception $e) {
+            Log::error('Dashboard error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể tải dữ liệu dashboard', 500);
+        }
+    }
 
     /**
-     * Lấy danh sách phòng chat - Admin xem tất cả
+     * List chat rooms with filters
      */
     public function index(Request $request)
     {
-        $query = ChatRoom::with([
-                'user:id,name,image,email',
-                'agent.user:id,name,image',
-                'messages' => function ($query) {
-                    $query->latest()->limit(1);
+        try {
+            $query = ChatRoom::query()
+                ->with([
+                    'user:id,name,image,email',
+                    'messages' => fn($q) => $q->latest()->limit(1)
+                ])
+                ->withCount([
+                    'messages as unread_count' => fn($q) => $q
+                        ->where('sender_type', 'user')
+                        ->where('is_read', false)
+                ]);
+
+            // Status filter with validation
+            if ($request->filled('status')) {
+                $status = $request->status;
+                if (in_array($status, ['open', 'closed'])) {
+                    $query->where('status', $status);
                 }
-            ])
-            ->withCount([
-                'messages as unread_count' => function ($query) {
-                    $query->where('sender_type', 'user')
-                        ->where('is_read', false);
+            }
+
+            // Search with sanitization
+            if ($request->filled('search')) {
+                $keyword = trim($request->search);
+                if (strlen($keyword) > 0) {
+                    $query->where(function ($q) use ($keyword) {
+                        $q->where('subject', 'like', "%{$keyword}%")
+                            ->orWhereHas('user', fn($q2) => $q2
+                                ->where('name', 'like', "%{$keyword}%")
+                                ->orWhere('email', 'like', "%{$keyword}%"));
+                    });
                 }
-            ]);
+            }
 
-        // Filter theo trạng thái
-        if ($request->has('status') && in_array($request->status, ['open', 'closed'])) {
-            $query->where('status', $request->status);
+            $chatRooms = $query->orderBy('updated_at', 'desc')
+                ->get()
+                ->map(fn($room) => $this->formatChatRoom($room));
+
+            return $this->successResponse($chatRooms);
+        } catch (\Exception $e) {
+            Log::error('List rooms error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể tải danh sách phòng chat', 500);
         }
-
-        // Filter theo agent
-        if ($request->has('agent_id')) {
-            $query->where('assigned_to', $request->agent_id);
-        }
-
-        // Tìm kiếm
-        if ($request->has('search')) {
-            $keyword = $request->search;
-            $query->where(function($q) use ($keyword) {
-                $q->where('subject', 'like', "%{$keyword}%")
-                  ->orWhereHas('user', function($q2) use ($keyword) {
-                      $q2->where('name', 'like', "%{$keyword}%")
-                         ->orWhere('email', 'like', "%{$keyword}%");
-                  });
-            });
-        }
-
-        $chatRooms = $query->orderBy('updated_at', 'desc')
-            ->get()
-            ->map(function ($room) {
-                $lastMessage = $room->messages->first();
-
-                return [
-                    'id' => $room->id,
-                    'subject' => $room->subject,
-                    'status' => $room->status,
-                    'created_at' => $room->created_at->format('d/m/Y H:i'),
-                    'updated_at' => $room->updated_at->format('d/m/Y H:i'),
-                    'closed_at' => $room->closed_at?->format('d/m/Y H:i'),
-                    'user' => [
-                        'id' => $room->user->id,
-                        'name' => $room->user->name,
-                        'email' => $room->user->email,
-                        'image' => $room->user->image,
-                    ],
-                    'agent' => $room->agent ? [
-                        'id' => $room->agent->id,
-                        'name' => $room->agent->user->name,
-                        'image' => $room->agent->user->image,
-                        'rating' => $room->agent->rating ?? 0,
-                        'status' => $room->agent->status,
-                    ] : null,
-                    'last_message' => $lastMessage ? [
-                        'content' => $lastMessage->content ?? '',
-                        'has_attachment' => !empty($lastMessage->attachment),
-                        'sender_type' => $lastMessage->sender_type,
-                        'created_at' => $lastMessage->created_at->format('H:i d/m/Y'),
-                    ] : null,
-                    'unread_count' => $room->unread_count,
-                ];
-            });
-
-        return response()->json([
-            'success' => true,
-            'data' => $chatRooms
-        ]);
     }
 
     /**
-     * Xem chi tiết phòng chat
+     * Show chat room details
      */
     public function show($id)
     {
-        $chatRoom = ChatRoom::where('id', $id)
-            ->with([
-                'user:id,name,image,email',
-                'agent.user:id,name,image,email'
-            ])
-            ->first();
+        try {
+            if (!is_numeric($id)) {
+                return $this->errorResponse('ID không hợp lệ', 400);
+            }
 
-        if (!$chatRoom) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Không tìm thấy phòng chat'
-            ], 404);
+            $chatRoom = ChatRoom::with(['user:id,name,image,email'])
+                ->find($id);
+
+            if (!$chatRoom) {
+                return $this->errorResponse('Không tìm thấy phòng chat', 404);
+            }
+
+            // Mark messages as read
+            Message::where('chat_room_id', $chatRoom->id)
+                ->where('sender_type', 'user')
+                ->where('is_read', false)
+                ->update(['is_read' => true]);
+
+            return $this->successResponse($this->formatChatRoomDetail($chatRoom));
+        } catch (\Exception $e) {
+            Log::error('Show room error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể tải thông tin phòng chat', 500);
         }
-
-        // Đánh dấu tin nhắn của user là đã đọc (admin đọc)
-        Message::where('chat_room_id', $chatRoom->id)
-            ->where('sender_type', 'user')
-            ->where('is_read', false)
-            ->update(['is_read' => true]);
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'id' => $chatRoom->id,
-                'subject' => $chatRoom->subject,
-                'status' => $chatRoom->status,
-                'created_at' => $chatRoom->created_at->format('d/m/Y H:i'),
-                'updated_at' => $chatRoom->updated_at->format('d/m/Y H:i'),
-                'closed_at' => $chatRoom->closed_at?->format('d/m/Y H:i'),
-                'rating' => $chatRoom->rating,
-                'feedback' => $chatRoom->feedback,
-                'user' => [
-                    'id' => $chatRoom->user->id,
-                    'name' => $chatRoom->user->name,
-                    'image' => $chatRoom->user->image,
-                    'email' => $chatRoom->user->email,
-                ],
-                'agent' => $chatRoom->agent ? [
-                    'id' => $chatRoom->agent->id,
-                    'name' => $chatRoom->agent->user->name,
-                    'image' => $chatRoom->agent->user->image,
-                    'email' => $chatRoom->agent->user->email,
-                    'rating' => $chatRoom->agent->rating ?? 0,
-                    'status' => $chatRoom->agent->status,
-                ] : null,
-            ]
-        ]);
     }
 
     /**
-     * Lấy danh sách tin nhắn
+     * Get messages for a chat room
      */
     public function getMessages($id, Request $request)
     {
-        $chatRoom = ChatRoom::find($id);
-
-        if (!$chatRoom) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Không tìm thấy phòng chat'
-            ], 404);
-        }
-
-        $perPage = $request->input('per_page', 50);
-
-        $messages = Message::where('chat_room_id', $chatRoom->id)
-            ->with('sender:id,name,image')
-            ->orderBy('created_at', 'asc')
-            ->paginate($perPage);
-
-        // Đánh dấu tin nhắn của user là đã đọc
-        Message::where('chat_room_id', $chatRoom->id)
-            ->where('sender_type', 'user')
-            ->where('is_read', false)
-            ->update(['is_read' => true]);
-
-        $data = $messages->map(function ($message) {
-            $attachmentType = null;
-            if ($message->attachment) {
-                $extension = strtolower(pathinfo($message->attachment, PATHINFO_EXTENSION));
-                $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-                $attachmentType = in_array($extension, $imageExtensions) ? 'image' : 'file';
+        try {
+            if (!is_numeric($id)) {
+                return $this->errorResponse('ID không hợp lệ', 400);
             }
 
-            return [
-                'id' => $message->id,
-                'content' => $message->content,
-                'attachment' => $message->attachment,
-                'attachment_type' => $attachmentType,
-                'attachment_url' => $message->attachment ? url('storage/' . $message->attachment) : null,
-                'sender_type' => $message->sender_type,
-                'sender_name' => $message->sender->name,
-                'sender_image' => $message->sender->image,
-                'is_read' => $message->is_read,
-                'created_at' => $message->created_at->format('H:i d/m/Y'),
-                'timestamp' => $message->created_at->timestamp,
-            ];
-        });
+            $chatRoom = ChatRoom::find($id);
 
-        return response()->json([
-            'success' => true,
-            'data' => $data,
-            'pagination' => [
-                'current_page' => $messages->currentPage(),
-                'last_page' => $messages->lastPage(),
-                'per_page' => $messages->perPage(),
-                'total' => $messages->total(),
-            ]
-        ]);
+            if (!$chatRoom) {
+                return $this->errorResponse('Không tìm thấy phòng chat', 404);
+            }
+
+            $perPage = min($request->input('per_page', 50), 100);
+
+            $messages = Message::where('chat_room_id', $chatRoom->id)
+                ->with('sender:id,name,image')
+                ->orderBy('created_at', 'asc')
+                ->paginate($perPage);
+
+            // Mark as read
+            Message::where('chat_room_id', $chatRoom->id)
+                ->where('sender_type', 'user')
+                ->where('is_read', false)
+                ->update(['is_read' => true]);
+
+            $data = $messages->map(fn($msg) => $this->formatMessage($msg));
+
+            return $this->successResponse($data, [
+                'pagination' => [
+                    'current_page' => $messages->currentPage(),
+                    'last_page' => $messages->lastPage(),
+                    'per_page' => $messages->perPage(),
+                    'total' => $messages->total(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get messages error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể tải tin nhắn', 500);
+        }
     }
 
     /**
-     * Gửi tin nhắn (Admin trả lời khách hàng)
+     * Send message (Admin reply)
      */
     public function sendMessage(Request $request, $id)
     {
-        $validated = $request->validate([
-            'content' => 'required_without:attachment|nullable|string|max:1000',
-            'attachment' => 'required_without:content|nullable|file|max:10240|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,txt,zip'
-        ], [
-            'content.required_without' => 'Vui lòng nhập nội dung hoặc đính kèm file',
-            'attachment.required_without' => 'Vui lòng nhập nội dung hoặc đính kèm file'
-        ]);
-
-        $admin = Auth::user();
-
-        $chatRoom = ChatRoom::find($id);
-
-        if (!$chatRoom) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Không tìm thấy phòng chat'
-            ], 404);
-        }
-
-        if ($chatRoom->status !== 'open') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Phòng chat đã đóng'
-            ], 400);
-        }
-
-        DB::beginTransaction();
         try {
+            // Validate ID
+            if (!is_numeric($id)) {
+                return $this->errorResponse('ID không hợp lệ', 400);
+            }
+
+            // Validate input
+            $validated = $request->validate([
+                'content' => 'required_without:attachment|nullable|string|max:5000',
+                'attachment' => 'required_without:content|nullable|file|max:10240|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,txt,zip,rar'
+            ], [
+                'content.required_without' => 'Vui lòng nhập nội dung hoặc đính kèm file',
+                'content.max' => 'Nội dung không được vượt quá 5000 ký tự',
+                'attachment.required_without' => 'Vui lòng nhập nội dung hoặc đính kèm file',
+                'attachment.max' => 'File không được vượt quá 10MB',
+                'attachment.mimes' => 'File không đúng định dạng cho phép'
+            ]);
+
+            $admin = Auth::user();
+            $chatRoom = ChatRoom::find($id);
+
+            if (!$chatRoom) {
+                return $this->errorResponse('Không tìm thấy phòng chat', 404);
+            }
+
+            if ($chatRoom->status !== 'open') {
+                return $this->errorResponse('Phòng chat đã đóng', 400);
+            }
+
+            DB::beginTransaction();
+
             $attachmentPath = null;
             $attachmentType = null;
 
-            // Xử lý file upload
+            // Handle file upload
             if ($request->hasFile('attachment')) {
                 $file = $request->file('attachment');
+                
+                // Additional validation
+                if (!$file->isValid()) {
+                    throw new \Exception('File upload không hợp lệ');
+                }
+                
                 $attachmentPath = $this->handleFileUpload($file);
                 $attachmentType = $this->getAttachmentType($file);
             }
 
-            // Tạo tin nhắn từ admin (sender_type = 'agent')
+            // Create message - always from admin
             $message = Message::create([
                 'chat_room_id' => $chatRoom->id,
                 'sender_id' => $admin->id,
-                'sender_type' => 'agent', // Admin gửi như agent
-                'content' => $validated['content'] ?? '',
+                'sender_type' => 'admin',
+                'content' => $validated['content'] ?? null,
                 'attachment' => $attachmentPath,
                 'is_read' => false
             ]);
 
             $chatRoom->touch();
 
-            // Thông báo cho khách hàng
+            // Notify user
             $notificationMessage = $attachmentPath
                 ? "Admin đã gửi " . ($attachmentType === 'image' ? 'ảnh' : 'file')
                 : "Admin: " . mb_substr($validated['content'] ?? '', 0, 50);
@@ -289,24 +244,13 @@ class AdminChatController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Gửi tin nhắn thành công',
-                'data' => [
-                    'id' => $message->id,
-                    'content' => $message->content,
-                    'attachment' => $message->attachment,
-                    'attachment_type' => $attachmentType,
-                    'attachment_url' => $message->attachment ? url('storage/' . $message->attachment) : null,
-                    'sender_type' => $message->sender_type,
-                    'sender_name' => $admin->name,
-                    'sender_image' => $admin->image,
-                    'is_read' => false,
-                    'created_at' => $message->created_at->format('H:i d/m/Y'),
-                    'timestamp' => $message->created_at->timestamp,
-                ]
-            ], 201);
+            $message->load('sender:id,name,image');
 
+            return $this->successResponse($this->formatMessage($message), [
+                'message' => 'Gửi tin nhắn thành công'
+            ], 201);
+        } catch (ValidationException $e) {
+            return $this->errorResponse($e->getMessage(), 422, $e->errors());
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -314,49 +258,42 @@ class AdminChatController extends Controller
                 Storage::disk('public')->delete($attachmentPath);
             }
 
-            Log::error('Admin send message error: ' . $e->getMessage());
+            Log::error('Send message error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Có lỗi xảy ra khi gửi tin nhắn',
-                'error' => config('app.debug') ? $e->getMessage() : null
-            ], 500);
+            return $this->errorResponse($e->getMessage(), 500);
         }
     }
 
     /**
-     * Đóng phòng chat
+     * Close chat room
      */
     public function closeRoom($id)
     {
-        $chatRoom = ChatRoom::find($id);
-
-        if (!$chatRoom) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Không tìm thấy phòng chat'
-            ], 404);
-        }
-
-        if ($chatRoom->status === 'closed') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Phòng chat đã đóng trước đó'
-            ], 400);
-        }
-
-        DB::beginTransaction();
         try {
+            if (!is_numeric($id)) {
+                return $this->errorResponse('ID không hợp lệ', 400);
+            }
+
+            $chatRoom = ChatRoom::find($id);
+
+            if (!$chatRoom) {
+                return $this->errorResponse('Không tìm thấy phòng chat', 404);
+            }
+
+            if ($chatRoom->status === 'closed') {
+                return $this->errorResponse('Phòng chat đã đóng trước đó', 400);
+            }
+
+            DB::beginTransaction();
+
             $chatRoom->update([
                 'status' => 'closed',
                 'closed_at' => now()
             ]);
 
-            if ($chatRoom->agent) {
-                $chatRoom->agent->decrement('current_chats');
-            }
-
-            // Thông báo cho khách hàng
+            // Notify user
             Notification::create([
                 'user_id' => $chatRoom->user_id,
                 'title' => 'Phòng chat đã đóng',
@@ -367,269 +304,378 @@ class AdminChatController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'success' => true,
+            return $this->successResponse([
+                'room_id' => $chatRoom->id,
+                'status' => 'closed'
+            ], [
                 'message' => 'Đóng phòng chat thành công'
             ]);
-
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Có lỗi xảy ra khi đóng phòng chat',
-                'error' => config('app.debug') ? $e->getMessage() : null
-            ], 500);
+            Log::error('Close room error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể đóng phòng chat', 500);
         }
     }
 
     /**
-     * Đếm số tin nhắn chưa đọc (Admin)
+     * Get unread message count
      */
     public function unreadCount()
     {
-        $unreadCount = Message::whereHas('chatRoom', function ($query) {
-            $query->where('status', 'open');
-        })
-            ->where('sender_type', 'user')
-            ->where('is_read', false)
-            ->count();
+        try {
+            $unreadCount = Message::whereHas('chatRoom', fn($q) => $q->where('status', 'open'))
+                ->where('sender_type', 'user')
+                ->where('is_read', false)
+                ->count();
 
-        return response()->json([
-            'success' => true,
-            'unread_count' => $unreadCount
-        ]);
+            return $this->successResponse(['unread_count' => $unreadCount]);
+        } catch (\Exception $e) {
+            Log::error('Unread count error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể tải số lượng tin nhắn chưa đọc', 500);
+        }
     }
 
     /**
-     * Tìm kiếm phòng chat
+     * Search chat rooms
      */
     public function search(Request $request)
     {
-        $validated = $request->validate([
-            'keyword' => 'required|string|min:1|max:100'
-        ]);
-
-        $keyword = $validated['keyword'];
-
-        $chatRooms = ChatRoom::where(function ($query) use ($keyword) {
-                $query->where('subject', 'like', "%{$keyword}%")
-                    ->orWhereHas('user', function ($q) use ($keyword) {
-                        $q->where('name', 'like', "%{$keyword}%")
-                          ->orWhere('email', 'like', "%{$keyword}%");
-                    })
-                    ->orWhereHas('messages', function ($q) use ($keyword) {
-                        $q->where('content', 'like', "%{$keyword}%");
-                    });
-            })
-            ->with([
-                'user:id,name,image,email',
-                'agent.user:id,name,image',
-                'messages' => function ($query) {
-                    $query->latest()->limit(1);
-                }
-            ])
-            ->orderBy('updated_at', 'desc')
-            ->get()
-            ->map(function ($room) {
-                $lastMessage = $room->messages->first();
-
-                return [
-                    'id' => $room->id,
-                    'subject' => $room->subject,
-                    'status' => $room->status,
-                    'created_at' => $room->created_at->format('d/m/Y H:i'),
-                    'user' => [
-                        'name' => $room->user->name,
-                        'email' => $room->user->email,
-                        'image' => $room->user->image,
-                    ],
-                    'agent' => $room->agent ? [
-                        'name' => $room->agent->user->name,
-                        'image' => $room->agent->user->image,
-                    ] : null,
-                    'last_message' => $lastMessage ? [
-                        'content' => $lastMessage->content ?? '',
-                        'created_at' => $lastMessage->created_at->format('H:i d/m/Y'),
-                    ] : null,
-                ];
-            });
-
-        return response()->json([
-            'success' => true,
-            'keyword' => $keyword,
-            'count' => $chatRooms->count(),
-            'data' => $chatRooms
-        ]);
-    }
-
-    /**
-     * ========== QUẢN LÝ AGENTS ==========
-     */
-
-    /**
-     * Lấy danh sách agents
-     */
-    public function getAgents(Request $request)
-    {
-        $agents = SupportAgent::with('user:id,name,image,email')
-            ->get()
-            ->map(function($agent) {
-                return [
-                    'id' => $agent->id,
-                    'name' => $agent->user->name,
-                    'image' => $agent->user->image,
-                    'email' => $agent->user->email,
-                    'rating' => $agent->rating ?? 0,
-                    'status' => $agent->status,
-                    'current_chats' => $agent->current_chats,
-                    'max_chats' => $agent->max_chats,
-                    'availability' => $agent->max_chats - $agent->current_chats
-                ];
-            });
-
-        return response()->json([
-            'success' => true,
-            'data' => $agents,
-            'total' => $agents->count()
-        ]);
-    }
-
-    /**
-     * Gán agent cho phòng chat
-     */
-    public function assignAgent(Request $request, $id)
-    {
-        $validated = $request->validate([
-            'agent_id' => 'required|exists:support_agents,id'
-        ]);
-
-        $chatRoom = ChatRoom::find($id);
-
-        if (!$chatRoom) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Không tìm thấy phòng chat'
-            ], 404);
-        }
-
-        $agent = SupportAgent::find($validated['agent_id']);
-
-        if ($agent->current_chats >= $agent->max_chats) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Agent đã đạt số lượng chat tối đa'
-            ], 400);
-        }
-
-        DB::beginTransaction();
         try {
-            // Giảm current_chats của agent cũ
-            if ($chatRoom->assigned_to) {
-                $oldAgent = SupportAgent::find($chatRoom->assigned_to);
-                $oldAgent?->decrement('current_chats');
+            $validated = $request->validate([
+                'keyword' => 'required|string|min:1|max:100'
+            ], [
+                'keyword.required' => 'Vui lòng nhập từ khóa tìm kiếm',
+                'keyword.min' => 'Từ khóa phải có ít nhất 1 ký tự',
+                'keyword.max' => 'Từ khóa không được vượt quá 100 ký tự'
+            ]);
+
+            $keyword = trim($validated['keyword']);
+
+            $chatRooms = ChatRoom::where(function ($query) use ($keyword) {
+                $query->where('subject', 'like', "%{$keyword}%")
+                    ->orWhereHas('user', fn($q) => $q
+                        ->where('name', 'like', "%{$keyword}%")
+                        ->orWhere('email', 'like', "%{$keyword}%"))
+                    ->orWhereHas('messages', fn($q) => $q
+                        ->where('content', 'like', "%{$keyword}%"));
+            })
+                ->with([
+                    'user:id,name,image,email',
+                    'messages' => fn($q) => $q->latest()->limit(1)
+                ])
+                ->orderBy('updated_at', 'desc')
+                ->limit(50)
+                ->get()
+                ->map(fn($room) => $this->formatChatRoom($room));
+
+            return $this->successResponse($chatRooms, [
+                'keyword' => $keyword,
+                'count' => $chatRooms->count()
+            ]);
+        } catch (ValidationException $e) {
+            return $this->errorResponse($e->getMessage(), 422, $e->errors());
+        } catch (\Exception $e) {
+            Log::error('Search error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể tìm kiếm', 500);
+        }
+    }
+
+    /**
+     * Get all quick replies
+     */
+    public function getQuickReplies()
+    {
+        try {
+            $quickReplies = DB::table('quick_replies')
+                ->where('user_id', Auth::id())
+                ->orderBy('usage_count', 'desc')
+                ->orderBy('created_at', 'desc')
+                ->get()
+                ->map(fn($qr) => [
+                    'id' => $qr->id,
+                    'title' => $qr->title,
+                    'content' => $qr->content,
+                    'category' => $qr->category,
+                    'usage_count' => $qr->usage_count ?? 0
+                ]);
+
+            return $this->successResponse($quickReplies);
+        } catch (\Exception $e) {
+            Log::error('Get quick replies error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể tải danh sách tin nhắn nhanh', 500);
+        }
+    }
+
+    /**
+     * Create quick reply
+     */
+    public function createQuickReply(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'title' => 'required|string|max:100',
+                'content' => 'required|string|max:1000',
+                'category' => 'nullable|string|max:50'
+            ], [
+                'title.required' => 'Vui lòng nhập tiêu đề',
+                'title.max' => 'Tiêu đề không được vượt quá 100 ký tự',
+                'content.required' => 'Vui lòng nhập nội dung',
+                'content.max' => 'Nội dung không được vượt quá 1000 ký tự',
+                'category.max' => 'Danh mục không được vượt quá 50 ký tự'
+            ]);
+
+            $quickReply = DB::table('quick_replies')->insertGetId([
+                'user_id' => Auth::id(),
+                'title' => $validated['title'],
+                'content' => $validated['content'],
+                'category' => $validated['category'] ?? null,
+                'usage_count' => 0,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            return $this->successResponse([
+                'id' => $quickReply,
+                'title' => $validated['title'],
+                'content' => $validated['content'],
+                'category' => $validated['category'] ?? null,
+                'usage_count' => 0
+            ], [
+                'message' => 'Tạo tin nhắn nhanh thành công'
+            ], 201);
+        } catch (ValidationException $e) {
+            return $this->errorResponse($e->getMessage(), 422, $e->errors());
+        } catch (\Exception $e) {
+            Log::error('Create quick reply error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể tạo tin nhắn nhanh', 500);
+        }
+    }
+
+    /**
+     * Update quick reply
+     */
+    public function updateQuickReply(Request $request, $id)
+    {
+        try {
+            if (!is_numeric($id)) {
+                return $this->errorResponse('ID không hợp lệ', 400);
             }
 
-            // Gán agent mới
-            $chatRoom->update(['assigned_to' => $agent->id]);
-            $agent->increment('current_chats');
-
-            // Thông báo cho agent
-            Notification::create([
-                'user_id' => $agent->user_id,
-                'title' => 'Được gán phòng chat mới',
-                'message' => "Admin đã gán bạn phòng chat: {$chatRoom->subject}",
-                'related_chat_room_id' => $chatRoom->id,
-                'is_read' => false
+            $validated = $request->validate([
+                'title' => 'required|string|max:100',
+                'content' => 'required|string|max:1000',
+                'category' => 'nullable|string|max:50'
+            ], [
+                'title.required' => 'Vui lòng nhập tiêu đề',
+                'title.max' => 'Tiêu đề không được vượt quá 100 ký tự',
+                'content.required' => 'Vui lòng nhập nội dung',
+                'content.max' => 'Nội dung không được vượt quá 1000 ký tự',
+                'category.max' => 'Danh mục không được vượt quá 50 ký tự'
             ]);
 
-            // Thông báo cho user
-            Notification::create([
-                'user_id' => $chatRoom->user_id,
-                'title' => 'Đã có nhân viên hỗ trợ',
-                'message' => "{$agent->user->name} sẽ hỗ trợ bạn",
-                'related_chat_room_id' => $chatRoom->id,
-                'is_read' => false
+            $quickReply = DB::table('quick_replies')
+                ->where('id', $id)
+                ->where('user_id', Auth::id())
+                ->first();
+
+            if (!$quickReply) {
+                return $this->errorResponse('Không tìm thấy tin nhắn nhanh', 404);
+            }
+
+            DB::table('quick_replies')
+                ->where('id', $id)
+                ->update([
+                    'title' => $validated['title'],
+                    'content' => $validated['content'],
+                    'category' => $validated['category'] ?? null,
+                    'updated_at' => now()
+                ]);
+
+            return $this->successResponse([
+                'id' => $id,
+                'title' => $validated['title'],
+                'content' => $validated['content'],
+                'category' => $validated['category'] ?? null,
+                'usage_count' => $quickReply->usage_count ?? 0
+            ], [
+                'message' => 'Cập nhật tin nhắn nhanh thành công'
             ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Gán agent thành công'
-            ]);
-
+        } catch (ValidationException $e) {
+            return $this->errorResponse($e->getMessage(), 422, $e->errors());
         } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Có lỗi xảy ra',
-                'error' => config('app.debug') ? $e->getMessage() : null
-            ], 500);
+            Log::error('Update quick reply error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể cập nhật tin nhắn nhanh', 500);
         }
     }
 
     /**
-     * Thống kê agent
+     * Delete quick reply
      */
-    public function getAgentStats($agentId)
+    public function deleteQuickReply($id)
     {
-        $agent = SupportAgent::with('user:id,name,email')->find($agentId);
+        try {
+            if (!is_numeric($id)) {
+                return $this->errorResponse('ID không hợp lệ', 400);
+            }
 
-        if (!$agent) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Không tìm thấy agent'
-            ], 404);
+            $deleted = DB::table('quick_replies')
+                ->where('id', $id)
+                ->where('user_id', Auth::id())
+                ->delete();
+
+            if (!$deleted) {
+                return $this->errorResponse('Không tìm thấy tin nhắn nhanh', 404);
+            }
+
+            return $this->successResponse([
+                'deleted_id' => $id
+            ], [
+                'message' => 'Xóa tin nhắn nhanh thành công'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Delete quick reply error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể xóa tin nhắn nhanh', 500);
         }
-
-        $totalRooms = ChatRoom::where('assigned_to', $agentId)->count();
-        $closedRooms = ChatRoom::where('assigned_to', $agentId)
-            ->where('status', 'closed')
-            ->count();
-        $openRooms = $agent->current_chats;
-        
-        $ratedRooms = ChatRoom::where('assigned_to', $agentId)
-            ->where('status', 'closed')
-            ->whereNotNull('rating')
-            ->get();
-        
-        $avgRating = $ratedRooms->avg('rating');
-        $ratingDistribution = [
-            '5_star' => $ratedRooms->where('rating', 5)->count(),
-            '4_star' => $ratedRooms->where('rating', 4)->count(),
-            '3_star' => $ratedRooms->where('rating', 3)->count(),
-            '2_star' => $ratedRooms->where('rating', 2)->count(),
-            '1_star' => $ratedRooms->where('rating', 1)->count(),
-        ];
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'agent' => [
-                    'id' => $agent->id,
-                    'name' => $agent->user->name,
-                    'email' => $agent->user->email,
-                    'rating' => round($avgRating, 2),
-                    'status' => $agent->status,
-                ],
-                'chat_stats' => [
-                    'total_chats' => $totalRooms,
-                    'closed_chats' => $closedRooms,
-                    'open_chats' => $openRooms,
-                    'max_concurrent' => $agent->max_chats,
-                ],
-                'rating_stats' => [
-                    'average' => round($avgRating, 2),
-                    'total_rated' => $ratedRooms->count(),
-                    'distribution' => $ratingDistribution,
-                ],
-            ]
-        ]);
     }
 
     /**
-     * ========== HELPER FUNCTIONS ==========
+     * Increment usage count for quick reply
      */
+    public function incrementQuickReplyUsage($id)
+    {
+        try {
+            if (!is_numeric($id)) {
+                return $this->errorResponse('ID không hợp lệ', 400);
+            }
+
+            $quickReply = DB::table('quick_replies')
+                ->where('id', $id)
+                ->where('user_id', Auth::id())
+                ->first();
+
+            if (!$quickReply) {
+                return $this->errorResponse('Không tìm thấy tin nhắn nhanh', 404);
+            }
+
+            DB::table('quick_replies')
+                ->where('id', $id)
+                ->increment('usage_count');
+
+            return $this->successResponse([
+                'id' => $id,
+                'usage_count' => ($quickReply->usage_count ?? 0) + 1
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Increment usage error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể cập nhật số lần sử dụng', 500);
+        }
+    }
+
+    /**
+     * Delete message
+     */
+    public function deleteMessage($id)
+    {
+        try {
+            if (!is_numeric($id)) {
+                return $this->errorResponse('ID không hợp lệ', 400);
+            }
+
+            $message = Message::find($id);
+
+            if (!$message) {
+                return $this->errorResponse('Không tìm thấy tin nhắn', 404);
+            }
+
+            if ($message->attachment) {
+                Storage::disk('public')->delete($message->attachment);
+            }
+
+            $message->delete();
+
+            return $this->successResponse([
+                'deleted_id' => $id
+            ], [
+                'message' => 'Đã xóa tin nhắn'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Delete message error: ' . $e->getMessage());
+            return $this->errorResponse('Không thể xóa tin nhắn', 500);
+        }
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    private function formatChatRoom($room)
+    {
+        $lastMessage = $room->messages->first();
+
+        return [
+            'id' => $room->id,
+            'subject' => $room->subject,
+            'status' => $room->status,
+            'created_at' => $room->created_at->format('d/m/Y H:i'),
+            'updated_at' => $room->updated_at->format('d/m/Y H:i'),
+            'closed_at' => $room->closed_at?->format('d/m/Y H:i'),
+            'user' => [
+                'id' => $room->user->id,
+                'name' => $room->user->name,
+                'email' => $room->user->email,
+                'image' => $room->user->image,
+            ],
+            'last_message' => $lastMessage ? [
+                'content' => $lastMessage->content ?? '',
+                'has_attachment' => !empty($lastMessage->attachment),
+                'sender_type' => $lastMessage->sender_type,
+                'created_at' => $lastMessage->created_at->format('H:i d/m/Y'),
+            ] : null,
+            'unread_count' => $room->unread_count ?? 0,
+        ];
+    }
+
+    private function formatChatRoomDetail($room)
+    {
+        return [
+            'id' => $room->id,
+            'subject' => $room->subject,
+            'status' => $room->status,
+            'created_at' => $room->created_at->format('d/m/Y H:i'),
+            'updated_at' => $room->updated_at->format('d/m/Y H:i'),
+            'closed_at' => $room->closed_at?->format('d/m/Y H:i'),
+            'rating' => $room->rating,
+            'feedback' => $room->feedback,
+            'user' => [
+                'id' => $room->user->id,
+                'name' => $room->user->name,
+                'image' => $room->user->image,
+                'email' => $room->user->email,
+            ],
+        ];
+    }
+
+    private function formatMessage($message)
+    {
+        $attachmentType = null;
+        if ($message->attachment) {
+            $extension = strtolower(pathinfo($message->attachment, PATHINFO_EXTENSION));
+            $imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            $attachmentType = in_array($extension, $imageExtensions) ? 'image' : 'file';
+        }
+
+        return [
+            'id' => $message->id,
+            'content' => $message->content,
+            'attachment' => $message->attachment,
+            'attachment_type' => $attachmentType,
+            'attachment_url' => $message->attachment ? url('storage/' . $message->attachment) : null,
+            'sender_type' => $message->sender_type,
+            'sender_name' => $message->sender->name,
+            'sender_image' => $message->sender->image,
+            'is_read' => $message->is_read,
+            'created_at' => $message->created_at->format('H:i d/m/Y'),
+            'timestamp' => $message->created_at->timestamp,
+        ];
+    }
 
     private function handleFileUpload($file): string
     {
@@ -643,54 +689,27 @@ class AdminChatController extends Controller
         return str_starts_with($mimeType, 'image/') ? 'image' : 'file';
     }
 
-    /**
-     * Xóa tin nhắn
-     */
-    public function deleteMessage($id)
+    private function successResponse($data, array $extra = [], int $status = 200)
     {
-        try {
-            $message = Message::findOrFail($id);
-            
-            if ($message->attachment) {
-                Storage::disk('public')->delete($message->attachment);
-            }
-
-            $message->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Đã xóa tin nhắn'
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Có lỗi xảy ra: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Dashboard thống kê
-     */
-    public function dashboard()
-    {
-        $stats = [
-            'total_rooms' => ChatRoom::count(),
-            'open_rooms' => ChatRoom::where('status', 'open')->count(),
-            'closed_rooms' => ChatRoom::where('status', 'closed')->count(),
-            'total_messages' => Message::count(),
-            'unread_messages' => Message::where('sender_type', 'user')
-                ->where('is_read', false)
-                ->count(),
-            'total_agents' => SupportAgent::count(),
-            'online_agents' => SupportAgent::where('status', 'online')->count(),
-            'busy_agents' => SupportAgent::where('status', 'busy')->count(),
+        $response = [
+            'success' => true,
+            'data' => $data
         ];
 
-        return response()->json([
-            'success' => true,
-            'data' => $stats
-        ]);
+        return response()->json(array_merge($response, $extra), $status);
+    }
+
+    private function errorResponse(string $message, int $status = 400, $errors = null)
+    {
+        $response = [
+            'success' => false,
+            'message' => $message
+        ];
+
+        if ($errors) {
+            $response['errors'] = $errors;
+        }
+
+        return response()->json($response, $status);
     }
 }

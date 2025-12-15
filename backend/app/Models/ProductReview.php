@@ -6,7 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class ProductReview extends Model
 {
-    public $timestamps = false; // bảng dùng comment_time thay vì timestamps mặc định
+    public $timestamps = false;
+    
+    protected $table = 'product_reviews'; // Đảm bảo đúng tên bảng
 
     protected $fillable = [
         'user_id',
@@ -16,33 +18,26 @@ class ProductReview extends Model
         'rating',       
         'comment',
         'comment_time',
+        'is_approved',
     ];
 
     protected $casts = [
         'comment_time' => 'datetime',
+        'is_approved' => 'boolean',
     ];
 
-    /**
-     * Relationship với Product
-     */
     public function product()
     {
-        return $this->belongsTo(Product::class);
+        return $this->belongsTo(Product::class, 'product_id', 'id');
     }
 
-    /**
-     * Relationship với User
-     */
     public function user()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class, 'user_id', 'id');
     }
 
-    /**
-     * Relationship với Order
-     */
     public function order()
     {
-        return $this->belongsTo(Order::class, 'order_id');
+        return $this->belongsTo(Order::class, 'order_id', 'id');
     }
 }

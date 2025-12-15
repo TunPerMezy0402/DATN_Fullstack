@@ -53,43 +53,75 @@ class OrderController extends Controller
         return response()->json(['data' => $this->formatOrderDetails($order)]);
     }
 
-    /**
-     * ✏️ Cập nhật đơn hàng
-     */
     public function update(Request $request, $id)
     {
-        $order = Order::with(['shipping', 'transactions'])->findOrFail($id);
-
-        $data = $request->validate([
-            'shipping_status' => 'nullable|string|in:pending,in_transit,delivered,failed,returned,none,nodone,evaluated,return_processing,return_fail,received',
-            'payment_status' => 'nullable|string|in:unpaid,paid,refunded,refund_processing,failed',
-            'reason_admin' => 'nullable|string',
-            'transfer_image' => 'nullable|string',
-        ]);
-
-        $this->validateBusinessLogic($order, $data);
-
-        DB::beginTransaction();
         try {
-            $this->updateShipping($order, $data);
-            $this->updatePayment($order, $data);
+            // ✅ Load đầy đủ relationships
+            $order = Order::with(['shipping', 'transactions', 'returnRequests.items'])->findOrFail($id);
 
-            DB::commit();
+            $data = $request->validate([
+                'shipping_status' => 'nullable|string|in:pending,in_transit,delivered,failed,returned,none,nodone,evaluated,return_processing,return_fail,received',
+                'payment_status' => 'nullable|string|in:unpaid,paid,refunded,refund_processing,failed',
+                'reason_admin' => 'nullable|string',
+                'transfer_image' => 'nullable|string',
+            ]);
+
+            // ✅ Validate business logic
+            $this->validateBusinessLogic($order, $data);
+
+            DB::beginTransaction();
+            try {
+                $this->updateShipping($order, $data);
+                $this->updatePayment($order, $data);
+                DB::commit();
+
+                // ✅ Fresh load lại order
+                $freshOrder = Order::with(['shipping', 'transactions', 'returnRequests.items'])->find($id);
+
+                return response()->json([
+                    'message' => 'Cập nhật đơn hàng thành công',
+                    'data' => $this->formatOrderBasic($freshOrder)
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Order update transaction error: ' . $e->getMessage(), [
+                    'order_id' => $id,
+                    'data' => $data,
+                    'trace' => $e->getTraceAsString()
+                ]);
+
+                return response()->json([
+                    'message' => 'Lỗi khi cập nhật đơn hàng: ' . $e->getMessage(),
+                    'error' => config('app.debug') ? $e->getTraceAsString() : null
+                ], 500);
+            }
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Dữ liệu không hợp lệ',
+                'errors' => $e->errors()
+            ], 422);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Không tìm thấy đơn hàng'
+            ], 404);
+
+        } catch (\Exception $e) {
+            Log::error('Order update error: ' . $e->getMessage(), [
+                'order_id' => $id,
+                'trace' => $e->getTraceAsString()
+            ]);
 
             return response()->json([
-                'message' => 'Cập nhật đơn hàng thành công',
-                'data' => $this->formatOrderBasic($order->fresh(['shipping', 'transactions']))
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Order update error: ' . $e->getMessage());
-            return response()->json(['message' => 'Lỗi khi cập nhật đơn hàng'], 500);
+                'message' => 'Lỗi hệ thống: ' . $e->getMessage(),
+                'error' => config('app.debug') ? $e->getTraceAsString() : null
+            ], 500);
         }
     }
 
-    /**
-     * 🖼️ Upload ảnh chuyển khoản
-     */
+
     public function upload(Request $request)
     {
         try {
@@ -125,9 +157,7 @@ class OrderController extends Controller
         }
     }
 
-    /**
-     * 📋 Lịch sử vận chuyển
-     */
+
     public function shippingLogs($id)
     {
         try {
@@ -150,13 +180,7 @@ class OrderController extends Controller
         }
     }
 
-    // ============================================================
-    //                   RETURN REQUEST MANAGEMENT
-    // ============================================================
 
-    /**
-     * 📋 Danh sách yêu cầu hoàn hàng
-     */
     public function returnRequests($id)
     {
         try {
@@ -175,9 +199,7 @@ class OrderController extends Controller
         }
     }
 
-    /**
-     * 🔄 Cập nhật trạng thái return request
-     */
+
     public function updateReturnStatus(Request $request, $orderId, $returnRequestId)
     {
         $validated = $request->validate([
@@ -211,80 +233,85 @@ class OrderController extends Controller
 
 
     public function approveReturnItem(Request $request, $orderId, $returnRequestId, $itemId)
-    {
-        $validated = $request->validate(['admin_response' => 'nullable|string|max:500']);
+{
+    $validated = $request->validate(['admin_response' => 'nullable|string|max:500']);
 
-        DB::beginTransaction();
-        try {
-            $returnItem = ReturnItem::where('return_request_id', $returnRequestId)->findOrFail($itemId);
+    DB::beginTransaction();
+    try {
+        // ✅ Load order với items để format
+        $order = Order::with('items')->findOrFail($orderId);
+        
+        $returnItem = ReturnItem::where('return_request_id', $returnRequestId)->findOrFail($itemId);
 
-            if (!$returnItem->canApprove()) {
-                return response()->json(['message' => 'Không thể duyệt sản phẩm ở trạng thái hiện tại'], 400);
-            }
-
-            $returnItem->markAsApproved($validated['admin_response'] ?? null);
-
-            $returnRequest = $returnItem->returnRequest;
-            $returnRequest->recalculateAmounts();
-
-            // ✅ Tự động chuyển return_request sang 'approved' nếu không còn item pending
-            $this->autoUpdateReturnRequestStatus($returnRequest);
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Đã duyệt sản phẩm hoàn hàng!',
-                'data' => $returnRequest->fresh('items')
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Approve return item error: ' . $e->getMessage());
-            return response()->json(['message' => 'Lỗi khi duyệt sản phẩm'], 500);
+        if (!$returnItem->canApprove()) {
+            return response()->json(['message' => 'Không thể duyệt sản phẩm ở trạng thái hiện tại'], 400);
         }
+
+        $returnItem->markAsApproved(null, $validated['admin_response'] ?? null);
+
+        $returnRequest = $returnItem->returnRequest;
+        $returnRequest->recalculateAmounts();
+
+        $this->autoUpdateReturnRequestStatus($returnRequest);
+
+        DB::commit();
+
+        // ✅ Reload với items để format đầy đủ
+        $returnRequest->load('items');
+        
+        return response()->json([
+            'message' => 'Đã duyệt sản phẩm hoàn hàng!',
+            'data' => $this->formatReturnRequest($returnRequest, $order)
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Approve return item error: ' . $e->getMessage());
+        return response()->json(['message' => 'Lỗi khi duyệt sản phẩm'], 500);
     }
+}
+
 
 
     public function rejectReturnItem(Request $request, $orderId, $returnRequestId, $itemId)
-    {
-        $validated = $request->validate(['admin_response' => 'required|string|max:500']);
+{
+    $validated = $request->validate(['admin_response' => 'required|string|max:500']);
 
-        DB::beginTransaction();
-        try {
-            $returnItem = ReturnItem::where('return_request_id', $returnRequestId)->findOrFail($itemId);
+    DB::beginTransaction();
+    try {
+        // ✅ Load order với items để format
+        $order = Order::with('items')->findOrFail($orderId);
+        
+        $returnItem = ReturnItem::where('return_request_id', $returnRequestId)->findOrFail($itemId);
 
-            if (!$returnItem->canReject()) {
-                return response()->json(['message' => 'Không thể từ chối sản phẩm ở trạng thái hiện tại'], 400);
-            }
-
-            $returnItem->markAsRejected($validated['admin_response']);
-
-            $returnRequest = $returnItem->returnRequest;
-            $returnRequest->recalculateAmounts();
-
-            // ✅ Tự động chuyển return_request sang 'approved' nếu không còn item pending
-            $this->autoUpdateReturnRequestStatus($returnRequest);
-
-            DB::commit();
-
-            return response()->json([
-                'message' => 'Đã từ chối sản phẩm hoàn hàng!',
-                'data' => $returnRequest->fresh('items')
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Reject return item error: ' . $e->getMessage());
-            return response()->json(['message' => 'Lỗi khi từ chối sản phẩm'], 500);
+        if (!$returnItem->canReject()) {
+            return response()->json(['message' => 'Không thể từ chối sản phẩm ở trạng thái hiện tại'], 400);
         }
+
+        $returnItem->markAsRejected($validated['admin_response']);
+
+        $returnRequest = $returnItem->returnRequest;
+        $returnRequest->recalculateAmounts();
+
+        $this->autoUpdateReturnRequestStatus($returnRequest);
+
+        DB::commit();
+
+        // ✅ Reload với items để format đầy đủ
+        $returnRequest->load('items');
+        
+        return response()->json([
+            'message' => 'Đã từ chối sản phẩm hoàn hàng!',
+            'data' => $this->formatReturnRequest($returnRequest, $order)
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Reject return item error: ' . $e->getMessage());
+        return response()->json(['message' => 'Lỗi khi từ chối sản phẩm'], 500);
     }
+}
 
-    // ============================================================
-    //                      HELPER METHODS
-    // ============================================================
 
-    /**
-     * ✅ Tự động cập nhật trạng thái return_request sang 'approved' 
-     * khi tất cả items không còn pending
-     */
+
     private function autoUpdateReturnRequestStatus($returnRequest)
     {
         if ($returnRequest->status !== 'pending') {
@@ -298,7 +325,7 @@ class OrderController extends Controller
         if (!$hasPendingItems) {
             $returnRequest->update([
                 'status' => 'approved',
-                'processed_at' => now(),
+                // ❌ XÓA: 'processed_at' => now(),
             ]);
 
             $order = $returnRequest->order;
@@ -343,10 +370,8 @@ class OrderController extends Controller
                     $actualRefund = $returnRequest->estimated_refund;
                     $returnRequest->markAsCompleted($actualRefund, 'Tự động hoàn thành khi nhận hàng');
 
-                    // ✅ Hoàn lại stock
                     $this->restoreStock($returnRequest);
 
-                    // ✅ Tính lại giá trị đơn hàng sau khi hoàn hàng thành công
                     $this->recalculateOrderAmount($order, $returnRequest);
 
                     $order->update(['payment_status' => 'refunded']);
@@ -357,20 +382,16 @@ class OrderController extends Controller
 
     private function recalculateOrderAmount($order, $returnRequest)
     {
-        // Lấy tất cả các return requests đã hoàn thành của đơn hàng này
         $completedReturnRequests = ReturnRequest::where('order_id', $order->id)
             ->where('status', 'completed')
             ->get();
 
-        // Tính tổng số tiền thực tế đã hoàn
         $totalRefunded = $completedReturnRequests->sum('actual_refund');
 
-        // Tính lại total_amount dựa trên các sản phẩm còn lại
         $remainingItems = $order->items()->get();
         $newTotalAmount = 0;
 
         foreach ($remainingItems as $orderItem) {
-            // Tính số lượng đã hoàn của item này
             $returnedQuantity = ReturnItem::whereHas('returnRequest', function ($query) use ($order) {
                 $query->where('order_id', $order->id)
                     ->where('status', 'completed');
@@ -379,7 +400,6 @@ class OrderController extends Controller
                 ->where('status', 'completed')
                 ->sum('quantity');
 
-            // Số lượng còn lại
             $remainingQuantity = $orderItem->quantity - $returnedQuantity;
 
             if ($remainingQuantity > 0) {
@@ -387,30 +407,25 @@ class OrderController extends Controller
             }
         }
 
-        // Tính phí ship mới
         $shippingFee = 30000;
         $freeShippingThreshold = 500000;
         $newShippingFee = $newTotalAmount >= $freeShippingThreshold ? 0 : $shippingFee;
 
-        // Tính discount mới (giữ nguyên tỷ lệ discount nếu có)
         $oldTotalAmount = (float) $order->total_amount;
         $oldDiscountAmount = (float) ($order->discount_amount ?? 0);
 
         $newDiscountAmount = 0;
         if ($oldTotalAmount > 0 && $oldDiscountAmount > 0) {
-            // Tính tỷ lệ discount
             $discountRatio = $oldDiscountAmount / ($oldTotalAmount + ($oldTotalAmount >= $freeShippingThreshold ? 0 : $shippingFee));
             $newDiscountAmount = ($newTotalAmount + $newShippingFee) * $discountRatio;
         }
 
-        // Tính final_amount mới
         $newFinalAmount = $newTotalAmount + $newShippingFee - $newDiscountAmount;
 
-        // Cập nhật order
         $order->update([
             'total_amount' => $newTotalAmount,
             'discount_amount' => $newDiscountAmount,
-            'final_amount' => max(0, $newFinalAmount), // Không cho phép âm
+            'final_amount' => max(0, $newFinalAmount),
         ]);
 
         Log::info('Recalculated order amount', [
@@ -439,6 +454,8 @@ class OrderController extends Controller
             throw new \Exception("Không thể chuyển trạng thái từ '{$currentStatus}' sang '{$newStatus}'");
         }
     }
+
+    // ✅ Cập nhật method processReturnStatusChange() trong OrderController.php
 
     private function processReturnStatusChange($order, $returnRequest, $newStatus)
     {
@@ -495,14 +512,12 @@ class OrderController extends Controller
                     }
                 }
 
+                // ✅ Lấy estimated_refund thay vì tính toán lại
                 $actualRefund = $returnRequest->estimated_refund;
                 $returnRequest->markAsCompleted($actualRefund, 'Đã hoàn thành hoàn hàng');
 
                 // ✅ Hoàn lại stock
                 $this->restoreStock($returnRequest);
-
-                // ✅ Tính lại giá trị đơn hàng sau khi hoàn hàng thành công
-                $this->recalculateOrderAmount($order, $returnRequest);
 
                 $order->shipping->update([
                     'shipping_status' => 'returned',
@@ -570,62 +585,64 @@ class OrderController extends Controller
     }
 
 
-private function updateShipping($order, $data)
-{
-    $shippingData = [];
-    $oldStatus = $order->shipping->shipping_status;
+    private function updateShipping($order, $data)
+    {
+        $shippingData = [];
+        $oldStatus = $order->shipping->shipping_status;
 
-    if (isset($data['shipping_status'])) {
-        $shippingData['shipping_status'] = $data['shipping_status'];
+        if (isset($data['shipping_status'])) {
+            $shippingData['shipping_status'] = $data['shipping_status'];
 
-        if (isset($data['shipping_status']) && $data['shipping_status'] === 'returned') {
-            // Cập nhật tất cả return requests của order này sang completed
-            ReturnRequest::where('order_id', $order->id)
-                ->whereIn('status', ['pending', 'approved']) // Chỉ update những status hợp lý
-                ->update([
-                    'status' => 'completed',
-                    'processed_at' => now()
-                ]);
+            // ✅ Khi shipping_status = returned
+            if ($data['shipping_status'] === 'returned') {
+                // Cập nhật tất cả return requests của order này sang completed
+                ReturnRequest::where('order_id', $order->id)
+                    ->whereIn('status', ['pending', 'approved'])
+                    ->update([
+                        'status' => 'completed',
+                        // ❌ XÓA: 'processed_at' => now()
+                    ]);
 
-            // ⭐ Tự động chuyển payment_status sang refund_processing khi shipping_status = returned
-            if ($order->payment_status === 'paid') {
-                $order->update(['payment_status' => 'refund_processing']);
-            }
-        }
-
-        if ($data['shipping_status'] === 'received') {
-            $shippingData['received_at'] = now();
-            $this->autoCompleteApprovedReturnItems($order);
-        }
-    }
-
-    if (isset($data['reason_admin'])) {
-        $shippingData['reason_admin'] = $data['reason_admin'];
-    }
-
-    if (isset($data['transfer_image'])) {
-        if (empty($data['transfer_image'])) {
-            if ($order->shipping && $order->shipping->transfer_image) {
-                $oldImagePath = public_path($order->shipping->transfer_image);
-                if (file_exists($oldImagePath) && is_file($oldImagePath)) {
-                    @unlink($oldImagePath);
+                // ⭐ Tự động chuyển payment_status sang refund_processing
+                if ($order->payment_status === 'paid') {
+                    $order->update(['payment_status' => 'refund_processing']);
                 }
             }
-            $shippingData['transfer_image'] = null;
-        } else {
-            $imageUrl = $data['transfer_image'];
-            if (Str::startsWith($imageUrl, url('/'))) {
-                $imageUrl = str_replace(url('/'), '', $imageUrl);
-                $imageUrl = ltrim($imageUrl, '/');
+
+            // ✅ Khi shipping_status = received
+            if ($data['shipping_status'] === 'received') {
+                $shippingData['received_at'] = now();
+                $this->autoCompleteApprovedReturnItems($order);
             }
-            $shippingData['transfer_image'] = $imageUrl;
+        }
+
+        if (isset($data['reason_admin'])) {
+            $shippingData['reason_admin'] = $data['reason_admin'];
+        }
+
+        if (isset($data['transfer_image'])) {
+            if (empty($data['transfer_image'])) {
+                if ($order->shipping && $order->shipping->transfer_image) {
+                    $oldImagePath = public_path($order->shipping->transfer_image);
+                    if (file_exists($oldImagePath) && is_file($oldImagePath)) {
+                        @unlink($oldImagePath);
+                    }
+                }
+                $shippingData['transfer_image'] = null;
+            } else {
+                $imageUrl = $data['transfer_image'];
+                if (Str::startsWith($imageUrl, url('/'))) {
+                    $imageUrl = str_replace(url('/'), '', $imageUrl);
+                    $imageUrl = ltrim($imageUrl, '/');
+                }
+                $shippingData['transfer_image'] = $imageUrl;
+            }
+        }
+
+        if (!empty($shippingData)) {
+            $order->shipping->update($shippingData);
         }
     }
-
-    if (!empty($shippingData)) {
-        $order->shipping->update($shippingData);
-    }
-}
 
 
     private function updatePayment($order, $data)
@@ -774,46 +791,129 @@ private function updateShipping($order, $data)
         ];
     }
 
+    public function refundShipping(Request $request, $orderId, $returnRequestId)
+{
+    DB::beginTransaction();
+    try {
+        // ✅ Load order với items
+        $order = Order::with('items')->findOrFail($orderId);
+        $returnRequest = ReturnRequest::with('items')->findOrFail($returnRequestId);
+
+        if ($returnRequest->order_id != $orderId) {
+            return response()->json(['message' => 'Return request không thuộc order này'], 400);
+        }
+
+        $totalAmount = floatval($order->total_amount);
+        if ($totalAmount >= 500000) {
+            return response()->json(['message' => 'Đơn hàng >= 500k đã freeship, không được hoàn thêm tiền ship'], 400);
+        }
+
+        if ($returnRequest->refund_30k === true) {
+            return response()->json(['message' => 'Đã hoàn 30k tiền ship cho yêu cầu này rồi'], 400);
+        }
+
+        $currentEstimatedRefund = floatval($returnRequest->estimated_refund);
+        $newEstimatedRefund = $currentEstimatedRefund + 30000;
+
+        $returnRequest->update([
+            'refund_30k' => true,
+            'estimated_refund' => $newEstimatedRefund,
+            'admin_note' => ($returnRequest->admin_note ?? '') . "\n✅ Đã hoàn thêm 30.000đ tiền ship.",
+        ]);
+
+        DB::commit();
+
+        // ✅ Reload items
+        $returnRequest->load('items');
+        
+        return response()->json([
+            'message' => 'Đã cộng thêm 30.000đ tiền ship thành công!',
+            'data' => $this->formatReturnRequest($returnRequest, $order)
+        ]);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        Log::error('Refund shipping error: ' . $e->getMessage());
+        return response()->json(['message' => 'Lỗi khi hoàn tiền ship: ' . $e->getMessage()], 500);
+    }
+}
+
+
+
     private function formatReturnRequest($request, $order)
     {
         return [
             'id' => $request->id,
+            'order_id' => $request->order_id,
+            'user_id' => $request->user_id,
             'status' => $request->status,
-            'requested_at' => $request->requested_at,
-            'processed_at' => $request->processed_at,
-            'rejected_at' => $request->rejected_at,
-            'total_return_amount' => floatval($request->total_return_amount),
-            'refunded_discount' => floatval($request->refunded_discount),
-            'old_shipping_fee' => floatval($request->old_shipping_fee),
-            'new_shipping_fee' => floatval($request->new_shipping_fee),
-            'shipping_diff' => floatval($request->shipping_diff),
-            'estimated_refund' => floatval($request->estimated_refund),
-            'actual_refund' => floatval($request->actual_refund),
-            'remaining_amount' => floatval($request->remaining_amount),
-            'note' => $request->note,
+            'estimated_refund_min' => floatval($request->estimated_refund_min ?? 0),
+            'estimated_refund_max' => floatval($request->estimated_refund_max ?? 0),
+            'estimated_refund' => floatval($request->estimated_refund ?? 0),
             'admin_note' => $request->admin_note,
+            'refund_30k' => $request->refund_30k ?? false,
+            'created_at' => $request->created_at,
+            'updated_at' => $request->updated_at,
             'items' => $request->items->map(fn($item) => $this->formatReturnItem($item, $order)),
         ];
     }
 
-    private function formatReturnItem($item, $order)
-    {
-        $orderItem = $order->items->firstWhere('id', $item->order_item_id);
-        return [
-            'id' => $item->id,
-            'order_item_id' => $item->order_item_id,
-            'variant_id' => $item->variant_id,
-            'quantity' => $item->quantity,
-            'status' => $item->status,
-            'reason' => $item->reason,
-            'refund_amount' => floatval($item->refund_amount),
-            'admin_response' => $item->admin_response,
-            'product_name' => $orderItem?->product_name,
-            'product_image' => $orderItem?->product_image,
-            'size' => $orderItem?->size,
-            'color' => $orderItem?->color,
-        ];
+
+private function formatReturnItem($item, $order)
+{
+    $orderItem = $order->items->firstWhere('id', $item->order_item_id);
+    
+    // ✅ Parse images từ JSON nếu cần
+    $images = [];
+    if ($item->images) {
+        if (is_string($item->images)) {
+            $images = json_decode($item->images, true) ?? [];
+        } elseif (is_array($item->images)) {
+            $images = $item->images;
+        }
     }
+    
+    // ✅ Convert tất cả images thành full URLs
+    $images = array_map(function($imagePath) {
+        if (empty($imagePath)) {
+            return null;
+        }
+        
+        // Nếu đã là full URL thì giữ nguyên
+        if (str_starts_with($imagePath, 'http://') || str_starts_with($imagePath, 'https://')) {
+            return $imagePath;
+        }
+        
+        // Convert relative path thành full URL
+        return asset($imagePath);
+    }, $images);
+    
+    // ✅ Loại bỏ null values và re-index array
+    $images = array_values(array_filter($images));
+    
+    return [
+        'id' => $item->id,
+        'order_item_id' => $item->order_item_id,
+        'variant_id' => $item->variant_id,
+        'quantity' => $item->quantity,
+        'status' => $item->status,
+        'reason' => $item->reason,
+        'refund_amount' => floatval($item->refund_amount ?? 0),
+        'admin_response' => $item->admin_response,
+        
+        // Thông tin sản phẩm từ order item
+        'product_name' => $orderItem?->product_name,
+        'product_image' => $orderItem?->product_image,
+        'size' => $orderItem?->size,
+        'color' => $orderItem?->color,
+        
+        // ✅ Images array với full URLs
+        'images' => $images,
+        
+        // Timestamps
+        'created_at' => $item->created_at?->toISOString(),
+        'updated_at' => $item->updated_at?->toISOString(),
+    ];
+}
 
     private function formatOrderItem($item)
     {
@@ -901,6 +1001,8 @@ private function updateShipping($order, $data)
 
         return asset(Storage::url($imagePath));
     }
+
+
 
 
 }

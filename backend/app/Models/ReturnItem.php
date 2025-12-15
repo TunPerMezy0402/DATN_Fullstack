@@ -17,13 +17,17 @@ class ReturnItem extends Model
         'variant_id',
         'quantity',
         'reason',
+        'images',
         'status',
-        'refund_amount',     // ✅ ĐÃ THÊM
         'admin_response',
+        'refund_amount',
     ];
 
     protected $casts = [
-        'refund_amount' => 'decimal:2', // ✅ ĐÃ THÊM
+        'refund_amount' => 'decimal:2',
+        'images' => 'array',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     const STATUS_PENDING = 'pending';
@@ -46,7 +50,7 @@ class ReturnItem extends Model
 
     public function orderItem()
     {
-        return $this->belongsTo(OrderItem::class);
+        return $this->belongsTo(OrderItem::class, 'order_item_id');
     }
 
     public function variant()
@@ -77,16 +81,29 @@ class ReturnItem extends Model
     /**
      * Đánh dấu đã duyệt
      */
-    public function markAsApproved(string $adminResponse = null): bool
+    public function markAsApproved(float $refundAmount = null, string $adminResponse = null): bool
     {
         if (!$this->canApprove()) {
             return false;
         }
 
-        return $this->update([
+        $data = [
             'status' => self::STATUS_APPROVED,
             'admin_response' => $adminResponse,
-        ]);
+        ];
+
+        if ($refundAmount !== null) {
+            $data['refund_amount'] = $refundAmount;
+        }
+
+        $result = $this->update($data);
+
+        // Tự động tính lại refund của return request
+        if ($result) {
+            $this->returnRequest->recalculateRefund();
+        }
+
+        return $result;
     }
 
     /**
@@ -98,17 +115,57 @@ class ReturnItem extends Model
             return false;
         }
 
-        return $this->update([
+        $result = $this->update([
             'status' => self::STATUS_REJECTED,
             'admin_response' => $adminResponse,
+            'refund_amount' => 0,
         ]);
+
+
+        if ($result) {
+            $this->returnRequest->recalculateRefund();
+        }
+
+        return $result;
+    }
+
+
+    public function markAsCompleted(): bool
+    {
+        if ($this->status !== self::STATUS_APPROVED) {
+            return false;
+        }
+
+        return $this->update(['status' => self::STATUS_COMPLETED]);
     }
 
     /**
-     * Đánh dấu hoàn thành
+     * Lấy danh sách ảnh
      */
-    public function markAsCompleted(): bool
+    public function getImages(): array
     {
-        return $this->update(['status' => self::STATUS_COMPLETED]);
+        return $this->images ?? [];
+    }
+
+    /**
+     * Thêm ảnh
+     */
+    public function addImage(string $imagePath): bool
+    {
+        $images = $this->getImages();
+        $images[] = $imagePath;
+        
+        return $this->update(['images' => $images]);
+    }
+
+    /**
+     * Xóa ảnh
+     */
+    public function removeImage(string $imagePath): bool
+    {
+        $images = $this->getImages();
+        $images = array_filter($images, fn($img) => $img !== $imagePath);
+        
+        return $this->update(['images' => array_values($images)]);
     }
 }

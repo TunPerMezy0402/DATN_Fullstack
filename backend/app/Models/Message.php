@@ -7,17 +7,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Message extends Model
 {
-    // Các cột có thể gán hàng loạt
     protected $fillable = [
-        'chat_room_id',   // ID phòng chat
-        'sender_id',      // ID người gửi
-        'sender_type',    // 'user' hoặc 'admin'
-        'content',        // Nội dung tin nhắn (text)
-        'attachment',     // Đường dẫn file ảnh
-        'is_read',        // Đã đọc hay chưa
+        'chat_room_id',
+        'sender_id',
+        'sender_type',  // 'user', 'agent', hoặc 'admin'
+        'content',
+        'attachment',
+        'is_read',
     ];
 
-    // Ép kiểu dữ liệu
     protected $casts = [
         'is_read' => 'boolean',
     ];
@@ -38,5 +36,22 @@ class Message extends Model
     public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
+    }
+
+    /**
+     * Scope: Tin nhắn chưa đọc từ user
+     */
+    public function scopeUnreadFromUser($query)
+    {
+        return $query->where('sender_type', 'user')
+            ->where('is_read', false);
+    }
+
+    /**
+     * Scope: Tin nhắn từ agent/admin
+     */
+    public function scopeFromSupport($query)
+    {
+        return $query->whereIn('sender_type', ['agent', 'admin']);
     }
 }

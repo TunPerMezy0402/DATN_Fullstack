@@ -323,175 +323,188 @@ const ChatMessages: React.FC<{
   onFileRemove,
   onSendMessage
 }) => {
-  const filePreview = useMemo(() => {
-    if (!uploadFile) return null;
+    // ✅ THÊM: Debounce để tránh re-render nhiều lần
+    const filePreview = useMemo(() => {
+      if (!uploadFile) return null;
 
-    const isImage = uploadFile.type?.startsWith('image/');
-    if (isImage) {
+      const isImage = uploadFile.type?.startsWith('image/');
+
+      // ✅ Cleanup URL khi component unmount
+      const objectUrl = isImage ? URL.createObjectURL(uploadFile) : null;
+
       return (
         <div className="mb-2 relative inline-block">
-          <img src={URL.createObjectURL(uploadFile)} alt="Preview" className="max-h-20 rounded border" />
-          <Button
-            type="text"
-            size="small"
-            icon={<CloseOutlined />}
-            onClick={onFileRemove}
-            className="!absolute top-1 right-1 bg-white shadow"
-          />
+          {isImage ? (
+            <>
+              <img
+                src={objectUrl!}
+                alt="Preview"
+                className="max-h-20 rounded border"
+                onLoad={() => {
+                  // ✅ Revoke URL sau khi load xong
+                  if (objectUrl) URL.revokeObjectURL(objectUrl);
+                }}
+              />
+              <Button
+                type="text"
+                size="small"
+                icon={<CloseOutlined />}
+                onClick={onFileRemove}
+                className="!absolute top-1 right-1 bg-white shadow"
+              />
+            </>
+          ) : (
+            <div className="mb-2 text-sm bg-gray-100 px-3 py-2 rounded flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <FileOutlined /> {uploadFile.name}
+              </span>
+              <Button type="text" size="small" icon={<CloseOutlined />} onClick={onFileRemove} />
+            </div>
+          )}
         </div>
       );
-    }
+    }, [uploadFile, onFileRemove]);
 
     return (
-      <div className="mb-2 text-sm bg-gray-100 px-3 py-2 rounded flex items-center justify-between">
-        <span className="flex items-center gap-2">
-          <FileOutlined /> {uploadFile.name}
-        </span>
-        <Button type="text" size="small" icon={<CloseOutlined />} onClick={onFileRemove} />
-      </div>
-    );
-  }, [uploadFile, onFileRemove]);
-
-  return (
-    <>
-      <div className="flex-1 overflow-y-auto p-3 bg-white">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <MessageOutlined className="text-4xl mb-2 opacity-30" />
-            <p className="text-xs">Bắt đầu cuộc trò chuyện</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex ${msg.sender_type === "user" ? "justify-end" : "justify-start"}`}
-              >
+      <>
+        <div className="flex-1 overflow-y-auto p-3 bg-white">
+          {messages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400">
+              <MessageOutlined className="text-4xl mb-2 opacity-30" />
+              <p className="text-xs">Bắt đầu cuộc trò chuyện</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {messages.map((msg) => (
                 <div
-                  className={`max-w-[75%] ${msg.sender_type === "user" ? "bg-blue-600 text-white" : "bg-gray-100"
-                    } rounded-2xl px-3 py-2 shadow-sm`}
+                  key={msg.id}
+                  className={`flex ${msg.sender_type === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {msg.sender_type === "agent" && (
-                    <div className="text-[10px] font-medium mb-1 text-gray-600">
-                      {msg.sender_name}
-                    </div>
-                  )}
+                  <div
+                    className={`max-w-[75%] ${msg.sender_type === "user" ? "bg-blue-600 text-white" : "bg-gray-100"
+                      } rounded-2xl px-3 py-2 shadow-sm`}
+                  >
+                    {msg.sender_type === "agent" && (
+                      <div className="text-[10px] font-medium mb-1 text-gray-600">
+                        {msg.sender_name}
+                      </div>
+                    )}
 
-                  {msg.content && (
-                    <div className="break-words whitespace-pre-wrap text-[13px] leading-relaxed">
-                      {msg.content}
-                    </div>
-                  )}
+                    {msg.content && (
+                      <div className="break-words whitespace-pre-wrap text-[13px] leading-relaxed">
+                        {msg.content}
+                      </div>
+                    )}
 
-                  {msg.attachment && msg.attachment_url && (
-                    <div className="mt-1.5">
-                      {msg.attachment_type === "image" ? (
-                        <>
-                          <Image
-                            src={msg.attachment_url}
-                            alt="Attachment"
-                            className="rounded-lg max-w-full"
-                            style={{ maxHeight: "180px" }}
-                            preview={{ mask: "👁️ Xem" }}
-                            title={msg.attachment_info ? `${msg.attachment_info.width}x${msg.attachment_info.height}px` : ""}
-                          />
-                          {msg.attachment_info && (
-                            <div className={`text-[9px] mt-1 ${msg.sender_type === "user" ? "text-blue-200" : "text-gray-400"}`}>
-                              {msg.attachment_info.width}x{msg.attachment_info.height}px • {formatFileSize(msg.attachment_info.file_size)}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className={`text-[11px] bg-opacity-20 px-2 py-1 rounded flex items-center gap-1 ${msg.sender_type === "user" ? "bg-blue-100" : "bg-gray-200"}`}>
-                          <PaperClipOutlined />
-                          <a
-                            href={msg.attachment_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`hover:underline flex-1 truncate ${msg.sender_type === "user" ? "text-blue-100" : "text-blue-600"}`}
-                          >
-                            File đính kèm
-                          </a>
-                          {msg.attachment_info && (
-                            <span className={msg.sender_type === "user" ? "text-blue-200" : "text-gray-500"}>
-                              ({formatFileSize(msg.attachment_info.file_size)})
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    {msg.attachment && msg.attachment_url && (
+                      <div className="mt-1.5">
+                        {msg.attachment_type === "image" ? (
+                          <>
+                            <Image
+                              src={msg.attachment_url}
+                              alt="Attachment"
+                              className="rounded-lg max-w-full"
+                              style={{ maxHeight: "180px" }}
+                              preview={{ mask: "👁️ Xem" }}
+                              title={msg.attachment_info ? `${msg.attachment_info.width}x${msg.attachment_info.height}px` : ""}
+                            />
+                            {msg.attachment_info && (
+                              <div className={`text-[9px] mt-1 ${msg.sender_type === "user" ? "text-blue-200" : "text-gray-400"}`}>
+                                {msg.attachment_info.width}x{msg.attachment_info.height}px • {formatFileSize(msg.attachment_info.file_size)}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className={`text-[11px] bg-opacity-20 px-2 py-1 rounded flex items-center gap-1 ${msg.sender_type === "user" ? "bg-blue-100" : "bg-gray-200"}`}>
+                            <PaperClipOutlined />
+                            <a
+                              href={msg.attachment_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`hover:underline flex-1 truncate ${msg.sender_type === "user" ? "text-blue-100" : "text-blue-600"}`}
+                            >
+                              File đính kèm
+                            </a>
+                            {msg.attachment_info && (
+                              <span className={msg.sender_type === "user" ? "text-blue-200" : "text-gray-500"}>
+                                ({formatFileSize(msg.attachment_info.file_size)})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-                  <div className={`text-[9px] mt-1 ${msg.sender_type === "user" ? "text-blue-200" : "text-gray-400"}`}>
-                    {msg.created_at}
+                    <div className={`text-[9px] mt-1 ${msg.sender_type === "user" ? "text-blue-200" : "text-gray-400"}`}>
+                      {msg.created_at}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {currentRoom?.status === "open" ? (
+          <div className="p-3 bg-white border-t">
+            {filePreview}
+            <div className="flex gap-2 items-end">
+              <Upload
+                beforeUpload={(file) => {
+                  const fileSizeMB = file.size / 1024 / 1024;
+                  if (fileSizeMB > 10) {
+                    message.error("File không được vượt quá 10MB!");
+                    return false;
+                  }
+                  onFileSelect(file);
+                  return false;
+                }}
+                showUploadList={false}
+                accept="image/*,.pdf,.doc,.docx,.txt,.zip"
+                maxCount={1}
+              >
+                <Button
+                  icon={<PaperClipOutlined />}
+                  disabled={sendingMessage}
+                  className="!h-9 !w-9 rounded-full"
+                  title="Tối đa 10MB"
+                />
+              </Upload>
+
+              <Input.TextArea
+                placeholder="Aa"
+                value={newMessage}
+                onChange={(e) => onMessageChange(e.target.value)}
+                onPressEnter={(e) => {
+                  if (!e.shiftKey) {
+                    e.preventDefault();
+                    onSendMessage();
+                  }
+                }}
+                disabled={sendingMessage}
+                autoSize={{ minRows: 1, maxRows: 3 }}
+                className="flex-1 !rounded-full !px-4 !py-2 !bg-gray-100 !border-0"
+              />
+
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                onClick={onSendMessage}
+                loading={sendingMessage}
+                disabled={(!newMessage.trim() && !uploadFile) || sendingMessage}
+                className="!h-9 !w-9 rounded-full"
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="p-3 bg-gray-50 border-t text-center">
+            <div className="text-xs text-gray-600">Cuộc trò chuyện đã kết thúc</div>
           </div>
         )}
-      </div>
-
-      {currentRoom?.status === "open" ? (
-        <div className="p-3 bg-white border-t">
-          {filePreview}
-          <div className="flex gap-2 items-end">
-            <Upload
-              beforeUpload={(file) => {
-                const fileSizeMB = file.size / 1024 / 1024;
-                if (fileSizeMB > 10) {
-                  message.error("File không được vượt quá 10MB!");
-                  return false;
-                }
-                onFileSelect(file);
-                return false;
-              }}
-              showUploadList={false}
-              accept="image/*,.pdf,.doc,.docx,.txt,.zip"
-              maxCount={1}
-            >
-              <Button
-                icon={<PaperClipOutlined />}
-                disabled={sendingMessage}
-                className="!h-9 !w-9 rounded-full"
-                title="Tối đa 10MB"
-              />
-            </Upload>
-
-            <Input.TextArea
-              placeholder="Aa"
-              value={newMessage}
-              onChange={(e) => onMessageChange(e.target.value)}
-              onPressEnter={(e) => {
-                if (!e.shiftKey) {
-                  e.preventDefault();
-                  onSendMessage();
-                }
-              }}
-              disabled={sendingMessage}
-              autoSize={{ minRows: 1, maxRows: 3 }}
-              className="flex-1 !rounded-full !px-4 !py-2 !bg-gray-100 !border-0"
-            />
-
-            <Button
-              type="primary"
-              icon={<SendOutlined />}
-              onClick={onSendMessage}
-              loading={sendingMessage}
-              disabled={(!newMessage.trim() && !uploadFile) || sendingMessage}
-              className="!h-9 !w-9 rounded-full"
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="p-3 bg-gray-50 border-t text-center">
-          <div className="text-xs text-gray-600">Cuộc trò chuyện đã kết thúc</div>
-        </div>
-      )}
-    </>
-  );
-};
+      </>
+    );
+  };
 
 // ========== RATING FORM ==========
 const RatingForm: React.FC<{
@@ -507,8 +520,9 @@ const RatingForm: React.FC<{
       message.error("Vui lòng chọn đánh giá");
       return;
     }
-    const feedback = form.getFieldValue("feedback");
+    const feedback = form.getFieldValue("feedback") || "";
     onSubmit({ rating, feedback });
+
   };
 
   return (
@@ -778,12 +792,29 @@ const MainLayout: React.FC = () => {
 
   const rateAgent = useCallback(async (values: any) => {
     try {
-      if (!currentRoom) return;
+      if (!currentRoom) {
+        message.error("Không tìm thấy phòng chat");
+        return;
+      }
+
+      if (currentRoom.status !== 'closed') {
+        message.error("Phòng chat phải đã đóng trước khi đánh giá");
+        return;
+      }
 
       setLoading(true);
       const token = getAuthToken();
-      const res = await axios.post(`${API_URL}/client/chat/${currentRoom.id}/rate`, values, {
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+
+      const ratingData = {
+        rating: values.rating,
+        feedback: values.feedback?.trim() || null
+      };
+
+      const res = await axios.post(`${API_URL}/client/chat/${currentRoom.id}/rate`, ratingData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
       });
 
       if (res.data.success) {
@@ -831,7 +862,10 @@ const MainLayout: React.FC = () => {
 
   useEffect(() => {
     if (currentRoom && chatView === "chat" && currentRoom.status === "open") {
-      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
 
       pollingRef.current = setInterval(() => {
         loadMessages(currentRoom.id);
@@ -839,14 +873,58 @@ const MainLayout: React.FC = () => {
       }, 5000);
 
       return () => {
-        if (pollingRef.current) clearInterval(pollingRef.current);
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
       };
     }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [currentRoom?.id, chatView, currentRoom?.status, loadMessages, loadUnreadCount]);
+
+  useEffect(() => {
+    if (currentRoom && chatView === "chat" && currentRoom.status === "open") {
+      // Clear interval cũ trước khi tạo mới
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+
+      // Tạo interval mới
+      pollingRef.current = setInterval(() => {
+        loadMessages(currentRoom.id);
+        loadUnreadCount();
+      }, 5000);
+
+      // ✅ Cleanup
+      return () => {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+      };
+    }
+
+    // ✅ Cleanup khi không còn polling
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
   }, [currentRoom?.id, chatView, currentRoom?.status, loadMessages, loadUnreadCount]);
 
   useEffect(() => {
     if (showChat) loadChatRooms();
   }, [roomFilter, showChat, loadChatRooms]);
+
+  // ========== HANDLERS ==========
 
   const toggleChat = () => {
     setShowChat(prev => !prev);
