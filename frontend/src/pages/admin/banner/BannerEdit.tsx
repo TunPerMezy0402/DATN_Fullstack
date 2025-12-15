@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Input, Switch, Button, message } from "antd";
 import { useForm } from "react-hook-form";
@@ -78,7 +78,7 @@ const BannerEdit = () => {
 
       await updateBanner(Number(id), payload);
       message.success("Cập nhật banner thành công!");
-      navigate("/admin/banner-list");
+      navigate("/admin/banner");
     } catch (error) {
       console.error(error);
       message.error("Cập nhật thất bại!");

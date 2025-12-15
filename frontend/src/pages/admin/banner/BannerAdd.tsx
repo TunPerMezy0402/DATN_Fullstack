@@ -71,7 +71,7 @@ const BannerAdd = () => {
 
     await createBanner(payload);
     message.success("Tạo banner thành công!");
-    navigate("/admin/banner-list");
+    navigate("/admin/banner");
   } catch (error: any) {
     message.error(error.message || "Tạo banner thất bại!");
   }
