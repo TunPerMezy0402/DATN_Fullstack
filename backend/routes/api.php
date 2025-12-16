@@ -216,7 +216,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
 
 
-// ==================== ADMIN ROUTES ====================
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
 
     Route::get('/transactions', [PaymentController::class, 'get_all_transactions'])
@@ -263,7 +262,6 @@ Route::prefix('admin/product-reviews')
         Route::post('/bulk-force-delete', [ProductReviewController::class, 'bulkForceDelete'])
             ->name('bulk-force-delete');
     });
-
 
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/chat')->group(function () {

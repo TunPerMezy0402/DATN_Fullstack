@@ -135,7 +135,7 @@ interface Order {
   coupon?: {            // ✅ Thêm object coupon đầy đủ
     id: number;
     code: string;
-    discount_type: string; // 'percentage' | 'fixed'
+    discount_type: "percent" | "fixed";
     discount_value: string;
   };
   user: User;
@@ -219,9 +219,7 @@ const STATUS_COLORS = {
 
 };
 
-// ============================================================
-//                      MAIN COMPONENT
-// ============================================================
+
 
 const OrderDetail: React.FC = () => {
   const { id: orderId } = useParams<{ id: string }>();
@@ -278,9 +276,6 @@ const OrderDetail: React.FC = () => {
     }
   }, [order, isEditMode, form]);
 
-  // ============================================================
-  //                        HANDLERS
-  // ============================================================
 
   const handleUpload = async (file: File): Promise<string | null> => {
     const formData = new FormData();
@@ -1100,7 +1095,7 @@ const OrderDetail: React.FC = () => {
                             </Tag>
                           </Space>
                           <Text type="secondary" style={{ fontSize: 12 }}>
-                            {order.coupon.discount_type === 'percentage'
+                            {order.coupon.discount_type === 'percent'
                               ? `Giảm ${order.coupon.discount_value}%`
                               : `Giảm ${Math.round(parseFloat(order.coupon.discount_value)).toLocaleString("vi-VN")}đ`}
                           </Text>
@@ -1311,11 +1306,11 @@ const OrderDetail: React.FC = () => {
                   </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="Loại giảm giá">
-                  {order.coupon.discount_type === 'percentage' ? 'Phần trăm (%)' : 'Số tiền cố định (VNĐ)'}
+                  {order.coupon.discount_type === 'percent' ? 'Phần trăm (%)' : 'Số tiền cố định (VNĐ)'}
                 </Descriptions.Item>
                 <Descriptions.Item label="Giá trị">
                   <Text strong style={{ color: "#ff4d4f" }}>
-                    {order.coupon.discount_type === 'percentage'
+                    {order.coupon.discount_type === 'percent'
                       ? `${order.coupon.discount_value}%`
                       : `${Math.round(parseFloat(order.coupon.discount_value)).toLocaleString("vi-VN")}đ`}
                   </Text>

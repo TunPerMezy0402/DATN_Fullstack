@@ -158,8 +158,8 @@ interface ReturnRequest {
   items_count: number;
   total_return_amount: string;
   estimated_refund: string;
-  estimated_refund_min: string; // ✅ THÊM LẠI
-  estimated_refund_max: string; // ✅ THÊM LẠI
+  estimated_refund_min: string; 
+  estimated_refund_max: string; 
   refund_explanation: string;
   admin_note?: string;
   items: ReturnRequestItem[];
@@ -191,16 +191,16 @@ const STATUS_MAPS = {
   },
   shipping: {
     pending: "Chờ xử lý",
-    nodone: "Chưa thanh toán",
     in_transit: "Đang vận chuyển",
     delivered: "Đã giao hàng",
+    nodone: "Chưa thanh toán",
+    none: "Đã hủy",
     received: "Đã nhận hàng",
     failed: "Giao thất bại",
     return_processing: "Đang xử lý hoàn hàng",
     return_fail: "Hoàn thất bại",
     returned: "Đã hoàn hàng",
     cancelled: "Đã hủy",
-    none: "Đã hủy",
   },
   paymentMethod: {
     cod: "Thanh toán khi nhận hàng",
@@ -285,7 +285,6 @@ const getDaysUntilReturnExpired = (receivedAt: string | null): number => {
 };
 
 
-// ==================== MAIN COMPONENT ====================
 const OrderUserDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -315,6 +314,7 @@ const OrderUserDetail: React.FC = () => {
 
   // Other State
   const [confirmReceivedLoading, setConfirmReceivedLoading] = useState(false);
+  const [repaymentLoading, setRepaymentLoading] = useState(false);
 
   // ==================== HELPER FUNCTIONS FOR RETURN ====================
   const getItemReturnStatus = (orderItemId: number): { status: string; returnedQty: number } | null => {
@@ -743,6 +743,38 @@ const OrderUserDetail: React.FC = () => {
     }
   };
 
+  // ==================== REPAYMENT HANDLER ====================
+const handleRepayment = async () => {
+  if (!order) return;
+
+  try {
+    setRepaymentLoading(true);
+    const token = getAuthToken();
+
+    const response = await axios.post(
+      `${API_URL}/orders/${id}/repay`,
+      { payment_method: order.payment_method },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (response.data.success) {
+      if (response.data.payment_url) {
+        message.success("Đang chuyển đến trang thanh toán...");
+        window.location.href = response.data.payment_url;
+      } else {
+        message.success(response.data.message || "Đã kích hoạt lại đơn hàng thành công!");
+        await fetchOrder();
+      }
+    }
+  } catch (error: any) {
+    console.error("Repayment error:", error);
+    const errorMsg = error.response?.data?.message || "Không thể thanh toán lại!";
+    message.error(errorMsg);
+  } finally {
+    setRepaymentLoading(false);
+  }
+};
+
   // ==================== RENDER FUNCTIONS ====================
   const getLogDate = (status: string) => {
     const log = order?.shipping_logs?.find(log => log.new_status === status);
@@ -865,131 +897,151 @@ const OrderUserDetail: React.FC = () => {
     );
   };
 
-  const renderActionButtons = () => {
-    const s = order?.shipping;
-    if (!s) return null;
+const renderActionButtons = () => {
+  const s = order?.shipping;
+  if (!s) return null;
 
-    const daysLeft = s.received_at ? getDaysUntilReturnExpired(s.received_at) : 0;
-    const canCancel = ["pending", "nodone"].includes(s.shipping_status);
+  const daysLeft = s.received_at ? getDaysUntilReturnExpired(s.received_at) : 0;
+  const canCancel = ["pending", "nodone"].includes(s.shipping_status);
+  
+  // ✅ Kiểm tra thanh toán thất bại
+  const isPaymentFailed = order.payment_status === "failed";
 
-    // ✅ Kiểm tra trạng thái đã giao hàng
-    const isDelivered = s.shipping_status === "delivered";
-    const isReceived = s.shipping_status === "received";
+  const isDelivered = s.shipping_status === "delivered";
+  const isReceived = s.shipping_status === "received";
 
-    const hasReturnableItems = (order?.items || []).some(item => {
-      const hasNoReview = !item.reviews || item.reviews.length === 0;
-      const availableQty = item.available_return_quantity ?? 0;
-      return hasNoReview && availableQty > 0;
-    });
+  const hasReturnableItems = (order?.items || []).some(item => {
+    const hasNoReview = !item.reviews || item.reviews.length === 0;
+    const availableQty = item.available_return_quantity ?? 0;
+    return hasNoReview && availableQty > 0;
+  });
 
-    return (
-      <Space size="middle" wrap>
-        {/* Nút hủy đơn */}
-        {canCancel && (
-          <Button
-            danger
-            icon={<CloseCircleOutlined />}
-            size="large"
-            onClick={() => setCancelModalVisible(true)}
-            style={{ height: 45, fontSize: 16, fontWeight: 500 }}
-          >
-            Hủy đơn hàng
-          </Button>
-        )}
+  return (
+    <Space size="middle" wrap>
+      {/* ✅ Nút thanh toán lại */}
+      {isPaymentFailed && (
+        <Button
+          type="primary"
+          icon={<DollarOutlined />}
+          size="large"
+          onClick={handleRepayment}
+          loading={repaymentLoading}
+          style={{
+            height: 45,
+            fontSize: 16,
+            fontWeight: 500,
+            backgroundColor: "#1890ff",
+            borderColor: "#1890ff"
+          }}
+        >
+          Thanh toán lại
+        </Button>
+      )}
 
-        {/* ✅ Nút xác nhận nhận hàng - CHỈ hiển thị khi delivered */}
-        {isDelivered && (
-          <Button
-            type="primary"
-            icon={<CheckCircleOutlined />}
-            size="large"
-            onClick={handleConfirmReceived}
-            loading={confirmReceivedLoading}
-            style={{
-              height: 45,
-              fontSize: 16,
-              fontWeight: 500,
-              backgroundColor: "#52c41a",
-              borderColor: "#52c41a"
-            }}
-          >
-            Đã nhận được hàng
-          </Button>
-        )}
+      {/* Nút hủy đơn */}
+      {canCancel && (
+        <Button
+          danger
+          icon={<CloseCircleOutlined />}
+          size="large"
+          onClick={() => setCancelModalVisible(true)}
+          style={{ height: 45, fontSize: 16, fontWeight: 500 }}
+        >
+          Hủy đơn hàng
+        </Button>
+      )}
 
-        {/* ✅ Nút hoàn hàng - CHỈ hiển thị khi delivered (song song với nút nhận hàng) */}
-        {isDelivered && hasReturnableItems && (
-          <Button
-            icon={<SyncOutlined />}
-            size="large"
-            onClick={handleOpenReturnModal}
-            style={{
-              height: 45,
-              fontSize: 16,
-              fontWeight: 500,
-              backgroundColor: "#722ed1",
-              color: "white",
-              borderColor: "#722ed1"
-            }}
-          >
-            Hoàn hàng
-          </Button>
-        )}
+      {/* Nút xác nhận nhận hàng */}
+      {isDelivered && (
+        <Button
+          type="primary"
+          icon={<CheckCircleOutlined />}
+          size="large"
+          onClick={handleConfirmReceived}
+          loading={confirmReceivedLoading}
+          style={{
+            height: 45,
+            fontSize: 16,
+            fontWeight: 500,
+            backgroundColor: "#52c41a",
+            borderColor: "#52c41a"
+          }}
+        >
+          Đã nhận được hàng
+        </Button>
+      )}
 
-        {/* Nút xem đánh giá */}
-        {hasReviewedVariants && (
-          <Button
-            icon={<StarOutlined />}
-            size="large"
-            onClick={() => setViewReviewsModalVisible(true)}
-            style={{
-              height: 45,
-              fontSize: 16,
-              fontWeight: 500,
-              backgroundColor: "#fff",
-              color: "#faad14",
-              borderColor: "#faad14"
-            }}
-          >
-            Xem đánh giá
-          </Button>
-        )}
+      {/* Nút hoàn hàng */}
+      {isDelivered && hasReturnableItems && (
+        <Button
+          icon={<SyncOutlined />}
+          size="large"
+          onClick={handleOpenReturnModal}
+          style={{
+            height: 45,
+            fontSize: 16,
+            fontWeight: 500,
+            backgroundColor: "#722ed1",
+            color: "white",
+            borderColor: "#722ed1"
+          }}
+        >
+          Hoàn hàng
+        </Button>
+      )}
 
-        {/* ✅ Nút đánh giá - CHỈ hiển thị khi received hoặc return_processing */}
-        {canReview(s.shipping_status) && hasUnreviewedVariants && (
-          <Button
-            icon={<StarOutlined />}
-            size="large"
-            onClick={handleOpenReviewModal}
-            style={{
-              height: 45,
-              fontSize: 16,
-              fontWeight: 500,
-              backgroundColor: "#faad14",
-              color: "white",
-              borderColor: "#faad14"
-            }}
-          >
-            Đánh giá đơn hàng
-          </Button>
-        )}
+      {/* Nút xem đánh giá */}
+      {hasReviewedVariants && (
+        <Button
+          icon={<StarOutlined />}
+          size="large"
+          onClick={() => setViewReviewsModalVisible(true)}
+          style={{
+            height: 45,
+            fontSize: 16,
+            fontWeight: 500,
+            backgroundColor: "#fff",
+            color: "#faad14",
+            borderColor: "#faad14"
+          }}
+        >
+          Xem đánh giá
+        </Button>
+      )}
 
-        {/* ✅ BỎ NÚT HOÀN HÀNG Ở ĐÂY - Không hiển thị song song với đánh giá nữa */}
+      {/* Nút đánh giá */}
+      {canReview(s.shipping_status) && hasUnreviewedVariants && (
+        <Button
+          icon={<StarOutlined />}
+          size="large"
+          onClick={handleOpenReviewModal}
+          style={{
+            height: 45,
+            fontSize: 16,
+            fontWeight: 500,
+            backgroundColor: "#faad14",
+            color: "white",
+            borderColor: "#faad14"
+          }}
+        >
+          Đánh giá đơn hàng
+        </Button>
+      )}
 
-        {/* Nút hết hạn hoàn hàng - CHỈ hiển thị khi received và hết hạn */}
-        {isReceived && daysLeft === 0 && (
-          <Button
-            icon={<CloseCircleOutlined />}
-            size="large"
-            disabled
-            style={{ height: 45, fontSize: 16, fontWeight: 500 }}
-          >
-            Đã hết hạn hoàn hàng
-          </Button>
-        )}
-      </Space>
-    );
-  };
+      {/* Nút hết hạn hoàn hàng */}
+      {isReceived && daysLeft === 0 && (
+        <Button
+          icon={<CloseCircleOutlined />}
+          size="large"
+          disabled
+          style={{ height: 45, fontSize: 16, fontWeight: 500 }}
+        >
+          Đã hết hạn hoàn hàng
+        </Button>
+      )}
+    </Space>
+  );
+};
 
   // ==================== LOADING STATE ====================
   if (loading) {

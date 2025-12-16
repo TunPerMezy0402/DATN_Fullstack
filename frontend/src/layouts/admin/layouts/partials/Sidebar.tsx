@@ -148,14 +148,24 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
           {/* Dashboard */}
           <div className="sidebar__section">
             <NavLink
-              to="/admin/dashboard"
+              to="/admin/dashboard1"
               className={({ isActive }) =>
                 `sidebar__link ${isActive ? "sidebar__link--active" : ""}`
               }
               onClick={onToggle}
             >
               <i className="sidebar__icon fas fa-tachometer-alt" />
-              <span className="sidebar__text">Dashboard</span>
+              <span className="sidebar__text">Dashboard 1</span>
+            </NavLink>
+            <NavLink
+              to="/admin/dashboard2"
+              className={({ isActive }) =>
+                `sidebar__link ${isActive ? "sidebar__link--active" : ""}`
+              }
+              onClick={onToggle}
+            >
+              <i className="sidebar__icon fas fa-tachometer-alt" />
+              <span className="sidebar__text">Dashboard 2</span>
             </NavLink>
           </div>
 
