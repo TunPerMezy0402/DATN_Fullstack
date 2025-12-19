@@ -87,7 +87,7 @@ const Login: React.FC = () => {
     onSuccess: (response) => {
       if ('user' in response && response.user && response.user.role) {
         const userRole = response.user.role;
-        navigate(userRole === 'admin' ? '/admin/dashboard' : '/');
+        navigate(userRole === 'admin' ? '/a' : '/');
       } else {
         navigate('/');
       }
@@ -150,7 +150,7 @@ const Login: React.FC = () => {
       // Navigate to dashboard based on user role
       const userRole = response.user.role;
       if (userRole === 'admin') {
-        navigate('/admin/dashboard');
+        navigate('/admin/dashboard1');
       } else {
         navigate('/');
       }

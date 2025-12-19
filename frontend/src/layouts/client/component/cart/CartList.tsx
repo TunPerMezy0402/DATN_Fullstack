@@ -224,7 +224,7 @@ const CartList: React.FC = () => {
                     delete newTimeouts[itemId];
                     return newTimeouts;
                 });
-            }, 1500);
+            }, 4000);
 
             setErrorTimeouts(prev => ({ ...prev, [itemId]: timeout }));
             return;

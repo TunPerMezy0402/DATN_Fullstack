@@ -35,6 +35,11 @@ use App\Http\Controllers\Api\admin\AdminChatController;
 use App\Http\Controllers\Api\admin\AdminProductReviewController;
 
 
+use App\Http\Controllers\Api\Dashboard1Controller;
+use App\Http\Controllers\Api\Dashboard2Controller;
+
+
+
 use App\Http\Controllers\Api\Admin\BannerController;
 use App\Http\Controllers\Api\Admin\BannerImageController;
 use App\Http\Controllers\Api\Client\HomeBannerController;
@@ -235,6 +240,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     
     // ✅ THÊM ROUTE NÀY
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/refund-shipping', [OrderController::class, 'refundShipping']);
+
+    Route::get('dashboard1/stats', [Dashboard1Controller::class, 'getStats']);
+    Route::get('dashboard2/stats', [Dashboard2Controller::class, 'getStats']);
 });
 
 

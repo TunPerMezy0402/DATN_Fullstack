@@ -19,7 +19,7 @@ const PublicRoute: React.FC<{ children: React.ReactElement }> = ({ children }) =
   if (isAuthenticated && user) {
     // Redirect về dashboard theo role
     if (user.role === 'admin') {
-      return <Navigate to="/admin/dashboard" replace />;
+      return <Navigate to="/admin/dashboard1" replace />;
     }
     return <Navigate to="/" replace />;
   }

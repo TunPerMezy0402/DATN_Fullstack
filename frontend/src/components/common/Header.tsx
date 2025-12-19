@@ -347,7 +347,7 @@ const Header: React.FC = () => {
                     <div className="py-2">
                       {user.role === "admin" && (
                         <Link
-                          to="/admin/dashboard"
+                          to="/admin/dashboard1"
                           onClick={() => setShowUserMenu(false)}
                           className="block px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600"
                         >

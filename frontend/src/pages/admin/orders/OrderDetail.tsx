@@ -137,6 +137,7 @@ interface Order {
     code: string;
     discount_type: "percent" | "fixed";
     discount_value: string;
+    min_purchase: string;
   };
   user: User;
   items: OrderItem[];
@@ -298,12 +299,12 @@ const OrderDetail: React.FC = () => {
 
   const getAvailableShippingStatuses = (currentStatus: string, paymentStatus: string) => {
     const transitions: Record<string, string[]> = {
-      pending: ["pending", "in_transit", "none"],
+      pending: ["pending", "in_transit"/* , "none" */],
       in_transit: ["in_transit", "delivered", "failed"],
       delivered: ["delivered"],
-      received: ["received", "evaluated", "return_processing"],
-      failed: ["failed", "return_processing"],
-      nodone: ["nodone", "return_processing"],
+      received: ["received"],
+      failed: ["failed"],
+      nodone: ["nodone"],
       return_processing: ["return_processing", "returned", "return_fail"],
       returned: ["returned"],
       return_fail: ["return_fail"],
@@ -335,7 +336,7 @@ const OrderDetail: React.FC = () => {
     });
 
     const validPaymentTransitions: Record<string, string[]> = {
-      unpaid: ["paid", "failed"],
+      unpaid: ["paid"],
       paid: ["refund_processing"],
       refund_processing: ["refunded", "failed"],
       refunded: [],
@@ -345,7 +346,7 @@ const OrderDetail: React.FC = () => {
     const allowedTransitions = validPaymentTransitions[currentPaymentStatus] || [];
 
     allowedTransitions.forEach((status) => {
-      if (status === "paid" && currentPaymentStatus === "unpaid") {
+      /* if (status === "paid" && currentPaymentStatus === "unpaid") {
         if ((order?.payment_method === "cod" && shippingStatus === "delivered") || order?.payment_method === "vnpay") {
           statuses.push({
             value: "paid",
@@ -353,7 +354,7 @@ const OrderDetail: React.FC = () => {
           });
         }
         return;
-      }
+      } */
 
       if (status === "refund_processing" && currentPaymentStatus === "paid") {
         if (["return_processing", "returned"].includes(shippingStatus)) {
@@ -625,6 +626,8 @@ const OrderDetail: React.FC = () => {
 
 
 
+  // Thay thế phần renderReturnRequests() trong component OrderDetail
+
   const renderReturnRequests = () => {
     if (!order?.return_requests || order.return_requests.length === 0) return null;
 
@@ -633,7 +636,7 @@ const OrderDetail: React.FC = () => {
         title={
           <Space>
             <SyncOutlined />
-            <span>Lịch sử yêu cầu hoàn hàng</span>
+            <span>Yêu cầu hoàn hàng</span>
           </Space>
         }
         style={{ marginBottom: 24, borderRadius: 8 }}
@@ -655,8 +658,6 @@ const OrderDetail: React.FC = () => {
             ),
             children: (
               <div>
-
-
                 <Card type="inner" title="Danh sách sản phẩm hoàn" style={{ marginBottom: 16 }}>
                   <Table
                     dataSource={returnRequest.items}
@@ -719,7 +720,7 @@ const OrderDetail: React.FC = () => {
                         title: "Tiền hoàn",
                         dataIndex: "refund_amount",
                         align: "right",
-                        width: 120,
+                        width: 200,
                         render: (amount: number) => (
                           <Text strong style={{ color: "#ff4d4f" }}>
                             {amount?.toLocaleString("vi-VN")} VNĐ
@@ -845,32 +846,186 @@ const OrderDetail: React.FC = () => {
                   />
                 </Card>
 
+                {/* ===== CHI TIẾT HOÀN TIỀN - LOGIC MỚI ===== */}
                 <Card type="inner" title="Chi tiết hoàn tiền">
                   {(() => {
-                    const totalReturnAmount = parseFloat(returnRequest.total_return_amount || "0");
-                    const estimatedRefund = parseFloat(returnRequest.estimated_refund || "0");
                     const orderTotal = parseFloat(order?.total_amount || "0");
+                    const orderDiscount = parseFloat(order?.discount_amount || "0");
+                    const actualPaid = orderTotal - orderDiscount; // Số tiền khách đã trả
+
                     const isFreeship = orderTotal >= 500000;
                     const canRefund30k = !isFreeship;
                     const hasRefunded30k = returnRequest.refund_30k === true;
 
+                    // Trạng thái
+                    const isPending = returnRequest.status === "pending";
+                    const isApproved = returnRequest.status === "approved";
+                    const isCompleted = returnRequest.status === "completed";
+                    const isRejected = returnRequest.status === "rejected";
+
+                    // Tính tổng tiền hàng hoàn (items approved)
+                    const approvedItems = returnRequest.items.filter(item => item.status === "approved");
+                    const totalReturnAmount = approvedItems.reduce(
+                      (sum, item) => sum + (item.refund_amount || 0),
+                      0
+                    );
+
+                    // Số tiền còn lại
+                    const remainingAmount = orderTotal - totalReturnAmount;
+
+                    // Kiểm tra coupon còn hiệu lực không
+                    const coupon = order?.coupon;
+                    const minPurchase = parseFloat(coupon?.min_purchase || "0");
+                    const couponStillValid = orderDiscount > 0 && remainingAmount >= minPurchase;
+
+                    // Tính tiền hoàn (KHÔNG BAO GỒM 30k ship)
+                    let refundForGoods = 0;
+
+                    if (couponStillValid) {
+                      // Giữ coupon → Hoàn theo tỷ lệ
+                      const returnRatio = orderTotal > 0 ? totalReturnAmount / orderTotal : 0;
+                      refundForGoods = actualPaid * returnRatio;
+                    } else {
+                      // Hủy coupon → Tính lại
+                      refundForGoods = actualPaid - remainingAmount;
+                    }
+
+                    // Tổng tiền hoàn (bao gồm 30k nếu đã duyệt)
+                    const finalRefundAmount = hasRefunded30k
+                      ? refundForGoods + 30000
+                      : refundForGoods;
+
+                    // Estimated refund từ server (khi pending)
+                    const estimatedRefund = parseFloat(returnRequest.estimated_refund || "0");
+
                     return (
                       <Space direction="vertical" style={{ width: "100%" }} size="middle">
 
-                        <Divider style={{ margin: "8px 0" }} />
-
-                        <Row justify="space-between">
-                          <Text strong style={{ fontSize: 16 }}>
-                            Số tiền hoàn:
-                          </Text>
-                          <Text strong style={{ fontSize: 18, color: "#52c41a" }}>
-                            {Math.round(estimatedRefund).toLocaleString("vi-VN")} VNĐ
-                          </Text>
-                        </Row>
-
-                        {canRefund30k && (
+                        {/* ===== PENDING: Chờ duyệt ===== */}
+                        {isPending && (
                           <>
-                            {!hasRefunded30k ? (
+                            <Alert
+                              message="Đang chờ duyệt"
+                              description={
+                                <Space direction="vertical" size={0}>
+                                  <Text>Số tiền hoàn sẽ được xác định sau khi duyệt các sản phẩm</Text>
+                                  {!couponStillValid && orderDiscount > 0 && (
+                                    <Text type="warning" style={{ fontSize: 12 }}>
+                                      ⚠️ Đơn còn lại không đủ điều kiện giảm giá, mã sẽ bị hủy
+                                    </Text>
+                                  )}
+                                </Space>
+                              }
+                              type="info"
+                              showIcon
+                              icon={<InfoCircleOutlined />}
+                            />
+
+                            <Divider style={{ margin: "8px 0" }} />
+
+                            {/* Thông tin đơn hàng */}
+                            <Row justify="space-between">
+                              <Text type="secondary" style={{ fontSize: 13 }}>
+                                Tổng đơn hàng:
+                              </Text>
+                              <Text type="secondary" style={{ fontSize: 13 }}>
+                                {Math.round(orderTotal).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+
+                            {orderDiscount > 0 && (
+                              <Row justify="space-between">
+                                <Text type="secondary" style={{ fontSize: 13 }}>
+                                  Giảm giá:
+                                </Text>
+                                <Text type="secondary" style={{ fontSize: 13, color: "#ff4d4f" }}>
+                                  -{Math.round(orderDiscount).toLocaleString("vi-VN")} VNĐ
+                                </Text>
+                              </Row>
+                            )}
+
+                            <Row justify="space-between">
+                              <Text type="secondary" style={{ fontSize: 13 }}>
+                                Đã / Cần thanh toán:
+                              </Text>
+                              <Text type="secondary" strong style={{ fontSize: 13 }}>
+                                {Math.round(actualPaid).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+
+                            <Divider style={{ margin: "8px 0" }} />
+
+                            <Row justify="space-between">
+                              <Text type="secondary" style={{ fontSize: 16 }}>
+                                Tiền hoàn dự kiến:
+                              </Text>
+                              <Text type="secondary" style={{ fontSize: 18 }}>
+                                ~{Math.round(estimatedRefund).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+                          </>
+                        )}
+
+                        {/* ===== APPROVED: Đã duyệt, chờ hoàn tiền ===== */}
+                        {isApproved && (
+                          <>
+                            <Alert
+                              message="Đã duyệt - Chờ hoàn tiền"
+                              description={
+                                couponStillValid
+                                  ? `Giữ mã giảm giá. Hoàn ${((totalReturnAmount / orderTotal) * 100).toFixed(1)}% tiền đã trả`
+                                  : `Mã giảm giá đã bị hủy`
+                              }
+                              type="success"
+                              showIcon
+                              icon={<CheckCircleOutlined />}
+                            />
+
+                            <Divider style={{ margin: "8px 0" }} />
+
+                            {/* Breakdown */}
+                            <Row justify="space-between">
+                              <Text style={{ fontSize: 14 }}>
+                                Tiền hàng hoàn:
+                              </Text>
+                              <Text style={{ fontSize: 14 }}>
+                                {Math.round(totalReturnAmount).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+
+                            <Row justify="space-between">
+                              <Text style={{ fontSize: 14 }}>
+                                {couponStillValid ? "Hoàn theo tỷ lệ:" : "Hoàn (sau khi hủy mã):"}
+                              </Text>
+                              <Text style={{ fontSize: 14, color: "#52c41a" }}>
+                                {Math.round(refundForGoods).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+
+                            {hasRefunded30k && (
+                              <Row justify="space-between">
+                                <Text style={{ fontSize: 14 }}>
+                                  Phí vận chuyển:
+                                </Text>
+                                <Text style={{ fontSize: 14, color: "#52c41a" }}>
+                                  +30.000 VNĐ
+                                </Text>
+                              </Row>
+                            )}
+
+                            <Divider style={{ margin: "8px 0" }} />
+
+                            <Row justify="space-between">
+                              <Text strong style={{ fontSize: 16 }}>
+                                Tổng tiền hoàn:
+                              </Text>
+                              <Text strong style={{ fontSize: 18, color: "#52c41a" }}>
+                                {Math.round(finalRefundAmount).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+
+                            {/* Button hoàn 30k nếu chưa hoàn */}
+                            {canRefund30k && !hasRefunded30k && (
                               <Popconfirm
                                 title="Hoàn thêm 30.000đ tiền ship?"
                                 description="Khách hàng sẽ nhận thêm 30.000đ tiền vận chuyển. Xác nhận?"
@@ -890,25 +1045,87 @@ const OrderDetail: React.FC = () => {
                                   💚 Hoàn thêm 30.000đ tiền ship
                                 </Button>
                               </Popconfirm>
-                            ) : (
-                              <div
-                                style={{
-                                  padding: 12,
-                                  backgroundColor: "#f6ffed",
-                                  borderRadius: 6,
-                                  border: "2px solid #52c41a",
-                                  marginTop: 12,
-                                }}
-                              >
-                                <Space>
-                                  <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 16 }} />
-                                  <Text strong style={{ fontSize: 14, color: "#389e0d" }}>
-                                    ✅ Đã hoàn 30.000đ tiền ship
-                                  </Text>
-                                </Space>
-                              </div>
+                            )}
+
+                            {!canRefund30k && (
+                              <Alert
+                                message="Đơn hàng ≥ 500k (đã freeship), không áp dụng hoàn 30k"
+                                type="info"
+                                showIcon
+                                style={{ marginTop: 12 }}
+                              />
                             )}
                           </>
+                        )}
+
+                        {/* ===== COMPLETED: Đã hoàn tiền ===== */}
+                        {isCompleted && (
+                          <>
+                            <Alert
+                              message="Đã hoàn tiền thành công"
+                              description={
+                                couponStillValid
+                                  ? `Giữ mã giảm giá. Hoàn ${((totalReturnAmount / orderTotal) * 100).toFixed(1)}% tiền đã trả`
+                                  : `Hủy mã giảm giá. Tính lại: ${Math.round(actualPaid).toLocaleString()} - ${Math.round(remainingAmount).toLocaleString()}`
+                              }
+                              type="success"
+                              showIcon
+                              icon={<CheckCircleOutlined />}
+                            />
+
+                            <Divider style={{ margin: "8px 0" }} />
+
+                            <Row justify="space-between">
+                              <Text style={{ fontSize: 14 }}>
+                                Tiền hàng hoàn:
+                              </Text>
+                              <Text style={{ fontSize: 14 }}>
+                                {Math.round(totalReturnAmount).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+
+                            <Row justify="space-between">
+                              <Text style={{ fontSize: 14 }}>
+                                {couponStillValid ? "Hoàn theo tỷ lệ:" : "Hoàn (sau khi hủy mã):"}
+                              </Text>
+                              <Text style={{ fontSize: 14, color: "#52c41a" }}>
+                                {Math.round(refundForGoods).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+
+                            {hasRefunded30k && (
+                              <Row justify="space-between">
+                                <Text style={{ fontSize: 14 }}>
+                                  Phí vận chuyển:
+                                </Text>
+                                <Text style={{ fontSize: 14, color: "#52c41a" }}>
+                                  +30.000 VNĐ
+                                </Text>
+                              </Row>
+                            )}
+
+                            <Divider style={{ margin: "8px 0" }} />
+
+                            <Row justify="space-between">
+                              <Text strong style={{ fontSize: 16 }}>
+                                Đã hoàn:
+                              </Text>
+                              <Text strong style={{ fontSize: 18, color: "#52c41a" }}>
+                                {Math.round(finalRefundAmount).toLocaleString("vi-VN")} VNĐ
+                              </Text>
+                            </Row>
+                          </>
+                        )}
+
+                        {/* ===== REJECTED: Đã từ chối ===== */}
+                        {isRejected && (
+                          <Alert
+                            message="Yêu cầu hoàn hàng đã bị từ chối"
+                            description={returnRequest.admin_note || "Không có ghi chú từ admin"}
+                            type="error"
+                            showIcon
+                            icon={<CloseCircleOutlined />}
+                          />
                         )}
                       </Space>
                     );
@@ -967,7 +1184,7 @@ const OrderDetail: React.FC = () => {
           <Col>
             {!isEditMode ? (
               <Button type="primary" icon={<EditOutlined />} onClick={() => setIsEditMode(true)}>
-                Chỉnh sửa
+                Cập nhật trạng thái
               </Button>
             ) : (
               <Space>
@@ -1218,38 +1435,74 @@ const OrderDetail: React.FC = () => {
                 </Form.Item>
 
                 {order.payment_status === "refund_processing" && (
-                  <Form.Item
-                    label="Trạng thái thanh toán"
-                    name="payment_status"
-                    rules={[{ required: true, message: "Vui lòng chọn trạng thái thanh toán" }]}
-                  >
-                    <Select
-                      style={{ width: "100%" }}
-                      options={getAvailablePaymentStatuses(order.payment_status, order.shipping.shipping_status)}
-                    />
-                  </Form.Item>
+                  <>
+                    <Form.Item
+                      label="Trạng thái thanh toán"
+                      name="payment_status"
+                      rules={[{ required: true, message: "Vui lòng chọn trạng thái thanh toán" }]}
+                    >
+                      <Select
+                        style={{ width: "100%" }}
+                        options={getAvailablePaymentStatuses(order.payment_status, order.shipping.shipping_status)}
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      label={
+                        <Space>
+                          <PictureOutlined />
+                          Ảnh chuyển khoản
+                        </Space>
+                      }
+                    >
+                      <Upload {...uploadProps} listType="picture-card">
+                        {fileList.length >= 1 ? null : (
+                          <div>
+                            <UploadOutlined />
+                            <div style={{ marginTop: 8 }}>Tải ảnh lên</div>
+                          </div>
+                        )}
+                      </Upload>
+                      <div style={{ marginTop: 8, color: "#999", fontSize: "12px" }}>
+                        Kích thước tối đa: 5MB. Định dạng: JPG, PNG, JPEG
+                      </div>
+                    </Form.Item>
+                  </>
                 )}
 
-                <Form.Item
-                  label={
-                    <Space>
-                      <PictureOutlined />
-                      Ảnh chuyển khoản
-                    </Space>
-                  }
-                >
-                  <Upload {...uploadProps} listType="picture-card">
-                    {fileList.length >= 1 ? null : (
-                      <div>
-                        <UploadOutlined />
-                        <div style={{ marginTop: 8 }}>Tải ảnh lên</div>
-                      </div>
-                    )}
-                  </Upload>
-                  <div style={{ marginTop: 8, color: "#999", fontSize: "12px" }}>
-                    Kích thước tối đa: 5MB. Định dạng: JPG, PNG, JPEG
-                  </div>
-                </Form.Item>
+                {["return_processing", "returned", "return_fail"].includes(
+                  order.shipping.shipping_status
+                ) && (
+                    <>
+                      <Form.Item
+                        label="Trạng thái thanh toán"
+                        name="payment_status"
+                        rules={[{ required: true, message: "Vui lòng chọn trạng thái thanh toán" }]}
+                      >
+                        <Select
+                          style={{ width: "100%" }}
+                          options={getAvailablePaymentStatuses(
+                            order.payment_status,
+                            order.shipping.shipping_status
+                          )}
+                        />
+                      </Form.Item>
+
+                      <Form.Item
+                        label="Phản hồi Admin"
+                        name="reason_admin"
+                      >
+                        <TextArea
+                          rows={4}
+                          placeholder="Nhập phản hồi của admin về yêu cầu hủy/hoàn hàng..."
+                        />
+                      </Form.Item>
+                    </>
+                  )}
+
+
+
+
 
                 {order.note && (
                   <div style={{ marginBottom: 16 }}>
@@ -1269,22 +1522,6 @@ const OrderDetail: React.FC = () => {
                   </div>
                 )}
 
-                <Form.Item
-                  label="Phản hồi Admin"
-                  name="reason_admin"
-                  rules={[
-                    {
-                      validator: async (_, value) => {
-                        const shippingStatus = form.getFieldValue("shipping_status");
-                        if (["return_processing", "returned", "return_fail"].includes(shippingStatus) && !value?.trim()) {
-                          throw new Error("Phản hồi admin là bắt buộc khi xử lý hoàn hàng");
-                        }
-                      },
-                    },
-                  ]}
-                >
-                  <TextArea rows={4} placeholder="Nhập phản hồi của admin về yêu cầu hủy/hoàn hàng..." />
-                </Form.Item>
               </Form>
             )}
 

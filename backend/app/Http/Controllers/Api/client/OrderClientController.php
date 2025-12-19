@@ -85,7 +85,7 @@ class OrderClientController extends Controller
         $orders = Order::where('user_id', $user->id)
             ->with([
                 'items:id,order_id,product_id,variant_id,product_name,product_image,quantity,price,size,color',
-                'user:id,name,phone,email',
+                'user:id,name,phone,email,bank_account_number,bank_name,bank_account_name',  // ✅ THÊM bank fields
                 'shipping',
                 'paymentTransaction'
             ])
@@ -119,11 +119,11 @@ class OrderClientController extends Controller
         // ✅ Eager load tất cả trừ reviews
         $order = Order::where('user_id', $user->id)
             ->with([
-                'user:id,name,phone,email',
+                'user:id,name,phone,email,bank_account_number,bank_name,bank_account_name',  // ✅ THÊM BANK FIELDS
                 'shipping',
                 'paymentTransaction',
                 'items' => function ($query) {
-                    $query->withReturnData(); // Load returnItems
+                    $query->withReturnData();
                 }
             ])
             ->select('id', 'user_id', 'sku', 'total_amount', 'final_amount', 'discount_amount', 'coupon_id', 'payment_status', 'payment_method', 'note', 'created_at')
@@ -326,7 +326,7 @@ class OrderClientController extends Controller
                 }
 
                 if ($validated['total_amount'] < $coupon->min_purchase) {
-                    throw new \Exception("Đơn hàng tối thiểu " . number_format($coupon->min_purchase, 0, ',', '.') . "₫ để áp dụng mã này");
+                    throw new \Exception("Đơn hàng tối thiểu " . number_format($coupon->min_purchase, 0, ',', '.') . "VNĐ để áp dụng mã này");
                 }
 
                 // Verify discount amount is correct
@@ -730,11 +730,23 @@ class OrderClientController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.reason' => 'required|string|max:500',
             'items.*.images' => 'nullable|array|max:5',
-            'items.*.images.*' => 'string', // Base64 images
+            'items.*.images.*' => 'string',
+
+            // ✅ THÊM VALIDATION CHO BANK INFO
+            'bank_account_number' => 'required|string|max:50',
+            'bank_name' => 'required|string|max:255',
+            'bank_account_name' => 'required|string|max:255',
         ]);
 
         DB::beginTransaction();
         try {
+
+            $user->update([
+                'bank_account_number' => $validated['bank_account_number'],
+                'bank_name' => $validated['bank_name'],
+                'bank_account_name' => $validated['bank_account_name'],
+            ]);
+
 
             $order = Order::with(['items', 'shipping'])->where('user_id', $user->id)->find($id);
 

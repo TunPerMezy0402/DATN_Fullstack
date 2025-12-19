@@ -356,7 +356,7 @@ const CouponList: React.FC = () => {
           >
             Sửa
           </Button>
-          <Popconfirm
+          {/* <Popconfirm
             title="Xác nhận xóa"
             description={`Bạn có chắc muốn xóa coupon "${record.code}"?`}
             okText="Xóa"
@@ -367,7 +367,7 @@ const CouponList: React.FC = () => {
             <Button type="link" size="small" danger icon={<DeleteOutlined />}>
               Xóa
             </Button>
-          </Popconfirm>
+          </Popconfirm> */}
         </Space>
       ),
     },

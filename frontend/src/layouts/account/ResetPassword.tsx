@@ -110,58 +110,60 @@ const ResetPassword: React.FC = () => {
     });
   };
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
+const handleSubmit = async (e?: React.FormEvent) => {
+  e?.preventDefault();
 
-    // Kiểm tra token và email
-    if (!token || !email) {
-      setErrors((prev) => ({
-        ...prev,
-        general: 'Link reset password không hợp lệ.',
-      }));
-      return;
-    }
+  // Kiểm tra token và email
+  if (!token || !email) {
+    setErrors((prev) => ({
+      ...prev,
+      general: 'Link reset password không hợp lệ.',
+    }));
+    return;
+  }
 
-    clearAllErrors();
+  clearAllErrors();
 
-    // Validate form
-    const { isValid, errors: validationErrors } = validators.validateForm(
-      password,
-      confirmPassword
-    );
+  // Validate form
+  const { isValid, errors: validationErrors } = validators.validateForm(
+    password,
+    confirmPassword
+  );
 
-    if (!isValid) {
-      setErrors(validationErrors);
-      return;
-    }
+  if (!isValid) {
+    setErrors(validationErrors);
+    return;
+  }
 
-    setLoading(true);
+  setLoading(true);
 
-    try {
-      const response = await authService.resetPassword(token, password);
+  try {
+const response = await authService.resetPassword(token, email, password);
+//                                                       ↑      ↑
+//                                                   ĐÚNG THỨ TỰ
 
-      console.log('Reset password successful:', response);
+    console.log('Reset password successful:', response);
 
-      setSuccess(true);
-      setErrors((prev) => ({
-        ...prev,
-        general: response.message || 'Đặt lại mật khẩu thành công!',
-      }));
+    setSuccess(true);
+    setErrors((prev) => ({
+      ...prev,
+      general: response.message || 'Đặt lại mật khẩu thành công!',
+    }));
 
-      // Chuyển về trang login sau 2 giây
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-    } catch (error: any) {
-      console.error('Reset password error:', error);
-      setErrors((prev) => ({
-        ...prev,
-        general: error.message || 'Đặt lại mật khẩu thất bại! Vui lòng thử lại.',
-      }));
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Chuyển về trang login sau 2 giây
+    setTimeout(() => {
+      navigate('/login');
+    }, 2000);
+  } catch (error: any) {
+    console.error('Reset password error:', error);
+    setErrors((prev) => ({
+      ...prev,
+      general: error.message || 'Đặt lại mật khẩu thất bại! Vui lòng thử lại.',
+    }));
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !loading) {

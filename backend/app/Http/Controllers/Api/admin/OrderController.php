@@ -11,153 +11,153 @@ use Illuminate\Support\Str;
 class OrderController extends Controller
 {
 
-public function index(Request $request)
-{
-    $query = Order::with(['user:id,name,phone,email', 'items', 'shipping', 'coupon', 'returnRequests'])
-        ->orderByDesc('created_at');
+    public function index(Request $request)
+    {
+        $query = Order::with(['user:id,name,phone,email', 'items', 'shipping', 'coupon', 'returnRequests'])
+            ->orderByDesc('created_at');
 
-    // ✅ Filter theo SKU
-    if ($request->filled('sku')) {
-        $query->where('sku', 'like', '%' . $request->sku . '%');
-    }
-
-    // ✅ Filter theo payment_status từ return requests
-    if ($request->filled('payment_status')) {
-        $filterStatus = $request->payment_status;
-
-        if ($filterStatus === 'refunded') {
-            $query->whereHas('returnRequests', function ($q) {
-                $q->where('status', 'completed');
-            });
-        } elseif ($filterStatus === 'refund_processing') {
-            $query->whereHas('returnRequests', function ($q) {
-                $q->whereIn('status', ['approved', 'pending']);
-            });
-        } else {
-            $query->where('payment_status', $filterStatus);
+        // ✅ Filter theo SKU
+        if ($request->filled('sku')) {
+            $query->where('sku', 'like', '%' . $request->sku . '%');
         }
-    }
 
-    // ✅ Filter theo shipping_status
-    if ($request->filled('shipping_status')) {
-        $query->whereHas('shipping', function ($q) use ($request) {
-            $q->where('shipping_status', $request->shipping_status);
+        // ✅ Filter theo payment_status từ return requests
+        if ($request->filled('payment_status')) {
+            $filterStatus = $request->payment_status;
+
+            if ($filterStatus === 'refunded') {
+                $query->whereHas('returnRequests', function ($q) {
+                    $q->where('status', 'completed');
+                });
+            } elseif ($filterStatus === 'refund_processing') {
+                $query->whereHas('returnRequests', function ($q) {
+                    $q->whereIn('status', ['approved', 'pending']);
+                });
+            } else {
+                $query->where('payment_status', $filterStatus);
+            }
+        }
+
+        // ✅ Filter theo shipping_status
+        if ($request->filled('shipping_status')) {
+            $query->whereHas('shipping', function ($q) use ($request) {
+                $q->where('shipping_status', $request->shipping_status);
+            });
+        }
+
+        // ✅ Filter theo payment_method
+        if ($request->filled('payment_method')) {
+            $query->where('payment_method', $request->payment_method);
+        }
+
+        $orders = $query->paginate($request->per_page ?? 10);
+
+        // ✅ Map orders với payment_status động và refund info
+        $orders->getCollection()->transform(function ($order) {
+            $actualPaymentStatus = $this->getActualPaymentStatus($order);
+            $refundInfo = $this->calculateRefundInfo($order);
+
+            $order->actual_payment_status = $actualPaymentStatus;
+            $order->refund_info = $refundInfo;
+
+            return $order;
         });
+
+        // ✅ Stats chi tiết dựa trên return requests
+        $stats = [
+            'total_orders' => Order::count(),
+            'total_revenue' => Order::where('payment_status', 'paid')->sum('final_amount'),
+            'unpaid_orders' => Order::where('payment_status', 'unpaid')->count(),
+            'paid_orders' => Order::where('payment_status', 'paid')
+                ->whereDoesntHave('returnRequests')
+                ->count(),
+
+            'refunded_orders' => Order::whereHas('returnRequests', function ($q) {
+                $q->where('status', 'completed');
+            })->count(),
+
+            'refund_processing_orders' => Order::whereHas('returnRequests', function ($q) {
+                $q->whereIn('status', ['approved', 'pending']);
+            })->whereDoesntHave('returnRequests', function ($q) {
+                $q->where('status', 'completed');
+            })->count(),
+
+            'failed_orders' => Order::where('payment_status', 'failed')->count(),
+        ];
+
+        return response()->json(['data' => $orders, 'stats' => $stats]);
     }
 
-    // ✅ Filter theo payment_method
-    if ($request->filled('payment_method')) {
-        $query->where('payment_method', $request->payment_method);
-    }
 
-    $orders = $query->paginate($request->per_page ?? 10);
+    private function getActualPaymentStatus($order): string
+    {
+        if ($order->returnRequests->isEmpty()) {
+            return $order->payment_status;
+        }
 
-    // ✅ Map orders với payment_status động và refund info
-    $orders->getCollection()->transform(function ($order) {
-        $actualPaymentStatus = $this->getActualPaymentStatus($order);
-        $refundInfo = $this->calculateRefundInfo($order);
+        $hasCompletedReturn = $order->returnRequests->contains('status', 'completed');
+        $hasProcessingReturn = $order->returnRequests->whereIn('status', ['approved', 'pending'])->isNotEmpty();
 
-        $order->actual_payment_status = $actualPaymentStatus;
-        $order->refund_info = $refundInfo;
+        if ($hasCompletedReturn) {
+            return 'refunded';
+        }
 
-        return $order;
-    });
+        if ($hasProcessingReturn) {
+            return 'refund_processing';
+        }
 
-    // ✅ Stats chi tiết dựa trên return requests
-    $stats = [
-        'total_orders' => Order::count(),
-        'total_revenue' => Order::where('payment_status', 'paid')->sum('final_amount'),
-        'unpaid_orders' => Order::where('payment_status', 'unpaid')->count(),
-        'paid_orders' => Order::where('payment_status', 'paid')
-            ->whereDoesntHave('returnRequests')
-            ->count(),
-
-        'refunded_orders' => Order::whereHas('returnRequests', function ($q) {
-            $q->where('status', 'completed');
-        })->count(),
-
-        'refund_processing_orders' => Order::whereHas('returnRequests', function ($q) {
-            $q->whereIn('status', ['approved', 'pending']);
-        })->whereDoesntHave('returnRequests', function ($q) {
-            $q->where('status', 'completed');
-        })->count(),
-
-        'failed_orders' => Order::where('payment_status', 'failed')->count(),
-    ];
-
-    return response()->json(['data' => $orders, 'stats' => $stats]);
-}
-
-
-private function getActualPaymentStatus($order): string
-{
-    if ($order->returnRequests->isEmpty()) {
         return $order->payment_status;
     }
 
-    $hasCompletedReturn = $order->returnRequests->contains('status', 'completed');
-    $hasProcessingReturn = $order->returnRequests->whereIn('status', ['approved', 'pending'])->isNotEmpty();
 
-    if ($hasCompletedReturn) {
-        return 'refunded';
-    }
+    private function calculateRefundInfo($order): array
+    {
+        $returnRequests = $order->returnRequests;
+        $actualPaymentStatus = $this->getActualPaymentStatus($order);
 
-    if ($hasProcessingReturn) {
-        return 'refund_processing';
-    }
+        if ($returnRequests->isEmpty()) {
+            return [
+                'total_refund_needed' => 0,
+                'total_refunded' => 0,
+                'has_return_request' => false,
+            ];
+        }
 
-    return $order->payment_status;
-}
+        // ✅ Khi payment_status = refund_processing
+        // Số tiền CẦN hoàn = sum estimated_refund của return requests pending/approved
+        if ($actualPaymentStatus === 'refund_processing') {
+            $totalRefundNeeded = $returnRequests
+                ->whereIn('status', ['pending', 'approved'])
+                ->sum('estimated_refund');
 
+            return [
+                'total_refund_needed' => floatval($totalRefundNeeded),
+                'total_refunded' => 0,
+                'has_return_request' => true,
+            ];
+        }
 
-private function calculateRefundInfo($order): array
-{
-    $returnRequests = $order->returnRequests;
-    $actualPaymentStatus = $this->getActualPaymentStatus($order);
+        // ✅ Khi payment_status = refunded
+        // Số tiền ĐÃ hoàn = sum estimated_refund của return requests completed
+        if ($actualPaymentStatus === 'refunded') {
+            $totalRefunded = $returnRequests
+                ->where('status', 'completed')
+                ->sum('estimated_refund');
 
-    if ($returnRequests->isEmpty()) {
+            return [
+                'total_refund_needed' => 0,
+                'total_refunded' => floatval($totalRefunded),
+                'has_return_request' => true,
+            ];
+        }
+
+        // ✅ Trạng thái khác (pending, rejected, etc.) không tính
         return [
             'total_refund_needed' => 0,
-            'total_refunded' => 0,
-            'has_return_request' => false,
-        ];
-    }
-
-    // ✅ Khi payment_status = refund_processing
-    // Số tiền CẦN hoàn = sum estimated_refund của return requests pending/approved
-    if ($actualPaymentStatus === 'refund_processing') {
-        $totalRefundNeeded = $returnRequests
-            ->whereIn('status', ['pending', 'approved'])
-            ->sum('estimated_refund');
-
-        return [
-            'total_refund_needed' => floatval($totalRefundNeeded),
             'total_refunded' => 0,
             'has_return_request' => true,
         ];
     }
-
-    // ✅ Khi payment_status = refunded
-    // Số tiền ĐÃ hoàn = sum estimated_refund của return requests completed
-    if ($actualPaymentStatus === 'refunded') {
-        $totalRefunded = $returnRequests
-            ->where('status', 'completed')
-            ->sum('estimated_refund');
-
-        return [
-            'total_refund_needed' => 0,
-            'total_refunded' => floatval($totalRefunded),
-            'has_return_request' => true,
-        ];
-    }
-
-    // ✅ Trạng thái khác (pending, rejected, etc.) không tính
-    return [
-        'total_refund_needed' => 0,
-        'total_refunded' => 0,
-        'has_return_request' => true,
-    ];
-}
 
     /**
      * 🔍 Chi tiết đơn hàng
@@ -726,17 +726,13 @@ private function calculateRefundInfo($order): array
                     ->whereIn('status', ['pending', 'approved'])
                     ->update([
                         'status' => 'completed',
-                        // ❌ XÓA: 'processed_at' => now()
                     ]);
 
-                // ⭐ Tự động chuyển payment_status sang refund_processing
-                if ($order->payment_status === 'paid') {
-                    $order->update(['payment_status' => 'refund_processing']);
-                }
-
-                if ($order->shipping_status === 'returned' || $order->payment_method === 'cod') {
-                    $order->update(['payment_status' => 'paid']);
-                }
+                // ⭐ Cập nhật received_amount = final_amount - estimated_refund
+                $order->update([
+                    'payment_status' => 'refund_processing',
+                    'received_amount' => $order->final_amount - $order->estimated_refund
+                ]);
             }
 
             // ✅ Khi shipping_status = received
@@ -838,8 +834,8 @@ private function calculateRefundInfo($order): array
         }
 
         // Additional business rules
-        if ($paymentMethod === 'vnpay' && $newShippingStatus === 'delivered' && $currentPaymentStatus === 'unpaid') {
-            abort(400, 'Đơn hàng VNPAY phải được thanh toán trước khi giao hàng!');
+        if ($paymentMethod === 'vnpay' && $newShippingStatus === 'in_transit' && $currentPaymentStatus === 'unpaid') {
+            abort(400, 'Đơn hàng VNPAY phải được thanh toán trước mới được vận chuyển!');
         }
 
         if (
@@ -871,35 +867,38 @@ private function calculateRefundInfo($order): array
     //                    FORMAT METHODS
     // ============================================================
 
-    private function formatOrderDetails($order)
-    {
-        return [
-            'id' => $order->id,
-            'user_id' => $order->user_id,
-            'sku' => $order->sku,
-            'total_amount' => $order->total_amount,
-            'discount_amount' => $order->discount_amount,
-            'final_amount' => $order->final_amount,
-            'payment_status' => $order->payment_status,
-            'payment_method' => $order->payment_method,
-            'note' => $order->note,
-            'created_at' => $order->created_at,
-            'updated_at' => $order->updated_at,
-            'deleted_at' => $order->deleted_at,
-            'user' => $this->formatUser($order->user),
-            'items' => $order->items->map(fn($item) => $this->formatOrderItem($item)),
-            'shipping' => $this->formatShipping($order->shipping),
-            'coupon' => $order->coupon ? [
-                'id' => $order->coupon->id,
-                'code' => $order->coupon->code,
-                'discount_type' => $order->coupon->discount_type,
-                'discount_value' => $order->coupon->discount_value,
-            ] : null,
-            'payments' => $order->paymentTransaction,
-            'cancel_logs' => $order->cancelLogs,
-            'return_requests' => $order->returnRequests->map(fn($req) => $this->formatReturnRequest($req, $order)),
-        ];
-    }
+    // Trong OrderController.php - Method formatOrderDetails()
+
+private function formatOrderDetails($order)
+{
+    return [
+        'id' => $order->id,
+        'user_id' => $order->user_id,
+        'sku' => $order->sku,
+        'total_amount' => $order->total_amount,
+        'discount_amount' => $order->discount_amount,
+        'final_amount' => $order->final_amount,
+        'payment_status' => $order->payment_status,
+        'payment_method' => $order->payment_method,
+        'note' => $order->note,
+        'created_at' => $order->created_at,
+        'updated_at' => $order->updated_at,
+        'deleted_at' => $order->deleted_at,
+        'user' => $this->formatUser($order->user),
+        'items' => $order->items->map(fn($item) => $this->formatOrderItem($item)),
+        'shipping' => $this->formatShipping($order->shipping),
+        'coupon' => $order->coupon ? [
+            'id' => $order->coupon->id,
+            'code' => $order->coupon->code,
+            'discount_type' => $order->coupon->discount_type,
+            'discount_value' => $order->coupon->discount_value,
+            'min_purchase' => $order->coupon->min_purchase, // ✅ THÊM DÒNG NÀY
+        ] : null,
+        'payments' => $order->paymentTransaction,
+        'cancel_logs' => $order->cancelLogs,
+        'return_requests' => $order->returnRequests->map(fn($req) => $this->formatReturnRequest($req, $order)),
+    ];
+}
 
     private function formatOrderBasic($order)
     {

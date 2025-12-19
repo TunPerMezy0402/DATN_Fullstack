@@ -6,29 +6,33 @@ import {
   Statistic,
   Space,
   Typography,
-  Progress,
-  Avatar,
   List,
   Empty,
   Select,
   DatePicker,
+  Spin,
+  Alert,
+  Badge,
 } from "antd";
 import {
-  UserOutlined,
-  AppstoreOutlined,
-  TagsOutlined,
-  GiftOutlined,
-  FireOutlined,
-  TeamOutlined,
-  TrophyOutlined,
-  CalendarOutlined,
-  ShopOutlined,
+  RiseOutlined,
+  FallOutlined,
   BarChartOutlined,
+  LineChartOutlined,
+  CalendarOutlined,
   PieChartOutlined,
+  TrophyOutlined,
+  ShoppingOutlined,
+  TagsOutlined,
+  TeamOutlined,
+  UserAddOutlined,
+  GiftOutlined,
+  AppstoreOutlined,
+  DollarOutlined,
 } from "@ant-design/icons";
 import {
-  BarChart,
-  Bar,
+  LineChart,
+  Line,
   PieChart,
   Pie,
   Cell,
@@ -38,6 +42,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  Area,
+  AreaChart,
 } from "recharts";
 import axios from "axios";
 import dayjs from "dayjs";
@@ -45,258 +51,116 @@ import dayjs from "dayjs";
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-interface ProductStats {
-  total_products: number;
-  total_categories: number;
-  products_with_variants: number;
-  total_users: number;
-  active_users: number;
-  admin_users: number;
-  total_coupons: number;
-  active_coupons: number;
-  total_coupon_usage: number;
-}
-
-interface TopProduct {
-  id: number;
-  name: string;
-  total_sold: number;
-  revenue: number;
-}
-
-interface TopCategory {
-  id: number;
-  name: string;
-  product_count: number;
-  total_sold: number;
-  revenue: number;
-}
-
 const API_URL = process.env.REACT_APP_API_URL || "http://127.0.0.1:8000/api";
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D", "#FFC658", "#FF6B6B"];
+const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D", "#FF6B6B", "#4ECDC4", "#45B7D1"];
 
-const Dashboard2: React.FC = () => {
-  const [stats, setStats] = useState<ProductStats | null>(null);
-  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
-  const [topCategories, setTopCategories] = useState<TopCategory[]>([]);
+interface DashboardStats {
+  time_filter: string;
+  date_range: { start: string; end: string };
+  revenue: {
+    total: number;
+    paid: number;
+    unpaid: number;
+    refund_processing: number;
+    refunded: number;
+    previous_period: number;
+    growth_rate: number;
+  };
+  top_products_by_sales: Array<{
+    id: number;
+    name: string;
+    image: string;
+    total_sold: number;
+    revenue: number;
+  }>;
+  top_products_by_price: Array<{
+    id: number;
+    name: string;
+    image: string;
+    total_sold: number;
+    revenue: number;
+    avg_price: number;
+  }>;
+  top_categories: Array<{
+    id: number;
+    name: string;
+    total_sold: number;
+    revenue: number;
+  }>;
+  revenue_chart: Array<{
+    period: string;
+    revenue: number;
+    orders: number;
+  }>;
+  users: {
+    new_users: number;
+    new_users_active: number;
+    new_users_inactive: number;
+    total_users: number;
+    total_active: number;
+    total_inactive: number;
+  };
+  coupons: {
+    total: number;
+    active: number;
+    inactive: number;
+    used_count: number;
+    total_discount: number;
+  };
+  products: {
+    total_sold: number;
+    total_products_sold: number;
+  };
+  system: {
+    total_products: number;
+    total_categories: number;
+    total_users: number;
+  };
+}
+
+// Helper function để format tiền VNĐ (không có số thập phân)
+const formatVND = (amount: number): string => {
+  return Math.round(amount).toLocaleString("vi-VN");
+};
+
+const Dashboard1: React.FC = () => {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<string>("month");
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
 
   useEffect(() => {
-    fetchProductData();
+    fetchDashboardStats();
   }, [timeFilter, dateRange]);
 
-  const getDateRange = () => {
-    const now = dayjs();
-    let startDate: dayjs.Dayjs;
-    let endDate = now;
-
-    switch (timeFilter) {
-      case "today":
-        startDate = now.startOf("day");
-        break;
-      case "week":
-        startDate = now.startOf("week");
-        break;
-      case "month":
-        startDate = now.startOf("month");
-        break;
-      case "year":
-        startDate = now.startOf("year");
-        break;
-      case "custom":
-        if (dateRange) {
-          return { startDate: dateRange[0], endDate: dateRange[1] };
-        }
-        return null;
-      default:
-        return null;
-    }
-
-    return { startDate, endDate };
-  };
-
-  const filterOrders = (orders: any[]) => {
-    const range = getDateRange();
-    if (!range) return orders;
-
-    return orders.filter((order: any) => {
-      const orderDate = dayjs(order.created_at);
-      return (
-        orderDate.isAfter(range.startDate.startOf("day")) &&
-        orderDate.isBefore(range.endDate.endOf("day"))
-      );
-    });
-  };
-
-  const calculateTopProducts = (orders: any[]) => {
-    const productSales: {
-      [key: string]: { name: string; total_sold: number; revenue: number };
-    } = {};
-
-    orders.forEach((order: any) => {
-      if (order.items && Array.isArray(order.items)) {
-        order.items.forEach((item: any) => {
-          const productName = item.product_name || "Sản phẩm";
-          const quantity = item.quantity || 0;
-          const price = parseFloat(item.price || "0");
-          const total = item.total || quantity * price;
-
-          if (!productSales[productName]) {
-            productSales[productName] = {
-              name: productName,
-              total_sold: 0,
-              revenue: 0,
-            };
-          }
-
-          productSales[productName].total_sold += quantity;
-          productSales[productName].revenue += total;
-        });
-      }
-    });
-
-    return Object.values(productSales)
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 10)
-      .map((item, index) => ({
-        id: index + 1,
-        name: item.name,
-        total_sold: item.total_sold,
-        revenue: item.revenue,
-      }));
-  };
-
-  const calculateTopCategories = (orders: any[], products: any[]) => {
-    const categorySales: {
-      [key: string]: {
-        id: number;
-        name: string;
-        product_count: number;
-        total_sold: number;
-        revenue: number;
-      };
-    } = {};
-
-    const productCategoryMap: { [key: number]: { id: number; name: string } } = {};
-    products.forEach((product: any) => {
-      if (product.category) {
-        productCategoryMap[product.id] = {
-          id: product.category.id || product.category_id,
-          name: product.category.name || "Chưa phân loại",
-        };
-      }
-    });
-
-    orders.forEach((order: any) => {
-      if (order.items && Array.isArray(order.items)) {
-        order.items.forEach((item: any) => {
-          const productId = item.product_id;
-          const category = productCategoryMap[productId];
-
-          if (category) {
-            const catName = category.name;
-            const quantity = item.quantity || 0;
-            const price = parseFloat(item.price || "0");
-            const total = item.total || quantity * price;
-
-            if (!categorySales[catName]) {
-              categorySales[catName] = {
-                id: category.id,
-                name: catName,
-                product_count: 0,
-                total_sold: 0,
-                revenue: 0,
-              };
-            }
-
-            categorySales[catName].total_sold += quantity;
-            categorySales[catName].revenue += total;
-          }
-        });
-      }
-    });
-
-    return Object.values(categorySales)
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 8);
-  };
-
-  const fetchProductData = async () => {
+  const fetchDashboardStats = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
       const token = localStorage.getItem("access_token") || "";
-      const headers = { Authorization: `Bearer ${token}` };
+      const params: any = { time_filter: timeFilter };
 
-      const [ordersRes, productsRes, categoriesRes, usersRes, couponsRes] = await Promise.all([
-        axios.get(`${API_URL}/admin/orders-admin`, { headers }),
-        axios.get(`${API_URL}/admin/products?per_page=200`, { headers }),
-        axios.get(`${API_URL}/admin/categories?per_page=200`, { headers }),
-        axios.get(`${API_URL}/admin/users`, { headers }),
-        axios.get(`${API_URL}/admin/coupons`, { headers }),
-      ]);
+      if (timeFilter === "custom" && dateRange) {
+        params.start_date = dateRange[0].format("YYYY-MM-DD");
+        params.end_date = dateRange[1].format("YYYY-MM-DD");
+      }
 
-      const allOrders = ordersRes.data?.data?.data || [];
-      const filteredOrders = filterOrders(allOrders);
-
-      const products = Array.isArray(productsRes.data?.data)
-        ? productsRes.data.data
-        : productsRes.data?.data?.data || [];
-
-      const productsWithVariants = products.filter((p: any) => {
-        if (p.variants && Array.isArray(p.variants) && p.variants.length > 0) {
-          return true;
-        }
-        if (
-          p.variation_status === true ||
-          p.variation_status === 1 ||
-          p.variation_status === "1"
-        ) {
-          return true;
-        }
-        return false;
-      }).length;
-
-      const categories = Array.isArray(categoriesRes.data)
-        ? categoriesRes.data
-        : categoriesRes.data?.data?.data || [];
-
-      const users = Array.isArray(usersRes.data)
-        ? usersRes.data
-        : usersRes.data?.users || usersRes.data?.data || [];
-      const activeUsers = users.filter((u: any) => u.status === "active").length;
-      const adminUsers = users.filter((u: any) => u.role === "admin").length;
-
-      const coupons = Array.isArray(couponsRes.data)
-        ? couponsRes.data
-        : Array.isArray(couponsRes.data?.data)
-        ? couponsRes.data.data
-        : couponsRes.data?.data?.data || [];
-
-      const activeCoupons = coupons.filter((c: any) => c.is_active).length;
-      const totalCouponUsage = coupons.reduce(
-        (sum: number, c: any) => sum + (c.used_count || 0),
-        0
-      );
-
-      setStats({
-        total_products: products.length,
-        total_categories: categories.length,
-        products_with_variants: productsWithVariants,
-        total_users: users.length,
-        active_users: activeUsers,
-        admin_users: adminUsers,
-        total_coupons: coupons.length,
-        active_coupons: activeCoupons,
-        total_coupon_usage: totalCouponUsage,
+      const response = await axios.get(`${API_URL}/admin/dashboard1/stats`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params,
       });
 
-      setTopProducts(calculateTopProducts(filteredOrders));
-      setTopCategories(calculateTopCategories(filteredOrders, products));
-    } catch (error) {
-      console.error("Error fetching product data:", error);
+      if (response.data.success) {
+        setStats(response.data.data);
+      } else {
+        setError("Không thể tải dữ liệu thống kê");
+      }
+    } catch (err: any) {
+      console.error("Error fetching dashboard stats:", err);
+      setError(err.response?.data?.message || "Đã xảy ra lỗi khi tải dữ liệu");
     } finally {
       setLoading(false);
     }
@@ -305,20 +169,16 @@ const Dashboard2: React.FC = () => {
   if (loading) {
     return (
       <div style={{ padding: 24, textAlign: "center", minHeight: "100vh" }}>
-        <div style={{ marginTop: "20vh" }}>
-          <div
-            style={{
-              border: "4px solid #f3f3f3",
-              borderTop: "4px solid #1890ff",
-              borderRadius: "50%",
-              width: "50px",
-              height: "50px",
-              animation: "spin 1s linear infinite",
-              margin: "0 auto",
-            }}
-          />
-          <p style={{ marginTop: 16, color: "#666" }}>Đang tải dữ liệu...</p>
-        </div>
+        <Spin size="large" style={{ marginTop: "20vh" }} />
+        <p style={{ marginTop: 16, color: "#666" }}>Đang tải thống kê...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: 24 }}>
+        <Alert message="Lỗi" description={error} type="error" showIcon />
       </div>
     );
   }
@@ -331,30 +191,21 @@ const Dashboard2: React.FC = () => {
     );
   }
 
-  const userActiveRate =
-    stats.total_users > 0 ? Math.round((stats.active_users / stats.total_users) * 100) : 0;
-
-  const couponUsageRate =
-    stats.total_coupons > 0
-      ? Math.round((stats.active_coupons / stats.total_coupons) * 100)
-      : 0;
-
-  const productVariantRate =
-    stats.total_products > 0
-      ? Math.round((stats.products_with_variants / stats.total_products) * 100)
-      : 0;
-
-  // Data cho biểu đồ cột Top sản phẩm
-  const topProductsChartData = topProducts.slice(0, 8).map(item => ({
-    name: item.name.length > 15 ? item.name.substring(0, 15) + '...' : item.name,
-    'Doanh thu': item.revenue,
-    'Đã bán': item.total_sold * 10000, // Nhân để hiển thị rõ hơn trên biểu đồ
+  // Format revenue chart data
+  const revenueChartData = stats.revenue_chart.map((item) => ({
+    name: dayjs(item.period).format(
+      timeFilter === "year" ? "MM/YYYY" : timeFilter === "today" || timeFilter === "week" ? "HH:mm" : "DD/MM"
+    ),
+    "Doanh thu": item.revenue,
+    "Đơn hàng": item.orders,
   }));
 
-  // Data cho biểu đồ tròn Danh mục
-  const categoryPieData = topCategories.map(item => ({
+  // Format categories for pie chart with percentage
+  const totalCategoryRevenue = stats.top_categories.reduce((sum, item) => sum + item.revenue, 0);
+  const categoryChartData = stats.top_categories.map((item) => ({
     name: item.name,
     value: item.revenue,
+    percentage: totalCategoryRevenue > 0 ? ((item.revenue / totalCategoryRevenue) * 100).toFixed(1) : 0,
   }));
 
   return (
@@ -364,10 +215,13 @@ const Dashboard2: React.FC = () => {
         <Row justify="space-between" align="middle">
           <Col>
             <Title level={2} style={{ margin: 0, display: "flex", alignItems: "center", gap: 12 }}>
-              <ShopOutlined style={{ color: "#fa8c16" }} />
+              <BarChartOutlined style={{ color: "#1890ff" }} />
               Dashboard - Thống kê Sản phẩm & Người dùng
             </Title>
-            <Text type="secondary">Cập nhật: {dayjs().format("HH:mm - DD/MM/YYYY")}</Text>
+            <Text type="secondary">
+              Kỳ: {dayjs(stats.date_range.start).format("DD/MM/YYYY")} -{" "}
+              {dayjs(stats.date_range.end).format("DD/MM/YYYY")}
+            </Text>
           </Col>
           <Col>
             <Space size="middle">
@@ -402,146 +256,145 @@ const Dashboard2: React.FC = () => {
 
       {/* Main Statistics */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} lg={6}>
+        <Col xs={24} sm={12} lg={8}>
           <Card>
             <Statistic
               title="Tổng sản phẩm"
-              value={stats.total_products}
-              prefix={<AppstoreOutlined style={{ color: "#fa8c16" }} />}
-              valueStyle={{ color: "#fa8c16" }}
-            />
-            <Progress
-              percent={productVariantRate}
-              size="small"
-              strokeColor="#fa8c16"
-              format={() => `${productVariantRate}% có biến thể`}
-              style={{ marginTop: 8 }}
-            />
-          </Card>
-        </Col>
-
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Danh mục sản phẩm"
-              value={stats.total_categories}
-              prefix={<TagsOutlined style={{ color: "#1890ff" }} />}
+              value={stats.system.total_products}
+              prefix={<ShoppingOutlined style={{ color: "#1890ff" }} />}
               valueStyle={{ color: "#1890ff" }}
             />
             <Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 8 }}>
-              {stats.products_with_variants} sản phẩm có biến thể
+              Đã bán: {stats.products.total_products_sold} loại
             </Text>
           </Card>
         </Col>
 
-        <Col xs={24} sm={12} lg={6}>
+        <Col xs={24} sm={12} lg={8}>
+          <Card>
+            <Statistic
+              title="Tổng Category"
+              value={stats.system.total_categories}
+              prefix={<TagsOutlined style={{ color: "#722ed1" }} />}
+              valueStyle={{ color: "#722ed1" }}
+            />
+            <Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 8 }}>
+              Danh mục sản phẩm
+            </Text>
+          </Card>
+        </Col>
+
+        <Col xs={24} sm={12} lg={8}>
           <Card>
             <Statistic
               title="Tổng người dùng"
-              value={stats.total_users}
-              prefix={<UserOutlined style={{ color: "#722ed1" }} />}
-              valueStyle={{ color: "#722ed1" }}
-            />
-            <Progress
-              percent={userActiveRate}
-              size="small"
-              strokeColor="#722ed1"
-              format={() => `${userActiveRate}% hoạt động`}
-              style={{ marginTop: 8 }}
-            />
-          </Card>
-        </Col>
-
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Tổng Coupon"
-              value={stats.total_coupons}
-              prefix={<GiftOutlined style={{ color: "#eb2f96" }} />}
+              value={stats.system.total_users}
+              prefix={<TeamOutlined style={{ color: "#eb2f96" }} />}
               valueStyle={{ color: "#eb2f96" }}
             />
-            <Progress
-              percent={couponUsageRate}
-              size="small"
-              strokeColor="#eb2f96"
-              format={() => `${couponUsageRate}% đang dùng`}
-              style={{ marginTop: 8 }}
-            />
+            <Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 8 }}>
+              {stats.users.total_active} đang hoạt động
+            </Text>
           </Card>
         </Col>
       </Row>
 
-      {/* Detailed Statistics */}
+      {/* Dashboard - Thống kê Chi tiết */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={8}>
-          <Card title={<Space><AppstoreOutlined style={{ color: "#fa8c16" }} />Chi tiết sản phẩm</Space>}>
+        <Col xs={24} md={8}>
+          <Card 
+            title={
+              <Space>
+                <ShoppingOutlined style={{ color: "#1890ff" }} />
+                Chi tiết Sản phẩm
+              </Space>
+            } 
+            bordered={false}
+          >
             <Space direction="vertical" style={{ width: "100%" }} size="middle">
               <Row justify="space-between">
                 <Text>Tổng sản phẩm:</Text>
-                <Text strong style={{ color: "#fa8c16", fontSize: 16 }}>
-                  {stats.total_products}
+                <Text strong style={{ color: "#1890ff", fontSize: 18 }}>
+                  {stats.system.total_products}
                 </Text>
               </Row>
               <Row justify="space-between">
-                <Text>Có biến thể:</Text>
-                <Text strong style={{ color: "#f5222d", fontSize: 16 }}>
-                  {stats.products_with_variants}
+                <Text>Đã bán (kỳ):</Text>
+                <Text strong style={{ color: "#52c41a", fontSize: 18 }}>
+                  {formatVND(stats.products.total_sold)}
                 </Text>
               </Row>
               <Row justify="space-between">
-                <Text>Danh mục:</Text>
-                <Text strong style={{ color: "#1890ff", fontSize: 16 }}>
-                  {stats.total_categories}
+                <Text>Sản phẩm đã được mua:</Text>
+                <Text strong style={{ color: "#722ed1", fontSize: 18 }}>
+                  {stats.products.total_products_sold}
                 </Text>
               </Row>
             </Space>
           </Card>
         </Col>
 
-        <Col xs={24} sm={8}>
-          <Card title={<Space><UserOutlined style={{ color: "#722ed1" }} />Chi tiết người dùng</Space>}>
+        <Col xs={24} md={8}>
+          <Card 
+            title={
+              <Space>
+                <UserAddOutlined style={{ color: "#722ed1" }} />
+                Chi tiết Người dùng
+              </Space>
+            } 
+            bordered={false}
+          >
             <Space direction="vertical" style={{ width: "100%" }} size="middle">
               <Row justify="space-between">
                 <Text>Tổng người dùng:</Text>
-                <Text strong style={{ color: "#722ed1", fontSize: 16 }}>
-                  {stats.total_users}
+                <Text strong style={{ color: "#722ed1", fontSize: 18 }}>
+                  {stats.system.total_users}
                 </Text>
               </Row>
               <Row justify="space-between">
                 <Text>Đang hoạt động:</Text>
-                <Text strong style={{ color: "#52c41a", fontSize: 16 }}>
-                  {stats.active_users}
+                <Text strong style={{ color: "#52c41a", fontSize: 18 }}>
+                  {stats.users.total_active}
                 </Text>
               </Row>
               <Row justify="space-between">
-                <Text>Quản trị viên:</Text>
-                <Text strong style={{ color: "#fa541c", fontSize: 16 }}>
-                  {stats.admin_users}
+                <Text>Khóa/Không hoạt động:</Text>
+                <Text strong style={{ color: "#f5222d", fontSize: 18 }}>
+                  {stats.users.total_inactive}
                 </Text>
               </Row>
+
             </Space>
           </Card>
         </Col>
 
-        <Col xs={24} sm={8}>
-          <Card title={<Space><GiftOutlined style={{ color: "#eb2f96" }} />Chi tiết Coupon</Space>}>
+        <Col xs={24} md={8}>
+          <Card 
+            title={
+              <Space>
+                <GiftOutlined style={{ color: "#eb2f96" }} />
+                Chi tiết Coupon
+              </Space>
+            } 
+            bordered={false}
+          >
             <Space direction="vertical" style={{ width: "100%" }} size="middle">
               <Row justify="space-between">
                 <Text>Tổng coupon:</Text>
-                <Text strong style={{ color: "#eb2f96", fontSize: 16 }}>
-                  {stats.total_coupons}
+                <Text strong style={{ color: "#eb2f96", fontSize: 18 }}>
+                  {stats.coupons.total}
                 </Text>
               </Row>
               <Row justify="space-between">
                 <Text>Đang hoạt động:</Text>
-                <Text strong style={{ color: "#52c41a", fontSize: 16 }}>
-                  {stats.active_coupons}
+                <Text strong style={{ color: "#52c41a", fontSize: 18 }}>
+                  {stats.coupons.active}
                 </Text>
               </Row>
               <Row justify="space-between">
-                <Text>Lượt sử dụng:</Text>
-                <Text strong style={{ color: "#1890ff", fontSize: 16 }}>
-                  {stats.total_coupon_usage}
+                <Text>Không hoạt động:</Text>
+                <Text strong style={{ color: "#f5222d", fontSize: 18 }}>
+                  {stats.coupons.inactive}
                 </Text>
               </Row>
             </Space>
@@ -549,76 +402,66 @@ const Dashboard2: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Charts Section */}
+      {/* Charts */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} lg={14}>
-          <Card
-            title={
-              <Space>
-                <BarChartOutlined style={{ color: "#1890ff" }} />
-                Biểu đồ Top 8 sản phẩm bán chạy
-              </Space>
-            }
-          >
+        <Col xs={24} lg={16}>
+          <Card title={<Space><LineChartOutlined />Biểu đồ doanh thu theo thời gian</Space>}>
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={topProductsChartData}>
+              <AreaChart data={revenueChartData}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#52c41a" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#52c41a" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="name" 
-                  angle={-45}
-                  textAnchor="end"
-                  height={100}
-                  interval={0}
-                  style={{ fontSize: 11 }}
-                />
+                <XAxis dataKey="name" />
                 <YAxis />
-                <Tooltip 
-                  formatter={(value: number | undefined, name: string | undefined) => {
-                    if (!value) return ['0', name || ''];
-                    if (name === 'Đã bán') {
-                      return [(value / 10000).toFixed(0) + ' sản phẩm', 'Số lượng đã bán'];
+                <Tooltip
+                  formatter={(value: any, name?: string) => {
+                    if (name === "Doanh thu") {
+                      return [formatVND(value) + "VNĐ", name];
                     }
-                    return [value.toLocaleString('vi-VN') + '₫', 'Doanh thu'];
+                    return [value, name || ""];
                   }}
                 />
                 <Legend />
-                <Bar dataKey="Doanh thu" fill="#52c41a" />
-                <Bar dataKey="Đã bán" fill="#1890ff" />
-              </BarChart>
+                <Area
+                  type="monotone"
+                  dataKey="Doanh thu"
+                  stroke="#52c41a"
+                  fillOpacity={1}
+                  fill="url(#colorRevenue)"
+                />
+                <Line type="monotone" dataKey="Đơn hàng" stroke="#1890ff" strokeWidth={2} />
+              </AreaChart>
             </ResponsiveContainer>
           </Card>
         </Col>
 
-        <Col xs={24} lg={10}>
-          <Card
-            title={
-              <Space>
-                <PieChartOutlined style={{ color: "#eb2f96" }} />
-                Biểu đồ doanh thu theo danh mục
-              </Space>
-            }
-          >
+        <Col xs={24} lg={8}>
+          <Card title={<Space><PieChartOutlined />Doanh thu theo danh mục</Space>}>
             <ResponsiveContainer width="100%" height={400}>
               <PieChart>
                 <Pie
-                  data={categoryPieData}
+                  data={categoryChartData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={(entry: any) => `${entry.name}: ${(entry.percent * 100).toFixed(0)}%`}
+                  label={(entry: any) => `${entry.name}: ${entry.percentage}%`}
                   outerRadius={120}
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {categoryPieData.map((entry, index) => (
+                  {categoryChartData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip 
-                  formatter={(value: number | undefined) => {
-                    if (!value) return '0₫';
-                    return value.toLocaleString('vi-VN') + '₫';
-                  }}
+                <Tooltip
+                  formatter={(value: any, name: any, props: any) => [
+                    `${formatVND(value)}VNĐ (${props.payload.percentage}%)`,
+                    name
+                  ]}
                 />
                 <Legend />
               </PieChart>
@@ -627,24 +470,26 @@ const Dashboard2: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Top Products & Categories Lists */}
+      {/* Top Products - Side by Side */}
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={14}>
-          <Card
+        <Col xs={24} lg={12}>
+          <Card 
             title={
               <Space>
-                <FireOutlined style={{ color: "#f5222d" }} />
+                <TrophyOutlined style={{ color: "#ffd700" }} />
                 Top 10 sản phẩm bán chạy
               </Space>
             }
           >
             <List
-              dataSource={topProducts}
+              itemLayout="horizontal"
+              dataSource={stats.top_products_by_sales}
               renderItem={(item, index) => (
                 <List.Item>
                   <List.Item.Meta
                     avatar={
-                      <Avatar
+                      <Badge
+                        count={`#${index + 1}`}
                         style={{
                           backgroundColor:
                             index === 0
@@ -655,46 +500,47 @@ const Dashboard2: React.FC = () => {
                               ? "#cd7f32"
                               : "#1890ff",
                           fontWeight: "bold",
+                          fontSize: 14,
                         }}
-                      >
-                        {index + 1}
-                      </Avatar>
+                      />
                     }
-                    title={<Text strong style={{ fontSize: 15 }}>{item.name}</Text>}
+                    title={
+                      <Text strong style={{ fontSize: 15 }}>
+                        {item.name}
+                      </Text>
+                    }
                     description={
-                      <Row justify="space-between" style={{ marginTop: 4 }}>
-                        <Text type="secondary" style={{ fontSize: 13 }}>
-                          Đã bán: <Text strong>{item.total_sold}</Text> sản phẩm
+                      <Space direction="vertical" size={2}>
+                        <Text type="secondary">
+                          Đã bán: <Text strong style={{ color: "#52c41a" }}>{item.total_sold}</Text> sản phẩm
                         </Text>
-                        <Text strong style={{ fontSize: 14, color: "#52c41a" }}>
-                          {item.revenue.toLocaleString("vi-VN")}₫
-                        </Text>
-                      </Row>
+                      </Space>
                     }
                   />
                 </List.Item>
               )}
-              locale={{ emptyText: "Chưa có dữ liệu" }}
             />
           </Card>
         </Col>
 
-        <Col xs={24} lg={10}>
-          <Card
+        <Col xs={24} lg={12}>
+          <Card 
             title={
               <Space>
-                <TrophyOutlined style={{ color: "#faad14" }} />
-                Top danh mục bán chạy
+                <AppstoreOutlined style={{ color: "#722ed1" }} />
+                Top 10 sản phẩm doanh thu cao
               </Space>
             }
           >
             <List
-              dataSource={topCategories}
+              itemLayout="horizontal"
+              dataSource={stats.top_products_by_price}
               renderItem={(item, index) => (
                 <List.Item>
                   <List.Item.Meta
                     avatar={
-                      <Avatar
+                      <Badge
+                        count={`#${index + 1}`}
                         style={{
                           backgroundColor:
                             index === 0
@@ -703,18 +549,27 @@ const Dashboard2: React.FC = () => {
                               ? "#c0c0c0"
                               : index === 2
                               ? "#cd7f32"
-                              : "#faad14",
+                              : "#722ed1",
                           fontWeight: "bold",
+                          fontSize: 14,
                         }}
-                      >
-                        {index + 1}
-                      </Avatar>
+                      />
                     }
-                    title={<Text strong style={{ fontSize: 15 }}>{item.name}</Text>}
+                    title={
+                      <Text strong style={{ fontSize: 15 }}>
+                        {item.name}
+                      </Text>
+                    }
+                    description={
+                      <Space direction="vertical" size={2}>
+                        <Text style={{ color: "#722ed1" }}>
+                          Doanh thu: <Text strong>{formatVND(item.revenue)}VNĐ</Text>
+                        </Text>
+                      </Space>
+                    }
                   />
                 </List.Item>
               )}
-              locale={{ emptyText: "Chưa có dữ liệu" }}
             />
           </Card>
         </Col>
@@ -723,4 +578,4 @@ const Dashboard2: React.FC = () => {
   );
 };
 
-export default Dashboard2;
+export default Dashboard1;

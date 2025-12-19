@@ -135,7 +135,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
       <aside className={`sidebar ${isToggled ? "is-open" : ""}`}>
         {/* Brand */}
         <div className="sidebar__brand">
-          <NavLink to="/admin" className="sidebar__brand-link" onClick={onToggle}>
+          <NavLink to="/admin/dashboard1" className="sidebar__brand-link" onClick={onToggle}>
             <div className="sidebar__brand-icon">
               <i className="fas fa-cube" />
             </div>
@@ -155,7 +155,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
               onClick={onToggle}
             >
               <i className="sidebar__icon fas fa-tachometer-alt" />
-              <span className="sidebar__text">Dashboard 1</span>
+              <span className="sidebar__text">Thống kê lưu hành</span>
             </NavLink>
             <NavLink
               to="/admin/dashboard2"
@@ -165,7 +165,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isToggled, onToggle }) => {
               onClick={onToggle}
             >
               <i className="sidebar__icon fas fa-tachometer-alt" />
-              <span className="sidebar__text">Dashboard 2</span>
+              <span className="sidebar__text">Thống kê doanh số</span>
             </NavLink>
           </div>
 

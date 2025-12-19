@@ -155,6 +155,7 @@ const authApi = {
    */
   async resetPassword(
     token: string,
+    email: string,
     password: string
   ): Promise<{ message: string }> {
     try {
@@ -162,6 +163,7 @@ const authApi = {
         "/auth/reset-password",
         {
           token,
+          email,
           password,
           password_confirmation: password,
         }

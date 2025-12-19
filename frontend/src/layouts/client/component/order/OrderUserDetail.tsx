@@ -37,7 +37,10 @@ import {
   StopOutlined,
   DollarOutlined,
   AlertOutlined,
+  BankOutlined,
   InfoCircleOutlined,
+  EditOutlined,
+  CloseOutlined,
 
 } from "@ant-design/icons";
 import axios from "axios";
@@ -80,8 +83,8 @@ interface User {
   name: string;
   phone: string;
   email: string;
-  bank_account_number?: string;  
-  bank_name?: string;            
+  bank_account_number?: string;
+  bank_name?: string;
   bank_account_name?: string;
 }
 
@@ -131,6 +134,7 @@ interface ReviewFormItem {
   product_id: number;
   variant_id: number;
   product_name: string;
+  product_image?: string;
   rating: number;
   comment: string;
   selected: boolean;
@@ -158,8 +162,8 @@ interface ReturnRequest {
   items_count: number;
   total_return_amount: string;
   estimated_refund: string;
-  estimated_refund_min: string; 
-  estimated_refund_max: string; 
+  estimated_refund_min: string;
+  estimated_refund_max: string;
   refund_explanation: string;
   admin_note?: string;
   items: ReturnRequestItem[];
@@ -298,7 +302,7 @@ const OrderUserDetail: React.FC = () => {
   const [returnModalVisible, setReturnModalVisible] = useState(false);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
   const [returning, setReturning] = useState(false);
-   const [bankForm] = Form.useForm();
+  const [bankForm] = Form.useForm();
 
   // Review Modal State
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
@@ -315,6 +319,8 @@ const OrderUserDetail: React.FC = () => {
   // Other State
   const [confirmReceivedLoading, setConfirmReceivedLoading] = useState(false);
   const [repaymentLoading, setRepaymentLoading] = useState(false);
+  const [editingBankInfo, setEditingBankInfo] = useState(false);
+  const [formInitialized, setFormInitialized] = useState(false);
 
   // ==================== HELPER FUNCTIONS FOR RETURN ====================
   const getItemReturnStatus = (orderItemId: number): { status: string; returnedQty: number } | null => {
@@ -535,60 +541,60 @@ const OrderUserDetail: React.FC = () => {
   };
 
   const handleOpenReturnModal = () => {
-  if (!order) return;
+    if (!order) return;
 
-  // ✅ KIỂM TRA THÔNG TIN NGÂN HÀNG
-  const hasBankInfo = !!(
-    order.user.bank_account_number && 
-    order.user.bank_name && 
-    order.user.bank_account_name
-  );
-  
-  setNeedsBankInfo(!hasBankInfo);
+    // ✅ Kiểm tra xem đã có thông tin ngân hàng chưa
+    const hasBankInfo = !!(
+      order.user.bank_account_number &&
+      order.user.bank_name &&
+      order.user.bank_account_name
+    );
 
-  // ✅ NẾU CHƯA CÓ, SET FORM RỖNG
-  if (!hasBankInfo) {
-    bankForm.resetFields();
-  } else {
-    // ✅ NẾU CÓ RỒI, ĐIỀN SẴN
-    bankForm.setFieldsValue({
-      bank_account_number: order.user.bank_account_number,
-      bank_name: order.user.bank_name,
-      bank_account_name: order.user.bank_account_name,
-    });
-  }
+    // Lấy sản phẩm có thể hoàn
+    const returnableItems: ReturnItem[] = (order.items || [])
+      .filter(item => {
+        const hasNoReview = !item.reviews || item.reviews.length === 0;
+        const availableQty = item.available_return_quantity ?? 0;
+        return hasNoReview && availableQty > 0;
+      })
+      .map(item => {
+        const availableQty = item.available_return_quantity ?? 0;
+        return {
+          order_item_id: item.id,
+          variant_id: item.variant_id,
+          product_name: `${item.product_name}${item.size ? ` - Size: ${item.size}` : ""}${item.color ? ` - Màu: ${item.color}` : ""}`,
+          product_image: item.product_image,
+          quantity: availableQty,
+          max_quantity: availableQty,
+          reason: "",
+          selected: false,
+          images: [],
+        };
+      });
 
-  const returnableItems: ReturnItem[] = (order.items || [])
-    .filter(item => {
-      const hasNoReview = !item.reviews || item.reviews.length === 0;
-      const availableQty = item.available_return_quantity ?? 0;
-      return hasNoReview && availableQty > 0;
-    })
-    .map(item => {
-      const availableQty = item.available_return_quantity ?? 0;
-      return {
-        order_item_id: item.id,
-        variant_id: item.variant_id,
-        product_name: `${item.product_name}${item.size ? ` - Size: ${item.size}` : ""}${item.color ? ` - Màu: ${item.color}` : ""}`,
-        product_image: item.product_image,
-        quantity: availableQty,
-        max_quantity: availableQty,
-        reason: "",
-        selected: false,
-        images: [],
-      };
-    });
+    if (returnableItems.length === 0) {
+      message.warning("Không có sản phẩm nào có thể hoàn trả!");
+      return;
+    }
 
-  if (returnableItems.length === 0) {
-    message.warning("Không có sản phẩm nào có thể hoàn trả!");
-    return;
-  }
+    setReturnItems(returnableItems);
+    setEditingBankInfo(!hasBankInfo); // Nếu chưa có thông tin thì bật chế độ edit
 
-  setReturnItems(returnableItems);
-  setReturnModalVisible(true);
-};
+    // ✅ SET GIÁ TRỊ FORM NGAY KHI MỞ MODAL
+    if (hasBankInfo) {
+      bankForm.setFieldsValue({
+        bank_account_number: order.user.bank_account_number || "",
+        bank_name: order.user.bank_name || "",
+        bank_account_name: order.user.bank_account_name || "",
+      });
+    } else {
+      bankForm.resetFields(); // Reset nếu chưa có thông tin
+    }
 
-  const handleReturnOrder = async () => {
+    setReturnModalVisible(true);
+  };
+
+const handleReturnOrder = async () => {
   const selectedItems = returnItems.filter(item => item.selected);
 
   if (selectedItems.length === 0) {
@@ -610,15 +616,33 @@ const OrderUserDetail: React.FC = () => {
     return;
   }
 
-  // ✅ KIỂM TRA THÔNG TIN NGÂN HÀNG NẾU CẦN
-  if (needsBankInfo) {
-    try {
-      await bankForm.validateFields();
-    } catch {
-      message.warning("Vui lòng điền đầy đủ thông tin ngân hàng!");
-      return;
-    }
+  // ✅ SỬA: Dùng getFieldsValue(true) thay vì validateFields()
+  const bankValues = bankForm.getFieldsValue(true);
+  
+  console.log("🔍 DEBUG - Bank values:", bankValues);
+
+  // ✅ VALIDATE MANUALLY
+  if (!bankValues.bank_account_number?.trim()) {
+    message.error("Vui lòng nhập số tài khoản ngân hàng!");
+    return;
   }
+
+  if (!bankValues.bank_name?.trim()) {
+    message.error("Vui lòng nhập tên ngân hàng!");
+    return;
+  }
+
+  if (!bankValues.bank_account_name?.trim()) {
+    message.error("Vui lòng nhập tên chủ tài khoản!");
+    return;
+  }
+
+  // ✅ VALIDATE PATTERN
+  if (!/^[0-9]+$/.test(bankValues.bank_account_number.trim())) {
+    message.error("Số tài khoản chỉ được chứa số!");
+    return;
+  }
+
 
   try {
     setReturning(true);
@@ -632,15 +656,14 @@ const OrderUserDetail: React.FC = () => {
       images: item.images,
     }));
 
-    // ✅ THÊM THÔNG TIN NGÂN HÀNG VÀO PAYLOAD NẾU CẦN
-    const payload: any = { items };
-    
-    if (needsBankInfo) {
-      const bankValues = bankForm.getFieldsValue();
-      payload.bank_account_number = bankValues.bank_account_number;
-      payload.bank_name = bankValues.bank_name;
-      payload.bank_account_name = bankValues.bank_account_name;
-    }
+    const payload = {
+      items,
+      bank_account_number: bankValues.bank_account_number.trim(),
+      bank_name: bankValues.bank_name.trim(),
+      bank_account_name: bankValues.bank_account_name.trim(),
+    };
+
+    console.log("📤 Sending payload:", payload);
 
     await axios.post(
       `${API_URL}/orders/${id}/return`,
@@ -651,17 +674,23 @@ const OrderUserDetail: React.FC = () => {
     message.success("Yêu cầu hoàn hàng đã được gửi thành công!");
     setReturnModalVisible(false);
     setReturnItems([]);
-    bankForm.resetFields(); // ✅ RESET FORM
+    setEditingBankInfo(false);
+    bankForm.resetFields();
     await fetchOrder();
   } catch (error: any) {
-    console.error("Return error:", error);
-    const errorMsg = error.response?.data?.message || error.response?.data?.error || "Không thể tạo yêu cầu hoàn hàng!";
+    console.error("❌ Return error:", error);
+    console.error("📦 Error response:", error.response?.data);
+
+    const errorMsg =
+      error.response?.data?.message ||
+      error.response?.data?.error ||
+      "Không thể tạo yêu cầu hoàn hàng!";
+
     message.error(errorMsg);
   } finally {
     setReturning(false);
   }
 };
-
   const handleOpenReviewModal = () => {
     if (!order) return;
 
@@ -682,6 +711,7 @@ const OrderUserDetail: React.FC = () => {
       product_id: item.product_id,
       variant_id: item.variant_id,
       product_name: `${item.product_name}${item.size ? ` - Size: ${item.size}` : ""}${item.color ? ` - Màu: ${item.color}` : ""}`,
+      product_image: item.product_image,
       rating: 5,
       comment: "",
       selected: false,
@@ -744,36 +774,36 @@ const OrderUserDetail: React.FC = () => {
   };
 
   // ==================== REPAYMENT HANDLER ====================
-const handleRepayment = async () => {
-  if (!order) return;
+  const handleRepayment = async () => {
+    if (!order) return;
 
-  try {
-    setRepaymentLoading(true);
-    const token = getAuthToken();
+    try {
+      setRepaymentLoading(true);
+      const token = getAuthToken();
 
-    const response = await axios.post(
-      `${API_URL}/orders/${id}/repay`,
-      { payment_method: order.payment_method },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+      const response = await axios.post(
+        `${API_URL}/orders/${id}/repay`,
+        { payment_method: order.payment_method },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-    if (response.data.success) {
-      if (response.data.payment_url) {
-        message.success("Đang chuyển đến trang thanh toán...");
-        window.location.href = response.data.payment_url;
-      } else {
-        message.success(response.data.message || "Đã kích hoạt lại đơn hàng thành công!");
-        await fetchOrder();
+      if (response.data.success) {
+        if (response.data.payment_url) {
+          message.success("Đang chuyển đến trang thanh toán...");
+          window.location.href = response.data.payment_url;
+        } else {
+          message.success(response.data.message || "Đã kích hoạt lại đơn hàng thành công!");
+          await fetchOrder();
+        }
       }
+    } catch (error: any) {
+      console.error("Repayment error:", error);
+      const errorMsg = error.response?.data?.message || "Không thể thanh toán lại!";
+      message.error(errorMsg);
+    } finally {
+      setRepaymentLoading(false);
     }
-  } catch (error: any) {
-    console.error("Repayment error:", error);
-    const errorMsg = error.response?.data?.message || "Không thể thanh toán lại!";
-    message.error(errorMsg);
-  } finally {
-    setRepaymentLoading(false);
-  }
-};
+  };
 
   // ==================== RENDER FUNCTIONS ====================
   const getLogDate = (status: string) => {
@@ -897,151 +927,151 @@ const handleRepayment = async () => {
     );
   };
 
-const renderActionButtons = () => {
-  const s = order?.shipping;
-  if (!s) return null;
+  const renderActionButtons = () => {
+    const s = order?.shipping;
+    if (!s) return null;
 
-  const daysLeft = s.received_at ? getDaysUntilReturnExpired(s.received_at) : 0;
-  const canCancel = ["pending", "nodone"].includes(s.shipping_status);
-  
-  // ✅ Kiểm tra thanh toán thất bại
-  const isPaymentFailed = order.payment_status === "failed";
+    const daysLeft = s.received_at ? getDaysUntilReturnExpired(s.received_at) : 0;
+    const canCancel = ["pending", "nodone"].includes(s.shipping_status);
 
-  const isDelivered = s.shipping_status === "delivered";
-  const isReceived = s.shipping_status === "received";
+    // ✅ Kiểm tra thanh toán thất bại
+    const isPaymentFailed = order.payment_status === "failed";
 
-  const hasReturnableItems = (order?.items || []).some(item => {
-    const hasNoReview = !item.reviews || item.reviews.length === 0;
-    const availableQty = item.available_return_quantity ?? 0;
-    return hasNoReview && availableQty > 0;
-  });
+    const isDelivered = s.shipping_status === "delivered";
+    const isReceived = s.shipping_status === "received";
 
-  return (
-    <Space size="middle" wrap>
-      {/* ✅ Nút thanh toán lại */}
-      {isPaymentFailed && (
-        <Button
-          type="primary"
-          icon={<DollarOutlined />}
-          size="large"
-          onClick={handleRepayment}
-          loading={repaymentLoading}
-          style={{
-            height: 45,
-            fontSize: 16,
-            fontWeight: 500,
-            backgroundColor: "#1890ff",
-            borderColor: "#1890ff"
-          }}
-        >
-          Thanh toán lại
-        </Button>
-      )}
+    const hasReturnableItems = (order?.items || []).some(item => {
+      const hasNoReview = !item.reviews || item.reviews.length === 0;
+      const availableQty = item.available_return_quantity ?? 0;
+      return hasNoReview && availableQty > 0;
+    });
 
-      {/* Nút hủy đơn */}
-      {canCancel && (
-        <Button
-          danger
-          icon={<CloseCircleOutlined />}
-          size="large"
-          onClick={() => setCancelModalVisible(true)}
-          style={{ height: 45, fontSize: 16, fontWeight: 500 }}
-        >
-          Hủy đơn hàng
-        </Button>
-      )}
+    return (
+      <Space size="middle" wrap>
+        {/* ✅ Nút thanh toán lại */}
+        {isPaymentFailed && (
+          <Button
+            type="primary"
+            icon={<DollarOutlined />}
+            size="large"
+            onClick={handleRepayment}
+            loading={repaymentLoading}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#1890ff",
+              borderColor: "#1890ff"
+            }}
+          >
+            Thanh toán lại
+          </Button>
+        )}
 
-      {/* Nút xác nhận nhận hàng */}
-      {isDelivered && (
-        <Button
-          type="primary"
-          icon={<CheckCircleOutlined />}
-          size="large"
-          onClick={handleConfirmReceived}
-          loading={confirmReceivedLoading}
-          style={{
-            height: 45,
-            fontSize: 16,
-            fontWeight: 500,
-            backgroundColor: "#52c41a",
-            borderColor: "#52c41a"
-          }}
-        >
-          Đã nhận được hàng
-        </Button>
-      )}
+        {/* Nút hủy đơn */}
+        {canCancel && (
+          <Button
+            danger
+            icon={<CloseCircleOutlined />}
+            size="large"
+            onClick={() => setCancelModalVisible(true)}
+            style={{ height: 45, fontSize: 16, fontWeight: 500 }}
+          >
+            Hủy đơn hàng
+          </Button>
+        )}
 
-      {/* Nút hoàn hàng */}
-      {isDelivered && hasReturnableItems && (
-        <Button
-          icon={<SyncOutlined />}
-          size="large"
-          onClick={handleOpenReturnModal}
-          style={{
-            height: 45,
-            fontSize: 16,
-            fontWeight: 500,
-            backgroundColor: "#722ed1",
-            color: "white",
-            borderColor: "#722ed1"
-          }}
-        >
-          Hoàn hàng
-        </Button>
-      )}
+        {/* Nút xác nhận nhận hàng */}
+        {isDelivered && (
+          <Button
+            type="primary"
+            icon={<CheckCircleOutlined />}
+            size="large"
+            onClick={handleConfirmReceived}
+            loading={confirmReceivedLoading}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#52c41a",
+              borderColor: "#52c41a"
+            }}
+          >
+            Đã nhận được hàng
+          </Button>
+        )}
 
-      {/* Nút xem đánh giá */}
-      {hasReviewedVariants && (
-        <Button
-          icon={<StarOutlined />}
-          size="large"
-          onClick={() => setViewReviewsModalVisible(true)}
-          style={{
-            height: 45,
-            fontSize: 16,
-            fontWeight: 500,
-            backgroundColor: "#fff",
-            color: "#faad14",
-            borderColor: "#faad14"
-          }}
-        >
-          Xem đánh giá
-        </Button>
-      )}
+        {/* Nút hoàn hàng */}
+        {isDelivered && hasReturnableItems && (
+          <Button
+            icon={<SyncOutlined />}
+            size="large"
+            onClick={handleOpenReturnModal}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#722ed1",
+              color: "white",
+              borderColor: "#722ed1"
+            }}
+          >
+            Hoàn hàng
+          </Button>
+        )}
 
-      {/* Nút đánh giá */}
-      {canReview(s.shipping_status) && hasUnreviewedVariants && (
-        <Button
-          icon={<StarOutlined />}
-          size="large"
-          onClick={handleOpenReviewModal}
-          style={{
-            height: 45,
-            fontSize: 16,
-            fontWeight: 500,
-            backgroundColor: "#faad14",
-            color: "white",
-            borderColor: "#faad14"
-          }}
-        >
-          Đánh giá đơn hàng
-        </Button>
-      )}
+        {/* Nút xem đánh giá */}
+        {hasReviewedVariants && (
+          <Button
+            icon={<StarOutlined />}
+            size="large"
+            onClick={() => setViewReviewsModalVisible(true)}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#fff",
+              color: "#faad14",
+              borderColor: "#faad14"
+            }}
+          >
+            Xem đánh giá
+          </Button>
+        )}
 
-      {/* Nút hết hạn hoàn hàng */}
-      {isReceived && daysLeft === 0 && (
-        <Button
-          icon={<CloseCircleOutlined />}
-          size="large"
-          disabled
-          style={{ height: 45, fontSize: 16, fontWeight: 500 }}
-        >
-          Đã hết hạn hoàn hàng
-        </Button>
-      )}
-    </Space>
-  );
-};
+        {/* Nút đánh giá */}
+        {canReview(s.shipping_status) && hasUnreviewedVariants && (
+          <Button
+            icon={<StarOutlined />}
+            size="large"
+            onClick={handleOpenReviewModal}
+            style={{
+              height: 45,
+              fontSize: 16,
+              fontWeight: 500,
+              backgroundColor: "#faad14",
+              color: "white",
+              borderColor: "#faad14"
+            }}
+          >
+            Đánh giá đơn hàng
+          </Button>
+        )}
+
+        {/* Nút hết hạn hoàn hàng */}
+        {isReceived && daysLeft === 0 && (
+          <Button
+            icon={<CloseCircleOutlined />}
+            size="large"
+            disabled
+            style={{ height: 45, fontSize: 16, fontWeight: 500 }}
+          >
+            Đã hết hạn hoàn hàng
+          </Button>
+        )}
+      </Space>
+    );
+  };
 
   // ==================== LOADING STATE ====================
   if (loading) {
@@ -1780,51 +1810,213 @@ const renderActionButtons = () => {
             </Text>
           </div>
         </div>
-         {needsBankInfo && (
-    <div style={{ 
-      marginBottom: 24, 
-      padding: 16, 
-      backgroundColor: "#fff7e6", 
-      borderRadius: 8,
-      border: "2px solid #faad14"
-    }}>
-      <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-        <AlertOutlined style={{ color: "#faad14", fontSize: 18 }} />
-        <Text strong style={{ fontSize: 16, color: "#d48806" }}>
-          Thông tin nhận tiền hoàn
-        </Text>
-      </div>
-      <Text type="secondary" style={{ fontSize: 14, display: "block", marginBottom: 16 }}>
-        Vui lòng cung cấp thông tin tài khoản ngân hàng để nhận tiền hoàn
-      </Text>
-      
-      <Form form={bankForm} layout="vertical">
-        <Form.Item
-          label="Số tài khoản"
-          name="bank_account_number"
-          rules={[{ required: true, message: "Vui lòng nhập số tài khoản" }]}
-        >
-          <Input placeholder="Nhập số tài khoản ngân hàng" />
-        </Form.Item>
+        {/* ✅ PHẦN HIỂN THỊ THÔNG TIN NGÂN HÀNG - THIẾT KẾ THẺ NGÂN HÀNG */}
+        <div style={{ marginBottom: 24 }}>
+          {/* ✅ CHẾ ĐỘ HIỂN THỊ - NẾU CÓ THÔNG TIN VÀ KHÔNG EDIT */}
+          {order.user.bank_account_number && !editingBankInfo ? (
+            <div style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              borderRadius: 16,
+              padding: 18,
+              position: "relative",
+              boxShadow: "0 8px 16px rgba(0,0,0,0.1)",
+              minHeight: 180
+            }}>
+              {/* Icon Edit ở góc phải */}
+              <Tooltip title="Chỉnh sửa">
+                <div
+                  onClick={() => setEditingBankInfo(true)}
+                  style={{
+                    position: "absolute",
+                    top: 16,
+                    right: 16,
+                    width: 32,
+                    height: 32,
+                    borderRadius: "50%",
+                    backgroundColor: "rgba(255,255,255,0.2)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    transition: "all 0.3s"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.3)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.2)";
+                  }}
+                >
+                  <EditOutlined style={{ color: "white", fontSize: 16 }} />
+                </div>
+              </Tooltip>
 
-        <Form.Item
-          label="Tên ngân hàng"
-          name="bank_name"
-          rules={[{ required: true, message: "Vui lòng nhập tên ngân hàng" }]}
-        >
-          <Input placeholder="VD: Vietcombank, Techcombank, ..." />
-        </Form.Item>
+              {/* Logo ngân hàng */}
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: 12,
+                backgroundColor: "rgba(255,255,255,0.2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 20
+              }}>
+                <BankOutlined style={{ color: "white", fontSize: 24 }} />
+              </div>
 
-        <Form.Item
-          label="Tên chủ tài khoản"
-          name="bank_account_name"
-          rules={[{ required: true, message: "Vui lòng nhập tên chủ tài khoản" }]}
-        >
-          <Input placeholder="Tên chủ tài khoản (viết hoa, không dấu)" />
-        </Form.Item>
-      </Form>
-    </div>
-  )}
+              {/* Số tài khoản */}
+              <div style={{ marginBottom: 16 }}>
+                <Text style={{
+                  color: "rgba(255,255,255,0.8)",
+                  fontSize: 12,
+                  display: "block",
+                  marginBottom: 4,
+                  textTransform: "uppercase",
+                  letterSpacing: 1
+                }}>
+                  Số tài khoản
+                </Text>
+                <Text strong style={{
+                  color: "white",
+                  fontSize: 20,
+                  letterSpacing: 2,
+                  fontFamily: "monospace"
+                }}>
+                  {order.user.bank_account_number}
+                </Text>
+              </div>
+
+              {/* Tên ngân hàng và Chủ tài khoản */}
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Text style={{
+                    color: "rgba(255,255,255,0.8)",
+                    fontSize: 11,
+                    display: "block",
+                    marginBottom: 4,
+                    textTransform: "uppercase"
+                  }}>
+                    Ngân hàng
+                  </Text>
+                  <Text strong style={{ color: "white", fontSize: 14 }}>
+                    {order.user.bank_name}
+                  </Text>
+                </Col>
+                <Col span={12}>
+                  <Text style={{
+                    color: "rgba(255,255,255,0.8)",
+                    fontSize: 11,
+                    display: "block",
+                    marginBottom: 4,
+                    textTransform: "uppercase"
+                  }}>
+                    Chủ tài khoản
+                  </Text>
+                  <Text strong style={{ color: "white", fontSize: 14 }}>
+                    {order.user.bank_account_name}
+                  </Text>
+                </Col>
+              </Row>
+            </div>
+          ) : (
+            /* CHẾ ĐỘ FORM - NẾU CHƯA CÓ HOẶC ĐANG EDIT */
+            /* CHẾ ĐỘ FORM - NẾU CHƯA CÓ HOẶC ĐANG EDIT */
+            <div style={{
+              padding: 20,
+              backgroundColor: "#fafafa",
+              borderRadius: 12,
+              border: "2px dashed #d9d9d9"
+            }}>
+              {/* Header nhỏ gọn */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 16
+              }}>
+                <BankOutlined style={{ color: "#8c8c8c", fontSize: 20 }} />
+                <Text strong style={{ fontSize: 15, color: "#595959" }}>
+                  {order.user.bank_account_number ? "Cập nhật thông tin" : "Thêm thông tin nhận tiền"}
+                </Text>
+              </div>
+
+              <Form.Item
+                label="Số tài khoản"
+                name="bank_account_number"
+                rules={[
+                  { required: true, message: "Vui lòng nhập số tài khoản" },
+                  { whitespace: true, message: "Số tài khoản không được chỉ chứa khoảng trắng" },
+                  { pattern: /^[0-9]+$/, message: "Số tài khoản chỉ chứa số" },
+                  { min: 8, message: "Số tài khoản phải có ít nhất 8 số" }
+                ]}
+              >
+                <Input
+                  placeholder="Nhập số tài khoản"
+                  size="large"
+                  maxLength={50}
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="Tên ngân hàng"
+                name="bank_name"
+                rules={[
+                  { required: true, message: "Vui lòng nhập tên ngân hàng" },
+                  { whitespace: true, message: "Tên ngân hàng không được chỉ chứa khoảng trắng" },
+                  { min: 2, message: "Tên ngân hàng phải có ít nhất 2 ký tự" }
+                ]}
+              >
+                <Input
+                  placeholder="VD: Vietcombank, Techcombank..."
+                  size="large"
+                  maxLength={255}
+                />
+              </Form.Item>
+
+              <Form.Item
+                label="Tên chủ tài khoản"
+                name="bank_account_name"
+                rules={[
+                  { required: true, message: "Vui lòng nhập tên chủ tài khoản" },
+                  { whitespace: true, message: "Tên chủ tài khoản không được chỉ chứa khoảng trắng" },
+                  { pattern: /^[A-Z\s]+$/, message: "Tên phải viết hoa, không dấu" },
+                  { min: 3, message: "Tên chủ tài khoản phải có ít nhất 3 ký tự" }
+                ]}
+                normalize={(value) => value?.toUpperCase()} // ✅ Tự động uppercase
+              >
+                <Input
+                  placeholder="NGUYEN VAN A"
+                  size="large"
+                  maxLength={255}
+                  onInput={(e: any) => {
+                    // ✅ Tự động chuyển uppercase khi nhập
+                    e.target.value = e.target.value.toUpperCase();
+                  }}
+                />
+              </Form.Item>
+
+              {/* Nút Hủy - chỉ hiện khi đang edit */}
+              {order.user.bank_account_number && editingBankInfo && (
+                <Button
+                  icon={<CloseOutlined />}
+                  onClick={() => {
+                    setEditingBankInfo(false);
+                    bankForm.setFieldsValue({
+                      bank_account_number: order.user.bank_account_number,
+                      bank_name: order.user.bank_name,
+                      bank_account_name: order.user.bank_account_name,
+                    });
+                  }}
+                  style={{ width: "100%", marginTop: 8 }}
+                  block
+                >
+                  Hủy
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
 
         <div style={{ marginBottom: 24, maxHeight: 500, overflowY: "auto" }}>
           {returnItems.map((item, index) => (
@@ -2043,7 +2235,6 @@ const renderActionButtons = () => {
         </div>
       </Modal>
 
-      {/* Review Modal */}
       <Modal
         open={reviewModalVisible}
         onCancel={() => {
@@ -2090,21 +2281,55 @@ const renderActionButtons = () => {
                 backgroundColor: form.selected ? "#fffbe6" : "#fafafa",
               }}
             >
-              <Checkbox
-                checked={form.selected}
-                onChange={(e) => {
-                  const newForms = [...reviewForms];
-                  newForms[index].selected = e.target.checked;
-                  setReviewForms(newForms);
-                }}
-                style={{ marginBottom: 12 }}
-              >
-                <Text strong style={{ fontSize: 16 }}>{form.product_name}</Text>
-              </Checkbox>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+                {/* ✅ HÌNH ẢNH SẢN PHẨM */}
+                {form.product_image ? (
+                  <img
+                    src={`http://127.0.0.1:8000/${form.product_image}`}
+                    alt={form.product_name}
+                    style={{
+                      width: 60,
+                      height: 60,
+                      objectFit: "cover",
+                      borderRadius: 8,
+                      border: "2px solid #d9d9d9",
+                      flexShrink: 0,
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: 60,
+                      height: 60,
+                      backgroundColor: "#f0f0f0",
+                      borderRadius: 8,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <ShoppingOutlined style={{ fontSize: 24, color: "#bfbfbf" }} />
+                  </div>
+                )}
+
+                {/* ✅ CHECKBOX VÀ TÊN SẢN PHẨM */}
+                <Checkbox
+                  checked={form.selected}
+                  onChange={(e) => {
+                    const newForms = [...reviewForms];
+                    newForms[index].selected = e.target.checked;
+                    setReviewForms(newForms);
+                  }}
+                  style={{ flex: 1 }}
+                >
+                  <Text strong style={{ fontSize: 16 }}>{form.product_name}</Text>
+                </Checkbox>
+              </div>
 
               {form.selected && (
                 <>
-                  <div style={{ marginBottom: 16, marginLeft: 24 }}>
+                  <div style={{ marginBottom: 16, marginLeft: 72 }}>
                     <Text style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
                       Đánh giá sao:
                     </Text>
@@ -2119,7 +2344,7 @@ const renderActionButtons = () => {
                     />
                   </div>
 
-                  <div style={{ marginLeft: 24 }}>
+                  <div style={{ marginLeft: 72 }}>
                     <Text style={{ fontSize: 14, display: "block", marginBottom: 8 }}>
                       Nhận xét:
                     </Text>
