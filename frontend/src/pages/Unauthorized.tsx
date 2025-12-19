@@ -10,7 +10,7 @@ const Unauthorized: React.FC = () => {
   const handleGoBack = () => {
     // Redirect based on user role
     if (user?.role === 'admin') {
-      navigate('/admin/dashboard');
+      navigate('/admin/dashboard1');
     } else {
       navigate('/');
     }

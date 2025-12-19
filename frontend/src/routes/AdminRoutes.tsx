@@ -1,7 +1,8 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AdminLayout from '../layouts/admin/layouts/AdminLayout';
-import Dashboard from '../layouts/admin/Dashboard';
+import Dashboard1 from '../layouts/admin/Dashboard1';
+import Dashboard2 from '../layouts/admin/Dashboard2';
 
 import CategoryList from '../pages/admin/category/CategoryList';
 import CategoryCreate from '../pages/admin/category/CategoryCreate';
@@ -42,7 +43,8 @@ const AdminRoutes: React.FC = () => {
     <Routes>
       <Route path="/" element={<AdminLayout />}>
         <Route index element={<Navigate to="dashboard" />} />
-        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="dashboard1" element={<Dashboard1 />} />
+        <Route path="dashboard2" element={<Dashboard2 />} />
 
         {/* ✅ Quản lý user */}
         <Route path="users" element={<UserList />} />

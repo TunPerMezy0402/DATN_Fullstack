@@ -275,7 +275,7 @@ const OrderUser: React.FC = () => {
                     </div>
                     <div className="text-right">
                       <div className="text-gray-800 font-semibold text-lg">
-                        {(item.quantity * parseFloat(item.price)).toLocaleString()}₫
+                        {(item.quantity * parseFloat(item.price)).toLocaleString()}VNĐ
                       </div>
                     </div>
                   </div>
@@ -293,7 +293,7 @@ const OrderUser: React.FC = () => {
                   <div className="text-right">
                     <span className="text-gray-700 text-base">Tổng tiền: </span>
                     <span className="font-bold text-xl text-orange-600">
-                      {parseInt(order.final_amount).toLocaleString()}₫
+                      {parseInt(order.final_amount).toLocaleString()}VNĐ
                     </span>
                   </div>
                 </div>

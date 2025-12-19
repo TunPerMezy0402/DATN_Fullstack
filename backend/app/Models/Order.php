@@ -32,6 +32,7 @@ class Order extends Model
         'coupon_code',
         'coupon_id',
         'paid_at',
+        'received_amount'
     ];
 
     protected $casts = [
@@ -40,6 +41,7 @@ class Order extends Model
         'total_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'final_amount' => 'decimal:2',
+        'received_amount' => 'decimal:2',
     ];
 
     // ==================== RELATIONSHIPS ====================

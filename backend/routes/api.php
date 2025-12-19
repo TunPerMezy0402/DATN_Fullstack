@@ -35,6 +35,11 @@ use App\Http\Controllers\Api\admin\AdminChatController;
 use App\Http\Controllers\Api\admin\AdminProductReviewController;
 
 
+use App\Http\Controllers\Api\Dashboard1Controller;
+use App\Http\Controllers\Api\Dashboard2Controller;
+
+
+
 use App\Http\Controllers\Api\Admin\BannerController;
 use App\Http\Controllers\Api\Admin\BannerImageController;
 use App\Http\Controllers\Api\Client\HomeBannerController;
@@ -216,7 +221,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
 
 
-// ==================== ADMIN ROUTES ====================
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
 
     Route::get('/transactions', [PaymentController::class, 'get_all_transactions'])
@@ -236,6 +240,9 @@ Route::prefix('admin')->middleware(['auth:sanctum', 'admin'])->group(function ()
     
     // ✅ THÊM ROUTE NÀY
     Route::post('orders/{orderId}/return-requests/{returnRequestId}/refund-shipping', [OrderController::class, 'refundShipping']);
+
+    Route::get('dashboard1/stats', [Dashboard1Controller::class, 'getStats']);
+    Route::get('dashboard2/stats', [Dashboard2Controller::class, 'getStats']);
 });
 
 
@@ -263,7 +270,6 @@ Route::prefix('admin/product-reviews')
         Route::post('/bulk-force-delete', [ProductReviewController::class, 'bulkForceDelete'])
             ->name('bulk-force-delete');
     });
-
 
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin/chat')->group(function () {

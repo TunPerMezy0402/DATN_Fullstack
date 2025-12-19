@@ -124,7 +124,14 @@ class ReturnRequest extends Model
     }
 
     /**
-     * 💰 Tính số tiền hoàn dự kiến
+     * 💰 Tính số tiền hoàn dự kiến - LOGIC ĐÚNG
+     * 
+     * CASE 1: Giữ coupon (remaining >= min_purchase)
+     *   → Hoàn theo tỷ lệ: (actual_paid) × (return_amount / order_total)
+     * 
+     * CASE 2: Hủy coupon (remaining < min_purchase)
+     *   → Tính lại toàn bộ: (order_total - return_amount) - actual_paid
+     *   → Khách phải trả thêm (hoặc được hoàn nếu âm)
      */
     private function calculateRefund(float $returnAmount): float
     {
@@ -133,35 +140,82 @@ class ReturnRequest extends Model
 
         $orderTotal = (float) $order->total_amount;
         $discount = (float) ($order->discount_amount ?? 0);
+        $actualPaid = $orderTotal - $discount; // Số tiền khách đã trả
 
-        // Số tiền khách thực tế đã trả cho hàng
-        $actualPaidForGoods = $orderTotal - $discount;
+        // Số tiền còn lại sau khi hoàn
+        $remainingAmount = $orderTotal - $returnAmount;
 
-        // Tính tỷ lệ hoàn
-        $returnRatio = $orderTotal > 0 ? ($returnAmount / $orderTotal) : 0;
+        $coupon = $order->coupon;
 
-        // Tiền hàng được hoàn = Tỷ lệ hoàn * Số tiền đã trả
-        $refundForGoods = $actualPaidForGoods * $returnRatio;
+        // ============================================================
+        // KIỂM TRA COUPON CÒN ÁP DỤNG ĐƯỢC KHÔNG
+        // ============================================================
+        $couponStillValid = false;
+        
+        if ($coupon && $discount > 0) {
+            $minPurchase = (float) ($coupon->min_purchase ?? 0);
+            
+            if ($remainingAmount >= $minPurchase) {
+                $couponStillValid = true;
+            }
+        }
 
-        // ✅ Kiểm tra hoàn 30k: CHỈ với đơn < 500k
+        // ============================================================
+        // TÍNH TIỀN HOÀN
+        // ============================================================
+        $refundForGoods = 0;
+
+        if ($couponStillValid) {
+            // ✅ CASE 1: Giữ coupon → Hoàn theo tỷ lệ
+            $returnRatio = $orderTotal > 0 ? ($returnAmount / $orderTotal) : 0;
+            $refundForGoods = $actualPaid * $returnRatio;
+
+            Log::info('Calculate refund - Keep coupon', [
+                'order_total' => $orderTotal,
+                'discount' => $discount,
+                'actual_paid' => $actualPaid,
+                'return_amount' => $returnAmount,
+                'remaining_amount' => $remainingAmount,
+                'return_ratio' => $returnRatio,
+                'refund_for_goods' => $refundForGoods,
+            ]);
+
+        } else {
+            // ✅ CASE 2: Hủy coupon → Tính lại toàn bộ
+            // Giá trị đơn mới (không discount) = remainingAmount
+            // Khách đã trả = actualPaid
+            // Khách nên trả = remainingAmount
+            // Chênh lệch = actualPaid - remainingAmount
+            
+            $shouldPay = $remainingAmount; // Số tiền khách PHẢI TRẢ cho đơn còn lại
+            $refundForGoods = $actualPaid - $shouldPay; // Số tiền shop phải HOÀN LẠI
+
+            Log::info('Calculate refund - Cancel coupon', [
+                'order_total' => $orderTotal,
+                'discount' => $discount,
+                'actual_paid' => $actualPaid,
+                'return_amount' => $returnAmount,
+                'remaining_amount' => $remainingAmount,
+                'should_pay' => $shouldPay,
+                'refund_for_goods' => $refundForGoods,
+                'explanation' => "Khách đã trả {$actualPaid}, nhưng đơn còn lại giá gốc là {$remainingAmount}, nên hoàn = {$actualPaid} - {$remainingAmount}",
+            ]);
+        }
+
+        // ============================================================
+        // TÍNH PHÍ SHIP (nếu có)
+        // ============================================================
         $isFreeship = $orderTotal >= self::FREESHIP_THRESHOLD;
         $shouldRefund30k = $this->refund_30k && !$isFreeship;
         $refundShipping = $shouldRefund30k ? self::DEFAULT_SHIPPING_FEE : 0;
 
         $totalRefund = $refundForGoods + $refundShipping;
 
-        Log::info('Calculate refund', [
-            'order_total' => $orderTotal,
-            'discount' => $discount,
-            'actual_paid_for_goods' => $actualPaidForGoods,
-            'return_amount' => $returnAmount,
-            'return_ratio' => $returnRatio,
+        Log::info('Calculate refund - Final', [
             'refund_for_goods' => $refundForGoods,
-            'is_freeship' => $isFreeship,
-            'refund_30k_enabled' => $this->refund_30k,
-            'should_refund_30k' => $shouldRefund30k,
             'shipping_fee' => $refundShipping,
             'total_refund' => $totalRefund,
+            'coupon_still_valid' => $couponStillValid,
         ]);
 
         return max(0, round($totalRefund, 2));
@@ -288,25 +342,60 @@ class ReturnRequest extends Model
 
         $orderTotal = floatval($order->total_amount);
         $discount = floatval($order->discount_amount ?? 0);
+        $actualPaid = $orderTotal - $discount;
         $isFreeship = $orderTotal >= self::FREESHIP_THRESHOLD;
 
         $validItems = $this->items->whereNotIn('status', ['rejected']);
         $totalReturnAmount = $validItems->sum('refund_amount');
-        $returnRatio = $orderTotal > 0 ? ($totalReturnAmount / $orderTotal) * 100 : 0;
+        $remainingAmount = $orderTotal - $totalReturnAmount;
 
-        $shouldRefund30k = $this->refund_30k && !$isFreeship;
+        $coupon = $order->coupon;
+        $couponStillValid = false;
 
-        if ($shouldRefund30k) {
-            return sprintf(
-                "💰 Hoàn %.2f%% tiền hàng + 30k ship (đơn < 500k)",
-                $returnRatio
-            );
+        if ($coupon && $discount > 0) {
+            $minPurchase = (float) ($coupon->min_purchase ?? 0);
+            if ($remainingAmount >= $minPurchase) {
+                $couponStillValid = true;
+            }
         }
 
-        return sprintf(
-            "💰 Hoàn %.2f%% tiền hàng",
-            $returnRatio
-        );
+        $returnRatio = $orderTotal > 0 ? ($totalReturnAmount / $orderTotal) * 100 : 0;
+        $shouldRefund30k = $this->refund_30k && !$isFreeship;
+
+        if ($couponStillValid) {
+            // Giữ coupon
+            if ($shouldRefund30k) {
+                return sprintf(
+                    "💰 Hoàn %.2f%% tiền đã trả (%.0fđ) + 30k ship",
+                    $returnRatio,
+                    $actualPaid * ($totalReturnAmount / $orderTotal)
+                );
+            }
+            return sprintf(
+                "💰 Hoàn %.2f%% tiền đã trả (%.0fđ)",
+                $returnRatio,
+                $actualPaid * ($totalReturnAmount / $orderTotal)
+            );
+        } else {
+            // Hủy coupon - tính lại
+            $shouldPay = $remainingAmount;
+            $refund = $actualPaid - $shouldPay;
+            
+            if ($shouldRefund30k) {
+                return sprintf(
+                    "⚠️ Hủy mã giảm giá. Khách đã trả %.0fđ, đơn còn %.0fđ → Hoàn %.0fđ + 30k ship",
+                    $actualPaid,
+                    $shouldPay,
+                    $refund
+                );
+            }
+            return sprintf(
+                "⚠️ Hủy mã giảm giá. Khách đã trả %.0fđ, đơn còn %.0fđ → Hoàn %.0fđ",
+                $actualPaid,
+                $shouldPay,
+                $refund
+            );
+        }
     }
 
     /**
@@ -334,38 +423,58 @@ class ReturnRequest extends Model
         $isFullReturn = $this->isFullReturn();
 
         $orderTotal = floatval($order->total_amount);
+        $discount = floatval($order->discount_amount ?? 0);
+        $actualPaid = $orderTotal - $discount;
         $isFreeship = $orderTotal >= self::FREESHIP_THRESHOLD;
 
-        // Tính tỷ lệ hoàn
+        $remainingAmount = $orderTotal - $totalReturnAmount;
+        $coupon = $order->coupon;
+        $couponStillValid = false;
+
+        if ($coupon && $discount > 0) {
+            $minPurchase = (float) ($coupon->min_purchase ?? 0);
+            if ($remainingAmount >= $minPurchase) {
+                $couponStillValid = true;
+            }
+        }
+
         $returnRatio = $orderTotal > 0 ? ($totalReturnAmount / $orderTotal) * 100 : 0;
+
+        // Mô tả chi tiết
+        $description = $couponStillValid
+            ? sprintf('Hoàn %.2f%% tiền đã trả (%.0fđ)', $returnRatio, $actualPaid * ($totalReturnAmount / $orderTotal))
+            : sprintf('Hủy coupon. Khách trả %.0fđ, còn %.0fđ → Hoàn %.0fđ', 
+                $actualPaid, 
+                $remainingAmount, 
+                $actualPaid - $remainingAmount
+            );
 
         return [
             'return_amount' => $totalReturnAmount,
+            'remaining_amount' => $remainingAmount,
             'is_full_return' => $isFullReturn,
             'return_ratio' => round($returnRatio, 2),
+            'coupon_still_valid' => $couponStillValid,
             'order_info' => [
                 'total_before_discount' => $orderTotal,
-                'discount' => floatval($order->discount_amount ?? 0),
+                'discount' => $discount,
+                'actual_paid' => $actualPaid,
                 'shipping_fee' => floatval($order->shipping_fee ?? self::DEFAULT_SHIPPING_FEE),
                 'is_freeship' => $isFreeship,
-                'actual_paid' => $orderTotal - floatval($order->discount_amount ?? 0),
+                'coupon_min_purchase' => $coupon ? (float) ($coupon->min_purchase ?? 0) : 0,
             ],
             'scenarios' => [
                 'without_30k' => [
                     'amount' => $withoutRefund30k,
                     'label' => 'Không hoàn ship',
-                    'description' => $isFullReturn
-                        ? 'Hoàn 100% tiền hàng đã thanh toán'
-                        : sprintf('Hoàn %.2f%% tiền hàng đã thanh toán', $returnRatio),
+                    'description' => $description,
                     'formatted' => number_format($withoutRefund30k, 0, ',', '.') . 'đ',
                 ],
                 'with_30k' => [
                     'amount' => $withRefund30k,
                     'label' => 'Có hoàn 30k ship',
                     'description' => !$isFreeship
-                        ? ($isFullReturn
-                            ? 'Hoàn 100% tiền hàng + 30k ship (đơn < 500k)'
-                            : sprintf('Hoàn %.2f%% tiền hàng + 30k ship (đơn < 500k)', $returnRatio))
+                        ? ($description . ' + 30k ship')
                         : 'Đơn hàng >= 500k (đã freeship), không áp dụng hoàn 30k',
                     'formatted' => number_format($withRefund30k, 0, ',', '.') . 'đ',
                     'applicable' => !$isFreeship,
@@ -387,19 +496,34 @@ class ReturnRequest extends Model
 
         $orderTotal = floatval($order->total_amount);
         $discount = floatval($order->discount_amount ?? 0);
-        $shippingFee = floatval($order->shipping_fee ?? self::DEFAULT_SHIPPING_FEE);
         $actualPaid = $orderTotal - $discount;
+        $shippingFee = floatval($order->shipping_fee ?? self::DEFAULT_SHIPPING_FEE);
+
+        $remainingAmount = $orderTotal - $totalReturnAmount;
+        $coupon = $order->coupon;
+        $couponStillValid = false;
+
+        if ($coupon && $discount > 0) {
+            $minPurchase = (float) ($coupon->min_purchase ?? 0);
+            if ($remainingAmount >= $minPurchase) {
+                $couponStillValid = true;
+            }
+        }
 
         return [
             'order_total' => $orderTotal,
             'order_discount' => $discount,
-            'order_shipping_fee' => $shippingFee,
             'actual_paid' => $actualPaid,
+            'order_shipping_fee' => $shippingFee,
             'is_freeship' => $orderTotal >= self::FREESHIP_THRESHOLD,
             'is_full_return' => $this->isFullReturn(),
 
             'return_amount' => $totalReturnAmount,
+            'remaining_amount' => $remainingAmount,
             'return_ratio' => $orderTotal > 0 ? ($totalReturnAmount / $orderTotal) * 100 : 0,
+
+            'coupon_still_valid' => $couponStillValid,
+            'coupon_min_purchase' => $coupon ? (float) ($coupon->min_purchase ?? 0) : 0,
 
             'refund_30k' => $this->refund_30k,
             'refund_30k_label' => $this->refund_30k ? 'Có hoàn 30k ship' : 'Không hoàn ship',
@@ -412,4 +536,4 @@ class ReturnRequest extends Model
             'scenarios' => $this->calculateBothScenarios(),
         ];
     }
-}
+}   

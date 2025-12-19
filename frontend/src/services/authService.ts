@@ -31,7 +31,7 @@ const storage = {
   getRememberedEmail: (): string | null =>
     localStorage.getItem(REMEMBERED_EMAIL_KEY),
   removeRememberedEmail: () => localStorage.removeItem(REMEMBERED_EMAIL_KEY),
-  
+
   clearAll: () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -78,7 +78,7 @@ const authService = {
   async logout(): Promise<void> {
     try {
       // Gọi API logout nếu backend có (nếu lỗi vẫn tiếp tục)
-      await authApi.logout().catch(() => {});
+      await authApi.logout().catch(() => { });
     } catch (error) {
       console.error("Logout API error:", error);
     } finally {
@@ -113,20 +113,18 @@ const authService = {
     }
   },
 
-  /**
-   * Reset mật khẩu
-   */
-  async resetPassword(
-    token: string,
-    password: string
-  ): Promise<{ message: string }> {
-    try {
-      return await authApi.resetPassword(token, password);
-    } catch (error: any) {
-      console.error("Reset password error:", error);
-      throw error;
-    }
-  },
+async resetPassword(
+  token: string,
+  email: string,
+  password: string
+): Promise<{ message: string }> {
+  try {
+    return await authApi.resetPassword(token, email, password);
+  } catch (error: any) {
+    console.error("Reset password error:", error);
+    throw error;
+  }
+},
 
   /**
    * Lấy token từ localStorage
